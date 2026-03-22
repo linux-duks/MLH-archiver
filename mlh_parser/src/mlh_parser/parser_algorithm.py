@@ -1,7 +1,10 @@
 import re
-from mlh_parser.constants import *
 import logging
 from mlh_parser.email_reader import decode_mail, get_body, get_headers
+from mlh_parser.constants import (
+    KEYS_MASK,
+    SIGNED_BLOCK,
+)
 
 logger = logging.getLogger(__name__)
 

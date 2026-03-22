@@ -12,3 +12,9 @@ def tests(session):
 def format(session):
     session.install("ruff")
     session.run("ruff", "format", ".")
+
+
+@nox.session(reuse_venv=True, venv_backend="uv")
+def lint(session):
+    session.install("ruff")
+    session.run("ruff", "check", ".")

@@ -1,1 +1,1 @@
-from . import helpers
+from . import helpers as helpers

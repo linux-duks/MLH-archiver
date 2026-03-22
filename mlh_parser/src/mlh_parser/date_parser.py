@@ -70,20 +70,20 @@ def last_effort_date_finder(date_text):
 
     try:
         date = date_parser.parse(date_text)
-    except:
+    except Exception:
         try:
             date = date_parser.parse(date_text.replace(".", ":"))
-        except:
+        except Exception:
             try:
                 date = date_parser.parse(
                     date_text[: len("Fri, 15 Jun 2012 16:52:52")].strip(),
                 )
-            except:
+            except Exception:
                 try:
                     date = date_parser.parse(
                         date_text[: len("Fri, 5 Jun 2012 16:52:52")].strip(),
                     )
-                except:
+                except Exception:
                     date = None
     return date
 
