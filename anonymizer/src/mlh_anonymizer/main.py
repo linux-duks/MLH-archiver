@@ -5,7 +5,7 @@ import hashlib
 import logging
 import itertools
 
-from constants import (
+from anonymizer.constants import (
     N_PROC,
     LISTS_TO_PARSE,
     ANONYMIZE_COLUMNS,

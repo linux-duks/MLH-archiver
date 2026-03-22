@@ -1,10 +1,27 @@
 [project]
-name = "mlh-mail-annonimizer"
+name = "mlh-anonymizer"
 version = "0.0.1"
+description = "Pseudo-anonymize personal identification from mailing list datasets"
+authors = [{ name = "Rafael Passos", email = "rafael@rcpassos.me" }]
+requires-python = ">=3.14"
+
 dependencies = [
-    "polars~=1.36",
+  "polars~=1.39",
 ]
 
-requires-python = ">=3.12"
-[tool.uv]
-package = false
+[project.scripts]
+mlh-anonymizer = "anonymizer:main"
+
+[build-system]
+requires = ["uv_build>=0.10.9,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.pytest.ini_options]
+pythonpath = ["./src"]
+
+[dependency-groups]
+dev = [
+    "freezegun>=1.5",
+    "nox>=2026.2",
+    "pytest>=9.0",
+]
