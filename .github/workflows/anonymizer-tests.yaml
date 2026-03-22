@@ -1,0 +1,15 @@
+name: Anonymizer Test
+
+on:
+  pull_request:
+      paths:
+      - 'anonymizer/**'
+  workflow_dispatch:
+
+jobs:
+  anonymizer-tests:
+    uses: ./.github/workflows/py-tests.yaml
+    name: anonymizer-tests
+    with:
+      path: ./anonymizer
+

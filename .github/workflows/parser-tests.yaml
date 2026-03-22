@@ -2,6 +2,8 @@ name: Parser Test
 
 on:
   pull_request:
+      paths:
+      - 'mlh_parser/**'
   workflow_dispatch:
 
 jobs:
