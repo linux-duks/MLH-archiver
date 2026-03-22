@@ -31,7 +31,7 @@ Usage: mlh-archiver [OPTIONS]
 Options:
   -c, --config-file <CONFIG_FILE>      [default: nntp_config*]
   -H, --hostname <HOSTNAME>            nntp server domain/ip
-  -p, --port <PORT>                    nntp serrver port [default: 119]
+  -p, --port <PORT>                    nntp server port [default: 119]
   -o, --output-dir <OUTPUT_DIR>        where results will be stored [default: ./output]
   -n, --nthreads <NTHREADS>            Number of worker threads connecting to different lists [default: 1]
   -l, --loop-groups                    If true, the app will keep running forever. Otherwise, stop after reading all groups
@@ -62,7 +62,7 @@ group_lists:
 
 The archiver is implemented in rust, and uses a NNTP library we forked.
 It is designed to be a multi-thread* process that can keep the local files up-to-date with the articles (emails) available in the NNTP server.
-It is, however, not designed to pull emails as fast as possible, as it could be seen as a malicious our abusive scraping bot.
+It is, however, not designed to pull emails as fast as possible, as it could be seen as a malicious or abusive scraping bot.
 
 > *Each thread is able to check one mail-group (mailing list) at a time from the server.
 > A thread will only fetch one email at a time.
@@ -117,6 +117,7 @@ The root `Makefile` orchestrates all components. Run commands from the project r
 | `make clean` | Clean all build artifacts |
 | `make debug-parser` | Run parser in debug mode |
 | `make debug-anonymizer` | Run anonymizer in debug mode |
+| `make debug-analysis` | Run analysis in debug mode |
 
 ### Prerequisites
 
@@ -144,6 +145,7 @@ If using devbox for development environment management, all commands are availab
 | `devbox run clean` | Clean all build artifacts |
 | `devbox run debug-parser` | Run parser in debug mode |
 | `devbox run debug-anonymizer` | Run anonymizer in debug mode |
+| `devbox run debug-analysis` | Run analysis in debug mode |
 
 ### Setting up Devbox
 

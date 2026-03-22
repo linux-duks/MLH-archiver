@@ -7,9 +7,9 @@ endif
 
 .PHONY: run
 run:
-	@if [ ! -d "../parser_output/parsed" ] || [ -z "$$(ls ../parser_output/parsed 2>/dev/null)" ]; then \
-		echo "==> Error: '../parser_output/parsed' directory is missing or empty."; \
-		echo "==> Please run the parser first to generate the dataset."; \
+	@if [ ! -d "../anonymizer_output" ] || [ -z "$$(ls ../anonymizer_output 2>/dev/null)" ]; then \
+		echo "==> Error: '../anonymizer_output' directory is missing or empty."; \
+		echo "==> Please run the anonymizer first to generate the dataset."; \
 		exit 1; \
 	else \
 		echo "==> Running analysis..."; \
