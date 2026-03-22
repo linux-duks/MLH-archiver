@@ -1,6 +1,7 @@
 import io
 import os
 import re
+import traceback
 import polars as pl
 from mlh_parser.date_parser import process_date
 from tqdm import tqdm
@@ -56,52 +57,84 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
         all_emails = os.listdir(error_output_path)
     else:
         all_emails = os.listdir(list_input_path)
-        # remove metadata files
-        all_emails.remove("__last_article_number")
-        if "errors.md" in all_emails:
-            all_emails.remove("errors.md")
-        if "__errors" in all_emails:
-            all_emails.remove("__errors")
-        if "errors.txt" in all_emails:
-            all_emails.remove("errors.txt")
+        # remove metadata files and directories (keep only email files)
+        all_emails = [
+            f
+            for f in all_emails
+            if f
+            not in (
+                "__last_article_number",
+                "errors.md",
+                "__errors",
+                "errors.txt",
+            )
+            and os.path.isfile(os.path.join(list_input_path, f))
+        ]
 
-    newly_parsed = pl.DataFrame(schema=PARQUET_COLS_SCHEMA)
-    newly_parsed = newly_parsed.with_row_index()
+    # newly_parsed = pl.DataFrame(schema=PARQUET_COLS_SCHEMA)
+    # newly_parsed = newly_parsed.with_row_index()
 
-    for email_name in tqdm(all_emails):
+    email_dict_array = [None] * len(all_emails)
+
+    for index, email_name in tqdm(
+        enumerate(all_emails),
+        total=len(all_emails),
+        desc=f"Reading emails from {mailing_list}",
+    ):
+        # Create context dictionary for tracking and logging
+        ctx = {
+            "file_name": email_name,
+            "mailing_list": mailing_list,
+            "errors": [],
+        }
+
         email_path = list_input_path + "/" + email_name
-        email_file = io.open(email_path, mode="r", encoding="utf-8")
-        email_file_bytes = io.open(email_path, mode="rb")
-        email_file_bytes = io.open(email_path, mode="rb")
+        email_file = None
+        email_file_bytes = None
 
         try:
-            # email_as_dict = parse_email_txt_to_dict(email_file.read())
-            email_as_dict = parse_email_bytes_to_dict(email_file_bytes.read())
+            email_file = io.open(email_path, mode="r", encoding="utf-8")
+            email_file_bytes = io.open(email_path, mode="rb")
 
-            email_as_dict = post_process_parsed_mail(email_as_dict)
-            # email_as_dict = parse_email_txt_to_dict(email_file.read())
-            email_as_dict = parse_email_bytes_to_dict(email_file_bytes.read())
-
-            email_as_dict = post_process_parsed_mail(email_as_dict)
+            email_as_dict = parse_email_bytes_to_dict(email_file_bytes.read(), ctx=ctx)
+            email_as_dict = post_process_parsed_mail(email_as_dict, ctx=ctx)
         except Exception as parsing_error:
+            ctx["errors"].append(f"{type(parsing_error).__name__}: {parsing_error}")
             save_unsuccessful_parse(
-                email_file, parsing_error, email_name, mailing_list, error_output_path
+                email_file,
+                parsing_error,
+                email_name,
+                mailing_list,
+                error_output_path,
+                email_file_bytes=email_file_bytes,
+                ctx=ctx,
             )
             continue
 
-        email_as_df = pl.DataFrame(email_as_dict, schema=PARQUET_COLS_SCHEMA)
-        email_as_df = email_as_df.with_columns(
-            # Let's keep our datetimes naive
-            pl.col("date").dt.replace_time_zone(None)
-        )
+        email_as_dict["__file_name"] = email_name
 
-        email_as_df = email_as_df.with_row_index()
-        newly_parsed.extend(email_as_df)  # Simply adds to end of DF
+        email_dict_array[index] = email_as_dict
+
+        ERROR_FILES_TO_DELETE = []
+        if REDO_FAILED_PARSES:
+            ERROR_FILES_TO_DELETE.append(error_output_path + "/" + email_name)
+            # os.remove(error_output_path + "/" + email_name)
 
         email_file.close()
+        email_file_bytes.close()
 
-        if REDO_FAILED_PARSES:
-            os.remove(error_output_path + "/" + email_name)
+    # import json
+
+    # print("dict values", json.dumps(email_as_dict, default=str))
+
+    newly_parsed = pl.DataFrame(email_dict_array, schema=PARQUET_COLS_SCHEMA)
+    # email_as_df = email_as_df.with_columns(
+    #     # Let's keep our datetimes naive
+    #     pl.col("date").dt.replace_time_zone(None)
+    # )
+    #
+
+    print(f"Converting {mailing_list} to Polars DataFrame")
 
     all_parsed.extend(newly_parsed)
     all_parsed = all_parsed.drop("index")
@@ -109,41 +142,74 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
     logger.info(f"Saved all parsed mail on list '{mailing_list}'")
 
 
-def post_process_parsed_mail(email_as_dict: dict):
+def post_process_parsed_mail(email_as_dict: dict, ctx: dict = None):
     """
     Post-processes dict containing email fields, parsing
     multiple valued fields and other non Str fields.
+    Ensures all required fields are present with defaults.
+
+    Args:
+        email_as_dict: Parsed email data
+        ctx: Context dict with file_name, mailing_list, errors
     """
+    if ctx is None:
+        ctx = {"file_name": "unknown", "mailing_list": "unknown", "errors": []}
 
-    if isinstance(email_as_dict["to"], str):
-        email_as_dict["to"] = email_as_dict["to"].split(",")
+    # Handle list fields (default to empty list if missing)
+    if "to" not in email_as_dict or email_as_dict["to"] is None:
+        email_as_dict["to"] = []
+    elif isinstance(email_as_dict["to"], str):
+        email_as_dict["to"] = [
+            x.strip() for x in email_as_dict["to"].split(",") if x.strip()
+        ]
 
-    if isinstance(email_as_dict["cc"], str):
-        email_as_dict["cc"] = email_as_dict["cc"].split(",")
+    if "cc" not in email_as_dict or email_as_dict["cc"] is None:
+        email_as_dict["cc"] = []
+    elif isinstance(email_as_dict["cc"], str):
+        email_as_dict["cc"] = [
+            x.strip() for x in email_as_dict["cc"].split(",") if x.strip()
+        ]
 
+    if "references" not in email_as_dict or email_as_dict["references"] is None:
+        email_as_dict["references"] = []
+    elif isinstance(email_as_dict["references"], str):
+        email_as_dict["references"] = email_as_dict["references"].split()
+
+    if "trailers" not in email_as_dict or email_as_dict["trailers"] is None:
+        email_as_dict["trailers"] = []
+
+    if "code" not in email_as_dict or email_as_dict["code"] is None:
+        email_as_dict["code"] = []
+
+    # Handle single-value string fields (default to empty string if missing)
     for column in SINGLE_VALUED_COLS:
-        if isinstance(email_as_dict[column], list):
-            email_as_dict[column] = email_as_dict[column][0]
-            # This usually doesn't make sense
-            # For dates, we're saving the first date parsed
-
-    if isinstance(email_as_dict["references"], str):
-        email_as_dict["references"] = email_as_dict["references"].split(" ")
+        if column not in email_as_dict or email_as_dict[column] is None:
+            if column == "date":
+                email_as_dict[column] = None  # date can be None
+            else:
+                email_as_dict[column] = ""
+        elif isinstance(email_as_dict[column], list):
+            email_as_dict[column] = (
+                email_as_dict[column][0] if email_as_dict[column] else ""
+            )
 
     email_as_dict = process_date(email_as_dict)
 
     return email_as_dict
 
 
-def parse_and_process_email(email_file_data: bytes) -> dict:
+def parse_and_process_email(email_file_data: bytes, ctx: dict = None) -> dict:
     """
     Run parse_email_txt_to_dict and post_process_parsed_mail
     Post-processes dict containing email fields, parsing
     multiple valued fields and other non Str fields.
     """
-    email_as_dict = parse_email_bytes_to_dict(email_file_data)
+    if ctx is None:
+        ctx = {"file_name": "unknown", "mailing_list": "unknown", "errors": []}
 
-    return post_process_parsed_mail(email_as_dict)
+    email_as_dict = parse_email_bytes_to_dict(email_file_data, ctx=ctx)
+
+    return post_process_parsed_mail(email_as_dict, ctx=ctx)
 
 
 def get_email_id(email_file) -> str:
@@ -181,28 +247,84 @@ def email_previously_parsed(all_parsed, email_id) -> int | None:
 
 
 def save_unsuccessful_parse(
-    email_file, parsing_error, email_name, mailing_list, error_output_path
+    email_file,
+    parsing_error,
+    email_name,
+    mailing_list,
+    error_output_path,
+    email_file_bytes=None,
+    ctx: dict = None,
 ):
     """
     Saves information on unsuccessful email parse. Both original email content and
     exception information are stored in the directory at <error_output_path>, in
     a file with the same name as the original .eml file.
+
+    Args:
+        email_file: File handle for the email
+        parsing_error: Exception that was raised
+        email_name: Name of the email file
+        mailing_list: Name of the mailing list
+        error_output_path: Path to save error files
+        email_file_bytes: Binary file handle
+        ctx: Context dict with file_name, mailing_list, errors
     """
-    email_file.seek(0, os.SEEK_SET)  # Return to the beginning of file stream
+    if ctx is None:
+        ctx = {"file_name": email_name, "mailing_list": mailing_list, "errors": []}
 
-    to_save = email_file.read()
-    to_save += "\n" + "=" * 30 + " Exception:\n"
-    to_save += str(parsing_error)
+    # Build detailed error information
+    error_details = [
+        "=" * 60,
+        f"PARSE ERROR: {ctx['file_name']}",
+        f"Mailing list: {ctx['mailing_list']}",
+        f"Error type: {type(parsing_error).__name__}",
+        f"Error message: {parsing_error}",
+        "=" * 60,
+        "",
+        "Traceback:",
+        traceback.format_exc(),
+        "",
+        "=" * 60,
+        "EMAIL HEADERS (first 50 lines):",
+        "=" * 60,
+    ]
 
-    logger.error(f"Error when parsing file '{email_name}' of list '{mailing_list}'")
-    logger.error(parsing_error)
+    # Add email headers preview from text file if available
+    if email_file is not None:
+        try:
+            email_file.seek(0, os.SEEK_SET)
+            header_lines = []
+            for i, line in enumerate(email_file.readlines()):
+                if i >= 50:
+                    header_lines.append("... (truncated)")
+                    break
+                header_lines.append(line.rstrip())
+                # Stop at end of headers (empty line)
+                if line.strip() == "" and i > 0:
+                    break
+
+            error_details.extend(header_lines)
+            email_file.close()
+        except Exception:
+            error_details.append("(Could not read email headers)")
+
+    to_save = "\n".join(error_details)
+
+    # Log with full traceback and context
+    logger.error(
+        f"[{ctx['mailing_list']}/{ctx['file_name']}] "
+        f"{type(parsing_error).__name__}: {parsing_error}"
+    )
+    logger.debug(f"Full traceback:\n{traceback.format_exc()}")
 
     with open(
         error_output_path + "/" + email_name, "w", encoding="utf-8"
     ) as error_output_file:
         error_output_file.write(to_save)
 
-    email_file.close()
+    # Close binary file handle if provided
+    if email_file_bytes is not None:
+        email_file_bytes.close()
 
 
 def remove_previous_errors(errors_dir_path):
