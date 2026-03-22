@@ -2,8 +2,9 @@ import nox
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")
-def python(session):
-    session.install(".[dev]")
+def tests(session):
+    session.install("pytest", "freezegun")
+    session.install(".")
     session.run("pytest", "-vv")
 
 

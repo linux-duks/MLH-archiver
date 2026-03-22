@@ -3,12 +3,12 @@ name = "mlh-parser"
 version = "0.1.0"
 description = "Add your description here"
 authors = [{ name = "Rafael Passos", email = "rafael@rcpassos.me" }]
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 
 dependencies = [
-	"polars~=1.36", 
-	"python-dateutil>=2.9.0.post0", 
-	"tqdm~=4.67"
+  "polars~=1.39",
+  "python-dateutil>=2.9.0.post0",
+  "tqdm~=4.67",
 ]
 
 [project.scripts]
@@ -25,6 +25,9 @@ pythonpath = ["./src"]
 
 [dependency-groups]
 dev = [
-    "pytest>=8.4.2",
-		"freezegun>=1.5.5",
+    "freezegun>=1.5",
+    "nox>=2026.2",
+    "pytest>=9.0",
 ]
+
+
