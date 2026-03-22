@@ -1,0 +1,901 @@
+Hi jianlong,
+
+Are you planning to update this driver, so that it can be accepted?
+I will appreciate if you reply ASAP.
+
+Thanks,
+Srinivas
+
+
+
+
+
+On Mon, 2013-09-23 at 13:35 +0800, jianlong wrote:
+>> This patch adds IIO driver for Bosch BMG160 triaxial gyroscope sensor.
+>> Thanks a lot.
+> Maybe some trivial, mostly whitespace, corrections before
+> modifying the bmg160_api.c and bmg_iio.h files...
+> ---
+>   drivers/iio/gyro/bmg160_core.c    | 286 +++++++++++++++++++-------------------
+>   drivers/iio/gyro/bmg160_ring.c    |  19 +--
+>   drivers/iio/gyro/bmg160_trigger.c |  75 +++++-----
+>   3 files changed, 187 insertions(+), 193 deletions(-)
+>
+> diff --git a/drivers/iio/gyro/bmg160_core.c b/drivers/iio/gyro/bmg160_core.c
+> index 0234348..73fd3b2 100644
+> --- a/drivers/iio/gyro/bmg160_core.c
+> +++ b/drivers/iio/gyro/bmg160_core.c
+> @@ -38,7 +38,7 @@
+>   #define BUFF_SIZE 256
+>   
+>   struct op_mode_map {
+> -	char *op_mode_name;
+> +	const char *op_mode_name;
+>   	long op_mode;
+>   };
+>   
+> @@ -59,7 +59,7 @@ static struct i2c_client *bmg_client;
+>    * @gyro_fs_dps: sensor's full scale, the unit is degree pre second.
+>    * @gyro_fs_rslt: sensor's resolution.
+>    * example: 0(Reg val)----2000dps(full scale)----61000(resolution)
+> -*/
+> + */
+>   static struct bmg_fullscale_avl bmg_fs_avl_array[] = {
+>   	[0] = {
+>   		.gyro_fs_value = BMG_FSR_2000DPS_VAL,
+> @@ -106,42 +106,42 @@ static const struct bmg_hw bmg_hw_info[NUM_DEVICE_PARTS] = {
+>   #define BMG_SENSORS_16_BITS		16
+>   #define BMG_TEMP_SCALE			5000
+>   #define BMG_TEMP_OFFSET			12000
+> -#define WATER_MARK_LEVEL			40
+> -
+> -#define BMG_GYRO_CHANNELS_CONFIG(device_type, si, mod, \
+> -							endian, bits, addr) \
+> -	{ \
+> -		.type = device_type, \
+> -		.modified = 1, \
+> -		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE), \
+> -		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW), \
+> -		.scan_index = si, \
+> -		.channel2 = mod, \
+> -		.address = addr, \
+> -		.scan_type = { \
+> -			.sign = 's', \
+> -			.realbits = bits, \
+> -			.shift = 16 - bits, \
+> -			.storagebits = 16, \
+> -			.endianness = endian, \
+> -		}, \
+> +#define WATER_MARK_LEVEL		40
+> +
+> +#define BMG_GYRO_CHANNELS_CONFIG(device_type, si, mod,			\
+> +				 endian, bits, addr)			\
+> +	{								\
+> +		.type = device_type,					\
+> +		.modified = 1,						\
+> +		.info_mask_shared_by_type = BIT(IIO_CHAN_INFO_SCALE),	\
+> +		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW),		\
+> +		.scan_index = si,					\
+> +		.channel2 = mod,					\
+> +		.address = addr,					\
+> +		.scan_type = {						\
+> +			.sign = 's',					\
+> +			.realbits = bits,				\
+> +			.shift = 16 - bits,				\
+> +			.storagebits = 16,				\
+> +			.endianness = endian,				\
+> +		},							\
+>   	}
+> -#define BMG_DEV_ATTR_SAMP_FREQ() \
+> -		IIO_DEV_ATTR_SAMP_FREQ(S_IWUSR | S_IRUGO, \
+> -			bmg_read_frequency, \
+> -			bmg_write_frequency)
+> -
+> -#define BMG_DEV_ATTR_R_W(name) \
+> -	IIO_DEVICE_ATTR(name, S_IRUGO | S_IWUSR , \
+> -		bmg_show_##name, \
+> -		bmg_store_##name, 0);
+> -
+> -#define BMG_DEV_ATTR_R(name) \
+> -		IIO_DEVICE_ATTR(name, S_IRUGO, \
+> +#define BMG_DEV_ATTR_SAMP_FREQ()			\
+> +	IIO_DEV_ATTR_SAMP_FREQ(S_IWUSR | S_IRUGO,	\
+> +			       bmg_read_frequency,	\
+> +			       bmg_write_frequency)
+> +
+> +#define BMG_DEV_ATTR_R_W(name)				\
+> +	IIO_DEVICE_ATTR(name, S_IRUGO | S_IWUSR ,	\
+> +			bmg_show_##name,		\
+> +			bmg_store_##name, 0);
+> +
+> +#define BMG_DEV_ATTR_R(name)				\
+> +	IIO_DEVICE_ATTR(name, S_IRUGO,			\
+>   			bmg_show_##name, NULL , 0);
+>   
+> -#define BMG_DEV_ATTR_W(name) \
+> -		IIO_DEVICE_ATTR(name, S_IWUSR, \
+> +#define BMG_DEV_ATTR_W(name)				\
+> +	IIO_DEVICE_ATTR(name, S_IWUSR,			\
+>   			NULL, bmg_store_##name, 0);
+>   
+>   #define BMG_BYTE_FOR_PER_AXIS_CHANNEL		2
+> @@ -150,20 +150,28 @@ static const struct bmg_hw bmg_hw_info[NUM_DEVICE_PARTS] = {
+>   static const struct iio_chan_spec bmg_12bit_raw_channels[] = {
+>   	{	.type = IIO_TEMP,
+>   		.channel = IIO_NO_MOD,
+> -		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW)
+> -				| BIT(IIO_CHAN_INFO_OFFSET)
+> -				| BIT(IIO_CHAN_INFO_SCALE),
+> +		.info_mask_separate = (BIT(IIO_CHAN_INFO_RAW) |
+> +				       BIT(IIO_CHAN_INFO_OFFSET) |
+> +				       BIT(IIO_CHAN_INFO_SCALE)),
+>   		.address = BMG160_TEMP_ADDR,
+>   		.scan_index = -1,
+> -		.scan_type = { .sign = 'u', .realbits = 8,
+> -			.storagebits = 8, .shift = 0, .endianness = IIO_LE },
+> +		.scan_type = {
+> +			.sign = 'u',
+> +			.realbits = 8,
+> +			.storagebits = 8,
+> +			.shift = 0,
+> +			.endianness = IIO_LE
+> +		},
+>   	},
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_X,
+> -	IIO_MOD_X, IIO_LE, BMG_SENSORS_12_BITS, BMG160_RATE_X_LSB_VALUEX__REG),
+> +				 IIO_MOD_X, IIO_LE, BMG_SENSORS_12_BITS,
+> +				 BMG160_RATE_X_LSB_VALUEX__REG),
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_Y,
+> -	IIO_MOD_Y, IIO_LE, BMG_SENSORS_12_BITS, BMG160_RATE_Y_LSB_VALUEY__REG),
+> +				 IIO_MOD_Y, IIO_LE, BMG_SENSORS_12_BITS,
+> +				 BMG160_RATE_Y_LSB_VALUEY__REG),
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_Z,
+> -	IIO_MOD_Z, IIO_LE, BMG_SENSORS_12_BITS, BMG160_RATE_Z_LSB_VALUEZ__REG),
+> +				 IIO_MOD_Z, IIO_LE, BMG_SENSORS_12_BITS,
+> +				 BMG160_RATE_Z_LSB_VALUEZ__REG),
+>   	IIO_CHAN_SOFT_TIMESTAMP(BMG_SCAN_TIMESTAMP),
+>   
+>   };
+> @@ -172,26 +180,34 @@ static const struct iio_chan_spec bmg_12bit_raw_channels[] = {
+>   static const struct iio_chan_spec bmg_16bit_raw_channels[] = {
+>   	{	.type = IIO_TEMP,
+>   		.channel = IIO_NO_MOD,
+> -		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW)
+> -				| BIT(IIO_CHAN_INFO_OFFSET)
+> -				| BIT(IIO_CHAN_INFO_SCALE),
+> +		.info_mask_separate = (BIT(IIO_CHAN_INFO_RAW) |
+> +				       BIT(IIO_CHAN_INFO_OFFSET) |
+> +				       BIT(IIO_CHAN_INFO_SCALE)),
+>   		.address = BMG160_TEMP_ADDR,
+>   		.scan_index = -1,
+> -		.scan_type = { .sign = 'u', .realbits = 8,
+> -			.storagebits = 8, .shift = 0, .endianness = IIO_LE },
+> +		.scan_type = {
+> +			.sign = 'u',
+> +			.realbits = 8,
+> +			.storagebits = 8,
+> +			.shift = 0,
+> +			.endianness = IIO_LE
+> +		},
+>   	},
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_X,
+> -	IIO_MOD_X, IIO_LE, BMG_SENSORS_16_BITS, BMG160_RATE_X_LSB_VALUEX__REG),
+> +				 IIO_MOD_X, IIO_LE, BMG_SENSORS_16_BITS,
+> +				 BMG160_RATE_X_LSB_VALUEX__REG),
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_Y,
+> -	IIO_MOD_Y, IIO_LE, BMG_SENSORS_16_BITS, BMG160_RATE_Y_LSB_VALUEY__REG),
+> +				 IIO_MOD_Y, IIO_LE, BMG_SENSORS_16_BITS,
+> +				 BMG160_RATE_Y_LSB_VALUEY__REG),
+>   	BMG_GYRO_CHANNELS_CONFIG(IIO_ANGL_VEL, BMG_SCAN_GYRO_Z,
+> -	IIO_MOD_Z, IIO_LE, BMG_SENSORS_16_BITS, BMG160_RATE_Z_LSB_VALUEZ__REG),
+> +				 IIO_MOD_Z, IIO_LE, BMG_SENSORS_16_BITS,
+> +				 BMG160_RATE_Z_LSB_VALUEZ__REG),
+>   	IIO_CHAN_SOFT_TIMESTAMP(BMG_SCAN_TIMESTAMP),
+>   };
+>   
+>   /* bmg i2c routine read */
+>   static char bmg_i2c_read(struct i2c_client *client, u8 reg_addr,
+> -		u8 *data, u8 len)
+> +			 u8 *data, u8 len)
+>   {
+>   #if !defined BMG_USE_BASIC_I2C_FUNC
+>   	s32 dummy;
+> @@ -202,7 +218,7 @@ static char bmg_i2c_read(struct i2c_client *client, u8 reg_addr,
+>   #ifdef BMG_SMBUS
+>   		dummy = i2c_smbus_read_byte_data(client, reg_addr);
+>   		if (dummy < 0) {
+> -			dev_err(&client->dev, "i2c bus read error");
+> +			dev_err(&client->dev, "i2c bus read error\n");
+>   			return -1;
+>   		}
+>   		*data = (u8)(dummy & 0xff);
+> @@ -224,18 +240,18 @@ static char bmg_i2c_read(struct i2c_client *client, u8 reg_addr,
+>   
+>   	struct i2c_msg msg[] = {
+>   		{
+> -		 .addr = client->addr,
+> -		 .flags = 0,
+> -		 .len = 1,
+> -		 .buf = &reg_addr,
+> +			.addr = client->addr,
+> +			.flags = 0,
+> +			.len = 1,
+> +			.buf = &reg_addr,
+>   		},
+>   
+>   		{
+> -		 .addr = client->addr,
+> -		 .flags = I2C_M_RD,
+> -		 .len = len,
+> -		 .buf = data,
+> -		 },
+> +			.addr = client->addr,
+> +			.flags = I2C_M_RD,
+> +			.len = len,
+> +			.buf = data,
+> +		},
+>   	};
+>   
+>   	for (retry = 0; retry < BMG_MAX_RETRY_I2C_XFER; retry++) {
+> @@ -246,7 +262,7 @@ static char bmg_i2c_read(struct i2c_client *client, u8 reg_addr,
+>   	}
+>   
+>   	if (BMG_MAX_RETRY_I2C_XFER <= retry) {
+> -		dev_err(&client->dev, "I2C xfer error");
+> +		dev_err(&client->dev, "I2C xfer error\n");
+>   		return -EIO;
+>   	}
+>   
+> @@ -268,21 +284,20 @@ static void bmg_dump_reg(struct i2c_client *client)
+>   	for (i = 0; i < BYTES_PER_LINE; i++) {
+>   		dbg_buf[i] = i;
+>   		sprintf(dbg_buf_str + i * 3, "%02x%c",
+> -				dbg_buf[i],
+> -				(((i + 1) % BYTES_PER_LINE == 0) ? '\n' : ' '));
+> +			dbg_buf[i],
+> +			(((i + 1) % BYTES_PER_LINE == 0) ? '\n' : ' '));
+>   	}
+>   	dev_dbg(&client->dev, "%s\n", dbg_buf_str);
+>   
+>   	bmg_i2c_read(client, BMG_REG_NAME(CHIP_ID_ADDR), dbg_buf, 64);
+>   	for (i = 0; i < 64; i++) {
+>   		sprintf(dbg_buf_str + i * 3, "%02x%c",
+> -				dbg_buf[i],
+> -				(((i + 1) % BYTES_PER_LINE == 0) ? '\n' : ' '));
+> +			dbg_buf[i],
+> +			(((i + 1) % BYTES_PER_LINE == 0) ? '\n' : ' '));
+>   	}
+>   	dev_dbg(&client->dev, "%s\n", dbg_buf_str);
+>   }
+>   
+> -
+>   /* i2c operation for API */
+>   static int bmg_check_chip_id(struct i2c_client *client)
+>   {
+> @@ -290,7 +305,7 @@ static int bmg_check_chip_id(struct i2c_client *client)
+>   	u8 chip_id = 0;
+>   
+>   	bmg_i2c_read(client, BMG_REG_NAME(CHIP_ID_ADDR), &chip_id, 1);
+> -	dev_info(&client->dev, "read chip id result: %#x", chip_id);
+> +	dev_info(&client->dev, "read chip id result: %#x\n", chip_id);
+>   
+>   	if ((chip_id & 0xff) != SENSOR_CHIP_ID_BMG)
+>   		err = -1;
+> @@ -300,11 +315,10 @@ static int bmg_check_chip_id(struct i2c_client *client)
+>   
+>   /*	i2c write routine*/
+>   static char bmg_i2c_write(struct i2c_client *client, u8 reg_addr,
+> -		u8 *data, u8 len)
+> +			  u8 *data, u8 len)
+>   {
+>   #if !defined BMG_USE_BASIC_I2C_FUNC
+>   	s32 dummy;
+> -
+>   #ifndef BMG_SMBUS
+>   	u8 buffer[2];
+>   #endif
+> @@ -323,22 +337,22 @@ static char bmg_i2c_write(struct i2c_client *client, u8 reg_addr,
+>   		reg_addr++;
+>   		data++;
+>   		if (dummy < 0) {
+> -			dev_err(&client->dev, "error writing i2c bus");
+> +			dev_err(&client->dev, "error writing i2c bus\n");
+>   			return -EPERM;
+>   		}
+> -
+>   	}
+> +
+>   	return 0;
+>   #else
+>   	u8 buffer[2];
+>   	int retry;
+>   	struct i2c_msg msg[] = {
+>   		{
+> -		 .addr = client->addr,
+> -		 .flags = 0,
+> -		 .len = 2,
+> -		 .buf = buffer,
+> -		 },
+> +			.addr = client->addr,
+> +			.flags = 0,
+> +			.len = 2,
+> +			.buf = buffer,
+> +		},
+>   	};
+>   
+>   	while (0 != len--) {
+> @@ -346,14 +360,14 @@ static char bmg_i2c_write(struct i2c_client *client, u8 reg_addr,
+>   		buffer[1] = *data;
+>   		for (retry = 0; retry < BMG_MAX_RETRY_I2C_XFER; retry++) {
+>   			if (i2c_transfer(client->adapter, msg,
+> -						ARRAY_SIZE(msg)) > 0) {
+> +					 ARRAY_SIZE(msg)) > 0) {
+>   				break;
+>   			} else {
+>   				mdelay(BMG_I2C_WRITE_DELAY_TIME);
+>   			}
+>   		}
+>   		if (BMG_MAX_RETRY_I2C_XFER <= retry) {
+> -			dev_err(&client->dev, "I2C xfer error");
+> +			dev_err(&client->dev, "I2C xfer error\n");
+>   			return -EIO;
+>   		}
+>   		reg_addr++;
+> @@ -378,16 +392,15 @@ static char bmg_i2c_write_wrapper(u8 dev_addr, u8 reg_addr, u8 *data, u8 len)
+>   	return err;
+>   }
+>   
+> -
+>   static int bmg_read_axis_data(struct iio_dev *indio_dev, u8 reg_address,
+> -		int *data)
+> +			      int *data)
+>   {
+>   	int ret;
+>   	unsigned char axis_outdata[BMG_BYTE_FOR_PER_AXIS_CHANNEL];
+>   	struct  bmg_client_data *client_data = iio_priv(indio_dev);
+>   
+>   	ret = bmg_i2c_read(client_data->client, reg_address,
+> -				axis_outdata, BMG_BYTE_FOR_PER_AXIS_CHANNEL);
+> +			   axis_outdata, BMG_BYTE_FOR_PER_AXIS_CHANNEL);
+>   	if (ret < 0)
+>   		return ret;
+>   
+> @@ -396,7 +409,7 @@ static int bmg_read_axis_data(struct iio_dev *indio_dev, u8 reg_address,
+>   }
+>   
+>   static int bmg_read_temp_data(struct iio_dev *indio_dev, u8 reg_address,
+> -		int *data)
+> +			      int *data)
+>   {
+>   	int ret;
+>   	signed char temp_outdata;
+> @@ -410,7 +423,7 @@ static int bmg_read_temp_data(struct iio_dev *indio_dev, u8 reg_address,
+>   }
+>   
+>   static ssize_t bmg_read_frequency(struct device *dev,
+> -		struct device_attribute *attr, char *buf)
+> +				  struct device_attribute *attr, char *buf)
+>   {
+>   	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+>   	int ret;
+> @@ -425,8 +438,8 @@ static ssize_t bmg_read_frequency(struct device *dev,
+>   }
+>   
+>   static ssize_t bmg_write_frequency(struct device *dev,
+> -		struct device_attribute *attr,
+> -		const char *buf, size_t count)
+> +				   struct device_attribute *attr,
+> +				   const char *buf, size_t count)
+>   {
+>   	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+>   	int err;
+> @@ -443,7 +456,7 @@ static ssize_t bmg_write_frequency(struct device *dev,
+>   }
+>   
+>   static ssize_t bmg_show_op_mode(struct device *dev,
+> -		struct device_attribute *attr, char *buf)
+> +				struct device_attribute *attr, char *buf)
+>   {
+>   	int ret;
+>   	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+> @@ -459,8 +472,8 @@ static ssize_t bmg_show_op_mode(struct device *dev,
+>   }
+>   
+>   static ssize_t bmg_store_op_mode(struct device *dev,
+> -		struct device_attribute *attr,
+> -		const char *buf, size_t count)
+> +				 struct device_attribute *attr,
+> +				 const char *buf, size_t count)
+>   {
+>   	int err;
+>   	struct iio_dev *indio_dev = dev_get_drvdata(dev);
+> @@ -470,8 +483,8 @@ static ssize_t bmg_store_op_mode(struct device *dev,
+>   	if (err)
+>   		return err;
+>   
+> -	dev_notice(indio_dev->dev.parent, "%s:set op-mode[%ld]",
+> -		__func__, op_mode);
+> +	dev_notice(indio_dev->dev.parent, "%s:set op-mode[%ld]\n",
+> +		   __func__, op_mode);
+>   
+>   	mutex_lock(&indio_dev->mlock);
+>   	err = BMG_CALL_API(set_mode)(op_mode);
+> @@ -479,12 +492,12 @@ static ssize_t bmg_store_op_mode(struct device *dev,
+>   
+>   	if (err)
+>   		return err;
+> -	else
+> -		return count;
+> +
+> +	return count;
+>   }
+>   
+>   static ssize_t bmg_show_bandwidth(struct device *dev,
+> -		struct device_attribute *attr, char *buf)
+> +				  struct device_attribute *attr, char *buf)
+>   {
+>   	int err;
+>   	unsigned char bandwidth = 0;
+> @@ -499,8 +512,8 @@ static ssize_t bmg_show_bandwidth(struct device *dev,
+>   }
+>   
+>   static ssize_t bmg_store_bandwidth(struct device *dev,
+> -		struct device_attribute *attr,
+> -		const char *buf, size_t count)
+> +				   struct device_attribute *attr,
+> +				   const char *buf, size_t count)
+>   {
+>   	int err;
+>   	unsigned long bandwidth;
+> @@ -517,7 +530,7 @@ static ssize_t bmg_store_bandwidth(struct device *dev,
+>   }
+>   
+>   static ssize_t bmg_show_selftest(struct device *dev,
+> -		struct device_attribute *attr, char *buf)
+> +				 struct device_attribute *attr, char *buf)
+>   {
+>   	int err;
+>   	unsigned char selftest;
+> @@ -539,10 +552,10 @@ static ssize_t bmg_show_selftest(struct device *dev,
+>   	datay_check = abs(1000 * client_data->value.datay / 16384);
+>   	dataz_check = abs(1000 * client_data->value.dataz / 16384);
+>   	mutex_unlock(&indio_dev->mlock);
+> -	if ((datax_check <= 5) && (datay_check <= 5) && (dataz_check <= 5))
+> +	if ((datax_check <= 5) && (datay_check <= 5) && (dataz_check <= 5)) {
+>   		dev_notice(&indio_dev->dev, "Self test successfully!\n");
+> -	else {
+> -		dev_err(&indio_dev->dev, "Self test checking value failed!");
+> +	} else {
+> +		dev_err(&indio_dev->dev, "Self test checking value failed!\n");
+>   		dev_err(&indio_dev->dev, "x y z axis values:%d,%d,%d\n",
+>   			datax_check, datay_check, dataz_check);
+>   		selftest |= C_BMG160_FAILURE;
+> @@ -559,51 +572,49 @@ static int bmg_set_fullscale(struct bmg_client_data *client_data, int val)
+>   	for (i = 0; i < NUM_BMG_FSR_VAL; i++) {
+>   		if (val == bmg_fs_avl_array[i].gyro_fs_value) {
+>   			BMG_CALL_API(set_range_reg)(val);
+> -			client_data->current_fullscale =
+> -			(struct bmg_fullscale_avl *)&bmg_fs_avl_array[i];
+> +			client_data->current_fullscale = &bmg_fs_avl_array[i];
+>   			return 0;
+> -		} else if (i == NUM_BMG_FSR_VAL)
+> +		} else if (i == NUM_BMG_FSR_VAL) {
+>   			return -EINVAL;
+> +		}
+>   	}
+>   	return -EINVAL;
+>   }
+>   
+>   static int bmg_read_raw(struct iio_dev *indio_dev,
+>   			struct iio_chan_spec const *ch, int *val,
+> -							int *val2, long mask)
+> +			int *val2, long mask)
+>   {
+>   	int ret, result;
+>   	struct bmg_client_data *client_data = iio_priv(indio_dev);
+>   
+>   	switch (mask) {
+> -	case IIO_CHAN_INFO_RAW:
+> -	{
+> +	case IIO_CHAN_INFO_RAW: {
+>   		result = 0;
+>   		ret = IIO_VAL_INT;
+>   		mutex_lock(&indio_dev->mlock);
+>   		switch (ch->type) {
+>   		case IIO_ANGL_VEL:
+>   			result = bmg_read_axis_data(indio_dev,
+> -							ch->address, val);
+> +						    ch->address, val);
+>   			*val = *val >> ch->scan_type.shift;
+>   			break;
+>   		case IIO_TEMP:
+>   			result = bmg_read_temp_data(indio_dev,
+> -							ch->address, val);
+> +						    ch->address, val);
+>   			*val = *val >> ch->scan_type.shift;
+>   			break;
+>   		default:
+>   			ret = -EINVAL;
+>   			break;
+>   		}
+> -	mutex_unlock(&indio_dev->mlock);
+> -	if (result < 0)
+> -		return result;
+> -	return ret;
+> +		mutex_unlock(&indio_dev->mlock);
+> +		if (result < 0)
+> +			return result;
+> +		return ret;
+>   	}
+>   
+> -	case IIO_CHAN_INFO_SCALE:
+> -	{
+> +	case IIO_CHAN_INFO_SCALE: {
+>   		switch (ch->type) {
+>   		case IIO_ANGL_VEL:
+>   			*val = 0;
+> @@ -618,8 +629,7 @@ static int bmg_read_raw(struct iio_dev *indio_dev,
+>   		}
+>   	}
+>   
+> -	case IIO_CHAN_INFO_OFFSET:
+> -	{
+> +	case IIO_CHAN_INFO_OFFSET: {
+>   		switch (ch->type) {
+>   		case IIO_TEMP:
+>   			*val = BMG_TEMP_OFFSET;
+> @@ -632,12 +642,11 @@ static int bmg_read_raw(struct iio_dev *indio_dev,
+>   	default:
+>   		return -EINVAL;
+>   	}
+> -
+>   }
+>   
+>   static int bmg_wirte_raw(struct iio_dev *indio_dev,
+> -			struct iio_chan_spec const *ch, int val,
+> -							int val2, long mask)
+> +			 struct iio_chan_spec const *ch, int val,
+> +			 int val2, long mask)
+>   {
+>   	int ret;
+>   	struct bmg_client_data *client_data = iio_priv(indio_dev);
+> @@ -689,19 +698,16 @@ static const struct iio_info bmg_iio_info = {
+>   	.write_raw = &bmg_wirte_raw,
+>   };
+>   
+> -
+> -
+> -
+>   static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   {
+>   	int err = 0;
+>   	struct iio_dev *indio_dev;
+>   	struct bmg_client_data *client_data = NULL;
+>   	struct device_node *np = client->dev.of_node;
+> -	dev_info(&client->dev, "function entrance");
+> +	dev_info(&client->dev, "function entrance\n");
+>   
+>   	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
+> -		dev_err(&client->dev, "i2c_check_functionality error!");
+> +		dev_err(&client->dev, "i2c_check_functionality error!\n");
+>   		err = -EIO;
+>   		goto exit_err_clean;
+>   	}
+> @@ -710,7 +716,7 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   		bmg_client = client;
+>   	} else {
+>   		dev_err(&client->dev,
+> -			"this driver does not support multiple clients");
+> +			"this driver does not support multiple clients\n");
+>   		err = -EINVAL;
+>   		goto exit_err_clean;
+>   	}
+> @@ -718,10 +724,10 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   	err = bmg_check_chip_id(client);
+>   	if (!err) {
+>   		dev_notice(&client->dev,
+> -			"Bosch Sensortec Device %s detected", SENSOR_NAME);
+> +			   "Bosch Sensortec Device %s detected\n", SENSOR_NAME);
+>   	} else {
+>   		dev_err(&client_data->client->dev,
+> -			"Bosch Sensortec Device not found, chip id mismatch");
+> +			"Bosch Sensortec Device not found, chip id mismatch\n");
+>   		err = -ENXIO;
+>   		goto exit_err_clean;
+>   	}
+> @@ -729,7 +735,7 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   	indio_dev = devm_iio_device_alloc(&client->dev, sizeof(*client_data));
+>   	if (indio_dev == NULL) {
+>   		dev_err(indio_dev->dev.parent,
+> -				"IIO device alloc err %d\n", err);
+> +			"IIO device alloc err %d\n", err);
+>   		return -ENOMEM;
+>   	}
+>   
+> @@ -740,7 +746,7 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>    * need to set in the dts file by using "gpio_int" key word.
+>    */
+>   	err = of_property_read_u32(np, "gpio_int",
+> -				&client_data->gpio_interrupt_pin);
+> +				   &client_data->gpio_interrupt_pin);
+>   	if (err) {
+>   		dev_err(&client_data->client->dev,
+>   			"Not found usable gpio interrupt pin!\n");
+> @@ -751,8 +757,7 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   	indio_dev->channels = bmg_16bit_raw_channels;
+>   	indio_dev->num_channels = ARRAY_SIZE(bmg_16bit_raw_channels);
+>   	indio_dev->info = &bmg_iio_info;
+> -	client_data->current_fullscale = (struct bmg_fullscale_avl *)
+> -							&bmg_fs_avl_array[0];
+> +	client_data->current_fullscale = bmg_fs_avl_array;
+>   	indio_dev->modes = INDIO_DIRECT_MODE;
+>   	/* h/w init */
+>   	client_data->device.bus_read = bmg_i2c_read_wrapper;
+> @@ -777,38 +782,37 @@ static int bmg_probe(struct i2c_client *client, const struct i2c_device_id *id)
+>   #endif
+>   
+>   	memcpy(&client_data->chip_config,
+> -			bmg_hw_info[client_data->chip_type].config,
+> -				sizeof(struct bmg_chip_config));
+> +	       bmg_hw_info[client_data->chip_type].config,
+> +	       sizeof(struct bmg_chip_config));
+>   	client_data->IRQ = client->irq;
+>   
+>   	err = bmg_allocate_ring(indio_dev);
+>   	if (err < 0) {
+>   		dev_err(indio_dev->dev.parent,
+> -				"bmg configure buffer fail %d\n", err);
+> +			"bmg configure buffer fail %d\n", err);
+>   		return err;
+>   	}
+>   	err = bmg_probe_trigger(indio_dev);
+>   	if (err) {
+>   		dev_err(indio_dev->dev.parent,
+> -				"bmg trigger probe fail %d\n", err);
+> +			"bmg trigger probe fail %d\n", err);
+>   		goto bmg_probe_trigger_error;
+>   	}
+>   	BMG_CALL_API(set_bw)(3); /*set bandwidth to 47Hz*/
+>   	err = iio_device_register(indio_dev);
+>   	if (err) {
+>   		dev_err(indio_dev->dev.parent,
+> -				"bmg IIO device register failed %d\n", err);
+> +			"bmg IIO device register failed %d\n", err);
+>   		goto bmg_probe_error;
+>   	}
+>   
+>   
+>   	BMG_CALL_API(set_data_enable)(INT_ENABLE);
+>   	/* now it's power on which is considered as resuming from suspend */
+> -	err = BMG_CALL_API(set_mode)(
+> -			BMG_VAL_NAME(MODE_SUSPEND));
+> +	err = BMG_CALL_API(set_mode)(BMG_VAL_NAME(MODE_SUSPEND));
+>   
+>   	dev_notice(indio_dev->dev.parent,
+> -		"IIO device sensor %s probed successfully", SENSOR_NAME);
+> +		   "IIO device sensor %s probed successfully\n", SENSOR_NAME);
+>   
+>   	return 0;
+>   
+> @@ -819,10 +823,8 @@ bmg_probe_trigger_error:
+>   exit_err_clean:
+>   	bmg_client = NULL;
+>   	return err;
+> -
+>   }
+>   
+> -
+>   static int bmg_remove(struct i2c_client *client)
+>   {
+>   	struct iio_dev *indio_dev = i2c_get_clientdata(client);
+> diff --git a/drivers/iio/gyro/bmg160_ring.c b/drivers/iio/gyro/bmg160_ring.c
+> index ffc51d1..0dadd97 100644
+> --- a/drivers/iio/gyro/bmg160_ring.c
+> +++ b/drivers/iio/gyro/bmg160_ring.c
+> @@ -10,7 +10,7 @@
+>   #include "bmg_iio.h"
+>   
+>   extern char bmg_i2c_burst_read(struct i2c_client *client, u8 reg_addr,
+> -		u8 *data, u16 len);
+> +			       u8 *data, u16 len);
+>   
+>   static irqreturn_t bmg_buffer_handler(int irq, void *p)
+>   {
+> @@ -30,9 +30,9 @@ static irqreturn_t bmg_buffer_handler(int irq, void *p)
+>   	if (client_data->chip_config.gyro_fifo_enable)
+>   		bytes_per_datum = BMG160_BYTES_PER_3AXIS_SENSOR;
+>   /*
+> -* There is new data to push to IIO ring buffer
+> -* please give attentions to the data format
+> -*/
+> + * There is new data to push to IIO ring buffer
+> + * please give attentions to the data format
+> + */
+>   	BMG_CALL_API(get_dataxyz)(&client_data->value);
+>   
+>   	buffer_data_out[0] = client_data->value.datax & 0xff;
+> @@ -42,28 +42,23 @@ static irqreturn_t bmg_buffer_handler(int irq, void *p)
+>   	buffer_data_out[4] = client_data->value.dataz & 0xff;
+>   	buffer_data_out[5] = (client_data->value.dataz >> 8) & 0xff;
+>   	/*for every frame, need 8 bytes to axis data storage*/
+> -	iio_push_to_buffers_with_timestamp(indio_dev, buffer_data_out, timestamp);
+> -
+> +	iio_push_to_buffers_with_timestamp(indio_dev, buffer_data_out,
+> +					   timestamp);
+>   
+>   bmg_buffer_handler_error:
+>   	mutex_unlock(&indio_dev->mlock);
+>   	iio_trigger_notify_done(indio_dev->trig);
+>   
+>   	return IRQ_HANDLED;
+> -
+>   }
+>   
+> -
+>   int bmg_allocate_ring(struct iio_dev *indio_dev)
+>   {
+>   	return iio_triggered_buffer_setup(indio_dev, &iio_pollfunc_store_time,
+> -			&bmg_buffer_handler, NULL);
+> +					  &bmg_buffer_handler, NULL);
+>   }
+>   
+>   void bmg_deallocate_ring(struct iio_dev *indio_dev)
+>   {
+>   	iio_triggered_buffer_cleanup(indio_dev);
+>   }
+> -
+> -
+> -
+> diff --git a/drivers/iio/gyro/bmg160_trigger.c b/drivers/iio/gyro/bmg160_trigger.c
+> index a374c72..b749c94 100644
+> --- a/drivers/iio/gyro/bmg160_trigger.c
+> +++ b/drivers/iio/gyro/bmg160_trigger.c
+> @@ -13,58 +13,56 @@
+>   #include <linux/gpio.h>
+>   #include <linux/of_irq.h>
+>   
+> -
+>   static void bmg_scan_query(struct iio_dev *indio_dev)
+>   {
+> -	 struct bmg_client_data *client_data = iio_priv(indio_dev);
+> +	struct bmg_client_data *client_data = iio_priv(indio_dev);
+>   
+> -	 client_data->chip_config.gyro_fifo_enable =
+> +	client_data->chip_config.gyro_fifo_enable =
+>   		test_bit(BMG_SCAN_GYRO_X, indio_dev->active_scan_mask) ||
+>   		test_bit(BMG_SCAN_GYRO_Y, indio_dev->active_scan_mask) ||
+>   		test_bit(BMG_SCAN_GYRO_Z, indio_dev->active_scan_mask);
+>   }
+>   
+> - /**
+> -  *  bmg_set_trig_ready_enable() - enable related functions such as new data mode.
+> -  *  @indio_dev: Device driver instance.
+> -  *  @enable: enable/disable
+> -  */
+> +/**
+> + *  bmg_set_trig_ready_enable() - enable related functions such as new data mode.
+> + *  @indio_dev: Device driver instance.
+> + *  @enable: enable/disable
+> + */
+>   static int bmg_set_trig_ready_enable(struct iio_dev *indio_dev, bool enable)
+>   {
+> -	 struct bmg_client_data *client_data = iio_priv(indio_dev);
+> +	struct bmg_client_data *client_data = iio_priv(indio_dev);
+>   
+>   	if (enable) {
+>   		bmg_scan_query(indio_dev);
+>   		if (client_data->chip_config.gyro_fifo_enable)
+> -			dev_notice(indio_dev->dev.parent, "bmg scan query active enable.\n");
+> +			dev_notice(indio_dev->dev.parent, "bmg scan query active enable\n");
+>   #if defined(BMG160_ENABLE_INT1) || defined(BMG160_ENABLE_INT2)
+> -	BMG_CALL_API(set_data_enable)(INT_ENABLE);
+> -	dev_notice(indio_dev->dev.parent, "bmg new data ready enable.\n");
+> +		BMG_CALL_API(set_data_enable)(INT_ENABLE);
+> +		dev_notice(indio_dev->dev.parent, "bmg new data ready enable\n");
+>   #endif
+>   	} else {
+> -	BMG_CALL_API(set_reset_int)(1);
+> +		BMG_CALL_API(set_reset_int)(1);
+>   #if defined(BMG160_ENABLE_INT1) || defined(BMG160_ENABLE_INT2)
+> -	BMG_CALL_API(set_data_enable)(INT_DISABLE);
+> -	dev_notice(indio_dev->dev.parent, "bmg new data ready disabled.\n");
+> +		BMG_CALL_API(set_data_enable)(INT_DISABLE);
+> +		dev_notice(indio_dev->dev.parent, "bmg new data ready disabled\n");
+>   #endif
+>   	}
+> -	 return 0;
+> +	return 0;
+>   }
+>   
+> - /**
+> -  * bmg_data_rdy_trigger_set_state() - set data ready state
+> -  * @trig: Trigger instance
+> -  * @state: Desired trigger state
+> -  */
+> -static int bmg_data_rdy_trigger_set_state(struct iio_trigger *trig,
+> -						 bool state)
+> +/**
+> + * bmg_data_rdy_trigger_set_state() - set data ready state
+> + * @trig: Trigger instance
+> + * @state: Desired trigger state
+> + */
+> +static int bmg_data_rdy_trigger_set_state(struct iio_trigger *trig, bool state)
+>   {
+>   	return bmg_set_trig_ready_enable(iio_trigger_get_drvdata(trig), state);
+>   }
+>   
+>   static const struct iio_trigger_ops bmg_trigger_ops = {
+> -	 .owner = THIS_MODULE,
+> -	 .set_trigger_state = &bmg_data_rdy_trigger_set_state,
+> +	.owner = THIS_MODULE,
+> +	.set_trigger_state = &bmg_data_rdy_trigger_set_state,
+>   };
+>   
+>   int bmg_probe_trigger(struct iio_dev *indio_dev)
+> @@ -73,8 +71,8 @@ int bmg_probe_trigger(struct iio_dev *indio_dev)
+>   	struct bmg_client_data *client_data = iio_priv(indio_dev);
+>   	int irq_num = 0;
+>   	client_data->trig = iio_trigger_alloc("%s-dev%d",
+> -					 indio_dev->name,
+> -					 indio_dev->id);
+> +					      indio_dev->name,
+> +					      indio_dev->id);
+>   	if (client_data->trig == NULL) {
+>   		ret = -ENOMEM;
+>   		dev_err(&indio_dev->dev, "bmg failed to allocate iio trigger.\n");
+> @@ -84,10 +82,10 @@ int bmg_probe_trigger(struct iio_dev *indio_dev)
+>   	gpio_direction_input(client_data->gpio_interrupt_pin);
+>   	irq_num = gpio_to_irq(client_data->gpio_interrupt_pin);
+>   	ret = devm_request_irq(irq_num, &iio_trigger_generic_data_rdy_poll, 0,
+> -					"bmg_iio_int", client_data->trig);
+> +			       "bmg_iio_int", client_data->trig);
+>   	if (ret) {
+>   		dev_err(&client_data->client->dev,
+> -				"bmg could not request irq! err = %d\n", ret);
+> +			"bmg could not request irq! err = %d\n", ret);
+>   		goto error_irq_request;
+>   	}
+>   	/*gpio interrupt trig type*/
+> @@ -96,20 +94,20 @@ int bmg_probe_trigger(struct iio_dev *indio_dev)
+>   	client_data->trig->dev.parent = &client_data->client->dev;
+>   	client_data->trig->ops = &bmg_trigger_ops;
+>   	ret = iio_trigger_register(client_data->trig);
+> -	 if (ret < 0) {
+> -		dev_err(&indio_dev->dev, "bmg iio trigger failed to register.\n");
+> +	if (ret < 0) {
+> +		dev_err(&indio_dev->dev, "bmg iio trigger failed to register\n");
+>   		goto erro_iio_trigger_register;
+> -	 }
+> -	 indio_dev->trig = client_data->trig;
+> +	}
+> +	indio_dev->trig = client_data->trig;
+>   
+> -	 return 0;
+> +	return 0;
+>   
+>   erro_iio_trigger_register:
+>   	free_irq(gpio_to_irq(client_data->client->irq), client_data->trig);
+> - error_irq_request:
+> -	 iio_trigger_free(client_data->trig);
+> - error_alloc_trigger:
+> -	 return ret;
+> +error_irq_request:
+> +	iio_trigger_free(client_data->trig);
+> +error_alloc_trigger:
+> +	return ret;
+>   }
+>   
+>   void bmg_remove_trigger(struct iio_dev *indio_dev)
+> @@ -119,4 +117,3 @@ void bmg_remove_trigger(struct iio_dev *indio_dev)
+>   	free_irq(client_data->client->irq, client_data->trig);
+>   	iio_trigger_free(client_data->trig);
+>   }
+> -
+>
+>
+> --
+> To unsubscribe from this list: send the line "unsubscribe linux-iio" in
+> the body of a message to majordomo@vger.kernel.org
+> More majordomo info at  http://vger.kernel.org/majordomo-info.html
+>
+
