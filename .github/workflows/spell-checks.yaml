@@ -54,3 +54,16 @@ jobs:
           submodules: true
       - uses: actions-rust-lang/setup-rust-toolchain@v1
       - run: cargo doc --all-features --no-deps
+
+  spell_check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Writes changes in the local checkout
+        uses: crate-ci/typos@v1
+        with:
+          write_changes: true
