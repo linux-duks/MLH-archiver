@@ -9,7 +9,7 @@ from mlh_parser.constants import (
 logger = logging.getLogger(__name__)
 
 
-# TODO: use to filder for wanted headers only
+# TODO: use to folder for wanted headers only
 def filter_data(data: dict) -> dict:
     result_dict = {key: data.get(key, "") for key in KEYS_MASK}
     return result_dict

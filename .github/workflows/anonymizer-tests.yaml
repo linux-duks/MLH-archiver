@@ -1,4 +1,4 @@
-name: Anonymizer Lint
+name: Anonymizer Test
 
 on:
   push:
@@ -7,8 +7,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  anonymizer-lint:
-    uses: ./.github/workflows/py-lint.yaml
+  anonymizer-tests:
+    uses: ./.github/workflows/py-tests.yaml
+    name: anonymizer-tests
     with:
       path: ./anonymizer
 

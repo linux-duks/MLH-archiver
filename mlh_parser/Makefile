@@ -29,12 +29,12 @@ test:
 
 .PHONY: run
 run:
-	@if [ ! -d "../parser_output/parsed" ] || [ -z "$$(ls ../parser_output/parsed 2>/dev/null)" ]; then \
-		echo "==> Error: '../parser_output/parsed' directory is missing or empty."; \
-		echo "==> Please run the parser first to generate the dataset."; \
+	@if [ ! -d "output" ] || [ -z "$$(ls output 2>/dev/null)" ]; then \
+		echo "==> Error: 'output' directory is missing or empty."; \
+		echo "==> Please run the archiver first to generate files."; \
 		exit 1; \
 	else \
-		echo "==> Running anonymizer..."; \
+		echo "==> Running parser..."; \
 		$(CONTAINER)-compose up && $(CONTAINER)-compose down -v; \
 	fi
 
@@ -46,12 +46,12 @@ rebuild:
 
 .PHONY: debug
 debug:
-	INPUT_DIR="../parser_output/parsed" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
+	INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
 
 
 .PHONY: clean
 clean:
-	@echo "==> Cleaning up anonymizer artifacts..."
+	@echo "==> Cleaning up parser artifacts..."
 	@rm -rf .venv
 	@rm -rf .nox
 	@rm -rf .ruff_cache

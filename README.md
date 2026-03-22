@@ -31,7 +31,7 @@ Usage: mlh-archiver [OPTIONS]
 Options:
   -c, --config-file <CONFIG_FILE>      [default: nntp_config*]
   -H, --hostname <HOSTNAME>            nntp server domain/ip
-  -p, --port <PORT>                    nntp serrver port [default: 119]
+  -p, --port <PORT>                    nntp server port [default: 119]
   -o, --output-dir <OUTPUT_DIR>        where results will be stored [default: ./output]
   -n, --nthreads <NTHREADS>            Number of worker threads connecting to different lists [default: 1]
   -l, --loop-groups                    If true, the app will keep running forever. Otherwise, stop after reading all groups
@@ -62,7 +62,7 @@ group_lists:
 
 The archiver is implemented in rust, and uses a NNTP library we forked.
 It is designed to be a multi-thread* process that can keep the local files up-to-date with the articles (emails) available in the NNTP server.
-It is, however, not designed to pull emails as fast as possible, as it could be seen as a malicious our abusive scraping bot.
+It is, however, not designed to pull emails as fast as possible, as it could be seen as a malicious or abusive scraping bot.
 
 > *Each thread is able to check one mail-group (mailing list) at a time from the server.
 > A thread will only fetch one email at a time.
@@ -92,3 +92,65 @@ This script will replace user identification by SHA1 digests, and produce a more
 
 There are example analyses that were used during research in the [./analysis](./analysis) folder.
 They can be run with `make analysis`. The output will be stored in [./analysis/results/](./analysis/results/) folder.
+
+# Build System
+
+This project provides two ways to run commands: using **Make** or **devbox**.
+
+## Makefile Commands
+
+The root `Makefile` orchestrates all components. Run commands from the project root:
+
+| Command | Description |
+|---------|-------------|
+| `make` or `make all` | Build and run the archiver |
+| `make build` | Build the archiver (Rust) |
+| `make run` | Run the archiver |
+| `make parse` | Run the mailing list parser |
+| `make anonymize` | Run the anonymizer |
+| `make analysis` | Run example analyses |
+| `make rebuild` | Rebuild all components |
+| `make test` | Run all tests |
+| `make test-archiver` | Run archiver tests only |
+| `make test-parser` | Run parser tests only |
+| `make test-anonymizer` | Run anonymizer tests only |
+| `make clean` | Clean all build artifacts |
+| `make debug-parser` | Run parser in debug mode |
+| `make debug-anonymizer` | Run anonymizer in debug mode |
+| `make debug-analysis` | Run analysis in debug mode |
+
+### Prerequisites
+
+- **Archiver**: Requires Rust/Cargo, or Podman/Docker for containerized builds
+- **Parser & Anonymizer**: Requires Podman/Podman-compose or Docker/Docker-compose
+
+## Devbox Commands
+
+[Devbox](https://www.jetify.com/devbox/) is a command-line tool that lets you easily create isolated shells for development. It uses Nix packages to be portable across different systems. See the [installation guide](https://www.jetify.com/docs/devbox/quickstart) to get started.
+
+If using devbox for development environment management, all commands are available as scripts:
+
+| Command | Description |
+|---------|-------------|
+| `devbox run build` | Build the archiver |
+| `devbox run run` | Run the archiver |
+| `devbox run parse` | Run the mailing list parser |
+| `devbox run anonymize` | Run the anonymizer |
+| `devbox run analysis` | Run example analyses |
+| `devbox run rebuild` | Rebuild all components |
+| `devbox run test` | Run all tests |
+| `devbox run test-archiver` | Run archiver tests only |
+| `devbox run test-parser` | Run parser tests only |
+| `devbox run test-anonymizer` | Run anonymizer tests only |
+| `devbox run clean` | Clean all build artifacts |
+| `devbox run debug-parser` | Run parser in debug mode |
+| `devbox run debug-anonymizer` | Run anonymizer in debug mode |
+| `devbox run debug-analysis` | Run analysis in debug mode |
+
+### Setting up Devbox
+
+```bash
+devbox shell
+```
+
+This will set up the development environment with all required dependencies (Python, uv, Rust, etc.).

@@ -54,9 +54,9 @@ def parse_mail_at(mailing_list):
             return None
 
     try:
-        # all operatins will be done on a list of dataframes
+        # all operations will be done on a list of dataframes
         # first, create the split datasets generator
-        def dataset_gnerator() -> pl.DataFrame:
+        def dataset_generator() -> pl.DataFrame:
             for split_column in SPLIT_DATASET_COLUMNS:
                 # use the base dataset every time
                 df = read_dataset()
@@ -73,7 +73,7 @@ def parse_mail_at(mailing_list):
         process_dataframe(read_dataset(), "__main_dataset", input_path, mailing_list)
 
         # run the first dataset before going into the generator
-        for dataset_name, df in itertools.chain(dataset_gnerator()):
+        for dataset_name, df in itertools.chain(dataset_generator()):
             process_dataframe(df, dataset_name, input_path, mailing_list)
 
     except Exception as e:

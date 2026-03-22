@@ -1,10 +1,11 @@
 name: Python Test
 
-workflow_call:
-  inputs:
-    path:
-      required: true
-      type: string
+on:
+  workflow_call:
+    inputs:
+      path:
+        required: true
+        type: string
 
 jobs:
   python-tests:
@@ -13,7 +14,6 @@ jobs:
     strategy:
       matrix:
         python-version:
-          - "3.12"
           - "3.14"
 
     steps:
