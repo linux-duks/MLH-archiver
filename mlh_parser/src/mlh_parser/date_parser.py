@@ -2,6 +2,7 @@ import datetime
 import re
 from email import utils
 from dateutil import parser as date_parser
+import datetime as dt
 import functools
 import logging
 
@@ -11,6 +12,11 @@ logger = logging.getLogger(__name__)
 def process_date(email_as_dict):
     if not isinstance(email_as_dict["date"], list):
         email_as_dict["date"] = [email_as_dict["date"]]
+
+    # fill client-date column, with all dates reported by the client
+    email_as_dict["client-date"] = email_as_dict["date"]
+    # the "date" column will be replaced by our best-effort
+    #  to parse and correct the actual email date
 
     date_options = []
     for date in email_as_dict["date"]:
@@ -63,21 +69,19 @@ def last_effort_date_finder(date_text):
         date_text = date_text[: date_text.index("(")].strip()
 
     try:
-        date = date_parser.parse(date_text, ignoretz=True)
+        date = date_parser.parse(date_text)
     except:
         try:
-            date = date_parser.parse(date_text.replace(".", ":"), ignoretz=True)
+            date = date_parser.parse(date_text.replace(".", ":"))
         except:
             try:
                 date = date_parser.parse(
                     date_text[: len("Fri, 15 Jun 2012 16:52:52")].strip(),
-                    ignoretz=True,
                 )
             except:
                 try:
                     date = date_parser.parse(
                         date_text[: len("Fri, 5 Jun 2012 16:52:52")].strip(),
-                        ignoretz=True,
                     )
                 except:
                     date = None
@@ -89,7 +93,7 @@ def parse_date_tentative(date):
         return None
     date_value = None
     try:
-        date_value = date_parser.parse(date, ignoretz=True)
+        date_value = date_parser.parse(date)
         return date_value
 
     except Exception as e:
@@ -130,7 +134,12 @@ def fix_milenium_date(date_obj) -> datetime.datetime:
 
 @functools.lru_cache(maxsize=128)
 def is_date_future(date_obj) -> bool:
-    return date_obj > get_forgiving_future_date()
+    future = get_forgiving_future_date()
+    # Make comparison timezone-safe: if date_obj is aware, make future aware too
+    if date_obj.tzinfo is not None:
+        # Use UTC for the future date comparison
+        future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)
+    return date_obj > future
 
 
 # singleton date. No need to reload it every time
@@ -178,9 +187,7 @@ class StringDateFinder:
     datepattern = None
 
     def __init__(self):
-        # TODO: detect tz
-        # rfc2822 =    r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-1][0-9]{3}|[0-1][0-9]{2}|19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s+([-\+][0-9]{2}[0-5][0-9]|(?:UT|GMT|(?:E|C|M|P)(?:ST|DT)|[A-IK-Z]))(\s+|\(([^\(\)]+|\\\(|\\\))*\))*"
-        rfc2822_notz = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-1][0-9]{3}|[0-1][0-9]{2}|19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s*"
+        rfc2822 = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-1][0-9]{3}|[0-1][0-9]{2}|19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s+([-\+][0-9]{2}[0-5][0-9]|(?:UT|GMT|(?:E|C|M|P)(?:ST|DT)|[A-IK-Z]))(\s+|\(([^\(\)]+|\\\(|\\\))*\))*"
         pat1123 = r"\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} \w{3}"
         pat1036 = r"\w+?, \d{2}-\w{3}-\d{2} \d{2}:\d{2}:\d{2} \w{3}"
         patc = r"\w{3} \w{3} \d+? \d{2}:\d{2}:\d{2} \d{4}"
@@ -188,7 +195,7 @@ class StringDateFinder:
         self.datepattern = re.compile(
             "(?:%s)|(?:%s)|(?:%s)|(?:%s)"
             % (
-                rfc2822_notz,
+                rfc2822,
                 pat1123,
                 pat1036,
                 patc,

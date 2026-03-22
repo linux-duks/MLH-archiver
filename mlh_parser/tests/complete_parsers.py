@@ -4,15 +4,17 @@ from mlh_parser.parser import parse_and_process_email
 from .helpers import list_files_with_extension, map_to_file_extensions
 
 
-directory = "./real_cases/"
+directory = "./complete_cases/"
 email_files = list_files_with_extension(directory, ".eml")
 
-real_mail_files = [
-    map_to_file_extensions(email_f, [".code.pytest", ".trailers.pytest"]) for email_f in email_files
+complete_mail_files = [
+    map_to_file_extensions(email_f, [".code.pytest", ".trailers.pytest"])
+    for email_f in email_files
 ]
 
-@pytest.mark.parametrize("email_file, code_file, trailers_file", real_mail_files)
-def test_real_mails(email_file, code_file, trailers_file) -> None:
+
+@pytest.mark.parametrize("email_file, code_file, trailers_file", complete_mail_files)
+def test_complete_mails(email_file, code_file, trailers_file) -> None:
     mail_text = io.open(email_file, mode="rb").read()
     code = eval(io.open(code_file, mode="r", encoding="utf-8").read())
     trailers = eval(io.open(trailers_file, mode="r", encoding="utf-8").read())
