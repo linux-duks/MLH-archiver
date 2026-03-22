@@ -1,7 +1,7 @@
 name: Parser Test
 
 on:
-  pull_request:
+  push:
       paths:
       - 'mlh_parser/**'
   workflow_dispatch:

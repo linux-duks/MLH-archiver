@@ -1,7 +1,7 @@
 name: Anonymizer Test
 
 on:
-  pull_request:
+  push:
       paths:
       - 'anonymizer/**'
   workflow_dispatch:
