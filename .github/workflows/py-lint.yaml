@@ -1,0 +1,33 @@
+name: Lint Python
+
+workflow_call:
+  inputs:
+    path:
+      required: true
+      type: string
+
+jobs:
+  python-lint:
+    name: Python Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version:
+          - "3.12"
+          - "3.14"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv and set the Python version
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install the project
+        run: cd ${{ inputs.path }} && uv sync --locked --all-extras --dev
+
+      - uses: astral-sh/ruff-action@v3
+        name: Run linter
+        with:
+          src: ${{ inputs.path }}

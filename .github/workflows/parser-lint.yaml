@@ -1,0 +1,14 @@
+name: Parser Lint
+
+on:
+  pull_request:
+      paths:
+      - 'mlh_parser/**'
+  workflow_dispatch:
+
+jobs:
+  parser-lint:
+    uses: ./.github/workflows/py-lint.yaml
+    with:
+      path: ./mlh_parser
+

@@ -1,0 +1,14 @@
+name: Anonymizer Lint
+
+on:
+  pull_request:
+      paths:
+      - 'anonymizer/**'
+  workflow_dispatch:
+
+jobs:
+  anonymizer-lint:
+    uses: ./.github/workflows/py-lint.yaml
+    with:
+      path: ./anonymizer
+

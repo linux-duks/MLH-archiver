@@ -12,7 +12,8 @@ BINARY_NAME = mlh-archiver
 TARGET_PATH = ./target/release/$(BINARY_NAME)
 
 # Define the Docker image to use for building
-DOCKER_IMAGE = docker.io/rust:1.91-slim
+RUST_DOCKER_IMAGE = docker.io/rust:1.91-slim
+PYTHON_DOCKER_IMAGE = ghcr.io/astral-sh/uv:python3.14-trixie-slim
 
 # ==============================================================================
 
@@ -38,13 +39,13 @@ build:
 		cd mlh-archiver && \
 		cargo build --release; \
 	else \
-		echo "==> Rust toolchain not found, building with Docker (Image: $(DOCKER_IMAGE))..."; \
+		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
 			--network=host \
 			-v ./:/usr/src/app:z \
 			-w /usr/src/app \
-			$(DOCKER_IMAGE) \
+			$(RUST_DOCKER_IMAGE) \
 			cargo build --release; \
 	fi
 	@echo "==> Copying binary '$(BINARY_NAME).out' from target..."
@@ -123,9 +124,24 @@ rebuild: rebuild-parser rebuild-analysis rebuild-parser
 debug-parser:
 	cd mlh_parser && INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
 
-test-parser:
-	cd mlh_parser && uv tool run nox
 
 debug-anonimyzer:
 	cd anonymizer && INPUT_DIR="../parser_output/parsed" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
 
+# TESTS
+#
+
+test-parser:
+	@if command -v noxx >/dev/null 2>&1; then \
+		echo "==> Found Python Testing toolchain, running natively..."; \
+		cd mlh_parser  && nox; \
+	else \
+		echo "==> Python Testing toolchain not found, running with Docker (Image: $(PYTHON_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-v ./mlh_parser/:/usr/src/app:z \
+			-w /usr/src/app \
+			$(PYTHON_DOCKER_IMAGE) \
+			bash -c "uv tool install nox && uv sync --locked && nox"; \
+	fi

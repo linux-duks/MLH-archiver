@@ -1,0 +1,64 @@
+Return-Path: <linux-kernel-owner+w=401wt.eu-S1755573AbXFYMo0@vger.kernel.org>
+Received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand
+	id S1755573AbXFYMo0 (ORCPT <rfc822;w@1wt.eu>);
+	Mon, 25 Jun 2007 08:44:26 -0400
+Received: (majordomo@vger.kernel.org) by vger.kernel.org id S1755445AbXFYMoR
+	(ORCPT <rfc822;linux-kernel-outgoing>);
+	Mon, 25 Jun 2007 08:44:17 -0400
+Received: from ausmtp04.au.ibm.com ([202.81.18.152]:53931 "EHLO
+	ausmtp04.au.ibm.com" rhost-flags-OK-OK-OK-OK) by vger.kernel.org
+	with ESMTP id S1753491AbXFYMoP (ORCPT
+	<rfc822;linux-kernel@vger.kernel.org>);
+	Mon, 25 Jun 2007 08:44:15 -0400
+Message-ID: <6D63B142.2080404@linux.vnet.ibm.com>
+Date: Sun, 27 Feb 2028 02:39:46 -0500
+From: Balbir Singh <balbir@linux.vnet.ibm.com>
+Reply-To: balbir@linux.vnet.ibm.com
+Organization: IBM
+User-Agent: Thunderbird 1.5.0.12 (X11/20070604)
+MIME-Version: 1.0
+To: Paul Menage <menage@google.com>
+CC: Linux Containers <containers@lists.osdl.org>,
+       Linux Kernel Mailing List <linux-kernel@vger.kernel.org>,
+       Pavel Emelianov <xemul@openvz.org>
+Subject: Re: [patch -rss] Make RSS accounting display more user friendly
+References: <20070620154655.13844.42876.sendpatchset@balbir-laptop> <6599ad830706211217l65d76d4ehb42f9165bcf45dd@mail.gmail.com> <467B2F4F.2030101@openvz.org> <6599ad830706220839h2a556c76he11b78c2c4cdb86e@mail.gmail.com> <661de9470706222048g638a06dboc0b2e85975a9ba70@mail.gmail.com> <6599ad830706250019h117ff575h156cf112f5778e43@mail.gmail.com>
+In-Reply-To: <6599ad830706250019h117ff575h156cf112f5778e43@mail.gmail.com>
+Content-Type: text/plain; charset=ISO-8859-1
+Content-Transfer-Encoding: 7bit
+Sender: linux-kernel-owner@vger.kernel.org
+X-Mailing-List: linux-kernel@vger.kernel.org
+Xref: nntp.lore.kernel.org org.kernel.vger.linux-kernel:634518
+Newsgroups: org.kernel.vger.linux-kernel
+Path: nntp.lore.kernel.org!not-for-mail
+
+Paul Menage wrote:
+> On 6/22/07, Balbir Singh <balbir@linux.vnet.ibm.com> wrote:
+>>
+>> The problem with input in bytes is that the user will have to ensure
+>> that the input is
+>> a  multiple of page size, which implies that she would need to use the
+>> calculator every time.
+>>
+> 
+> Having input in bytes seems pretty natural to me. Why not just have
+> the RSS controller round the input to the nearest page (or whatever
+> granularity of memory the controller is able to limit at)?
+> 
+> Paul
+
+Hi, Paul,
+
+I am not a CLUI expert, but rounding off bytes will something that
+the administrators will probably complain about. Since we manage
+the controller memory in pages, it might be the easiest unit to use.
+The output is totally different matter.
+
+Having said that, I am not opposed to your suggestion, I'll see if
+I can find good CLUI guidelines.
+
+-- 
+	Warm Regards,
+	Balbir Singh
+	Linux Technology Center
+	IBM, ISTL

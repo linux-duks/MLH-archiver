@@ -1,0 +1,215 @@
+Return-Path: <u-boot-bounces@lists.denx.de>
+X-Spam-Checker-Version: SpamAssassin 3.4.0 (2014-02-07) on
+	aws-us-west-2-korg-lkml-1.web.codeaurora.org
+Received: from phobos.denx.de (phobos.denx.de [85.214.62.61])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by smtp.lore.kernel.org (Postfix) with ESMTPS id 1A6CACCFA04
+	for <u-boot@archiver.kernel.org>; Tue,  4 Nov 2025 22:14:54 +0000 (UTC)
+Received: from h2850616.stratoserver.net (localhost [IPv6:::1])
+	by phobos.denx.de (Postfix) with ESMTP id 9F41483979;
+	Tue,  4 Nov 2025 23:14:52 +0100 (CET)
+Authentication-Results: phobos.denx.de; dmarc=none (p=none dis=none) header.from=bryanhinton.com
+Authentication-Results: phobos.denx.de; spf=pass smtp.mailfrom=u-boot-bounces@lists.denx.de
+Authentication-Results: phobos.denx.de;
+	dkim=pass (2048-bit key; unprotected) header.d=bryanhinton.com header.i=@bryanhinton.com header.b="IFU1jfnO";
+	dkim-atps=neutral
+Received: by phobos.denx.de (Postfix, from userid 109)
+ id 219148397A; Tue,  4 Nov 2025 23:14:51 +0100 (CET)
+Received: from outbound.mr.icloud.com
+ (p-west2-cluster3-host9-snip4-8.eps.apple.com [57.103.69.71])
+ (using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits))
+ (No client certificate requested)
+ by phobos.denx.de (Postfix) with ESMTPS id D864683942
+ for <u-boot@lists.denx.de>; Tue,  4 Nov 2025 23:14:48 +0100 (CET)
+Authentication-Results: phobos.denx.de; dmarc=none (p=none dis=none)
+ header.from=bryanhinton.com
+Authentication-Results: phobos.denx.de;
+ spf=pass smtp.mailfrom=bryan@bryanhinton.com
+Received: from outbound.mr.icloud.com (unknown [127.0.0.2])
+ by p00-icloudmta-asmtp-us-west-2a-60-percent-3 (Postfix) with ESMTPS id
+ 6F79D18003F2; Tue,  4 Nov 2025 22:14:47 +0000 (UTC)
+Dkim-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=bryanhinton.com; s=sig1;
+ bh=+GA64Pl8R8SNnEs0KZowc/nlN7FoXk03KrJz+FSNIcY=;
+ h=From:To:Subject:Date:Message-ID:Content-Type:x-icloud-hme;
+ b=IFU1jfnOYXsefCdQs0yswyie6u/KjFwInaTQrtMhG3Z1As5/v+u4XUfcdc2FE+JLtX8ECSSK7ueJott9vm9ZCs6Zih3I3Ec3nytEyO70rrWGY0UOY/c3WzJ+MK/EGJ/AUdRHqB9BvNMFcEO9ivSpjm2ie+7b/Z1qx1i+EMd3BrHbkOMsHovjsLiZ+avnEjFoAfSFWojz52HYyInkDXsmn07R3LvXdckh+6Q6/6vQXjv7P3GAHjw07bdaq+HuarQ8FIwrt/f/IxhNICNiRr0h+XOp8FTAJ4Z7pbzH6o/ABzc5UvCoLfsUH/FPs4+rsJj6A3sVsTH7vgkV34T+xgnyRA==
+mail-alias-created-date: 1643268037438
+Received: from localhost (unknown [17.57.152.38])
+ by p00-icloudmta-asmtp-us-west-2a-60-percent-3 (Postfix) with ESMTPSA id
+ 314A518003C6; Tue,  4 Nov 2025 22:14:47 +0000 (UTC)
+From: bryan@bryanhinton.com
+To: Jonas Karlman <jonas@kwiboo.se>
+Cc: Tom Rini <tom@trini.net>, u-boot@lists.denx.de
+Subject: Re: [v2,0/2] rockchip: Add support for ROCK 5B+
+In-Reply-To: <20250801170933.2530191-1-jonas@kwiboo.se>
+References: <20250801170933.2530191-1-jonas@kwiboo.se>
+Date: $(date -R)
+Message-ID: <$(uuidgen)@bryanhinton.com>
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+X-Proofpoint-Spam-Details-Enc: AW1haW4tMjUxMTA0MDE4NyBTYWx0ZWRfX21qRpC01nHoK
+ mkkNYLFJtRLMb9VwBWyR+LGypgy4WTicCo3HwIGVsLrFhhQxouAcnDQ+eiSqKBcswe41sL2qrnf
+ cmXS/9RoDXo9qEtWWbQeb5KHBTGCNMCzhRMHBHbThiFqVZ6r+SxWajwm5jW1PrlVfr04VyICQya
+ /BApjiAhTWosMSWa2CZ6eI21VopLnItArDsrdnR68jteZWOO2HYBjuyRvBlUxrG/3U5BzhfazE/
+ arYkWuSjvQeq9MM8SLlVH9fcppBrBopslObmofiv8RVhypV1UZmmhMoQkfIx6Pqdk3E7+ss6Srd
+ HHTjtkfk9PBQjCp8XwU
+X-Proofpoint-GUID: -qYOXgVA8wVCvnp2yhvAreplZQdXIpfB
+X-Authority-Info: v=2.4 cv=G7gR0tk5 c=1 sm=1 tr=0 ts=690a7ad7 cx=c_apl:c_pps
+ a=9OgfyREA4BUYbbCgc0Y0oA==:117 a=9OgfyREA4BUYbbCgc0Y0oA==:17
+ a=IkcTkHD0fZMA:10 a=6UeiqGixMTsA:10 a=yyIQ4Ub9AAAA:8 a=GFwiHdNeYq6fmFWKHb4A:9
+ a=3ZKOabzyN94A:10 a=QEXdDO2ut3YA:10 a=rzDBUVUxiSc7n6oCI6VQ:22
+X-Proofpoint-ORIG-GUID: -qYOXgVA8wVCvnp2yhvAreplZQdXIpfB
+X-Proofpoint-Virus-Version: vendor=baseguard
+ engine=ICAP:2.0.293,Aquarius:18.0.1121,Hydra:6.1.9,FMLib:17.12.100.49
+ definitions=2025-11-04_04,2025-11-03_03,2025-10-01_01
+X-Proofpoint-Spam-Details: rule=notspam policy=default score=0 bulkscore=0
+ spamscore=0 mlxlogscore=707 malwarescore=0 mlxscore=0 suspectscore=0
+ clxscore=1030 phishscore=0 adultscore=0 classifier=spam authscore=0 adjust=0
+ reason=mlx scancount=1 engine=8.22.0-2509250000 definitions=main-2511040187
+X-JNJ: AAAAAAABezYhdgoJ2E5fRjnUPK8itpuI112wUTboPTCnI3vmYbCIwQf6swl5PNBz2I5LYOgfU/YBCpcIRDNv350LrDSm9rklE5uD0IL46jS0JDHeIU/HsfF4BuAO5tkSVHsK+Qw1fFpIVEgTTpr+0WJBJr44mPDHPtHBFoJhRnM0beUIrijkumwG1zCVQLg/xAZnxT5DH2MN6BkgXrDS31GzzlsXRYNvxElNZYqFWeRQLDFPlxYsgJZuzPEaz/7TfVfP7Pt2M7hmLTaFQvArgNYjLYxzXIzJCPYcFRR5Gjt0eCjsB3GqVLnHBlzWWxALGATkN5HRx3G3f8MSwflGgkLEZzdT8ssbX3Kon++z4o6gDDeJkbsDsaqC+nugQso9PM9ld+uytHhveYQWBNUoV4HK3aaIzaCYbxCiXMwo1Zy8bGkiUzP6bRDDa+C+X67fEgKqgII3lhqHWa36TzzU08aEeamjSex2LvXIXUkY4FdHNLVtpM4v99Wh9Y92JUfkvqtJwdQgRWac0pfJ8i0bKN3CYs90CUUIwybrOuLTQGA6BLCCpZo8cxoWQW9tPr0Xzwlk/Q5DMrI7q0CUIR1dNhyPJrEUn/N9omgrWt7d8Mvdb2cf/CA=
+X-BeenThere: u-boot@lists.denx.de
+X-Mailman-Version: 2.1.39
+Precedence: list
+List-Id: U-Boot discussion <u-boot.lists.denx.de>
+List-Unsubscribe: <https://lists.denx.de/options/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=unsubscribe>
+List-Archive: <https://lists.denx.de/pipermail/u-boot/>
+List-Post: <mailto:u-boot@lists.denx.de>
+List-Help: <mailto:u-boot-request@lists.denx.de?subject=help>
+List-Subscribe: <https://lists.denx.de/listinfo/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=subscribe>
+Errors-To: u-boot-bounces@lists.denx.de
+Sender: "U-Boot" <u-boot-bounces@lists.denx.de>
+X-Virus-Scanned: clamav-milter 0.103.8 at phobos.denx.de
+X-Virus-Status: Clean
+Xref: nntp.lore.kernel.org de.denx.lists.u-boot:603361
+Newsgroups: de.denx.lists.u-boot
+Path: nntp.lore.kernel.org!not-for-mail
+
+Hi Jonas,
+
+I tested your ROCK 5B+ patches and the results are below.
+
+Hardware / build:
+  - Board: Radxa ROCK 5B+ rev 1.2 (32 GB LPDDR5)
+  - Toolchain: aarch64-linux-gnu-gcc 15.1.0
+  - TPL: rk3588_ddr_lp4_2112MHz_lp5_2400MHz_v1.19.bin
+  - BL31: rk3588_bl31_v1.51.elf
+  - Boot: microSD
+  - U-Boot build: 2026.01-rc1-00252-g0afc36a2f4dc
+
+Results:
+  - Detected as “Radxa ROCK 5B+” (rk3588-rock-5b-plus.dtb)
+  - SD and USB enumeration work correctly
+  - Ethernet reports “No ethernet found” (GMAC node not yet enabled)
+
+Full boot log attached below.
+
+Tested-by: Bryan Hinton <bryan@bryanhinton.com>
+
+Thanks,
+Bryan
+
+---
+Boot log:
+
+U-Boot 2026.01-rc1-00252-g0afc36a2f4dc (Nov 04 2025 - 15:52:02 -0600)
+
+Model: Radxa ROCK 5B+
+SoC:   RK3588
+DRAM:  32 GiB (total 31.7 GiB)
+Core:  380 devices, 34 uclasses, devicetree: separate
+MMC:   mmc@fe2c0000: 1, mmc@fe2e0000: 0
+Loading Environment from nowhere... OK
+In:    serial@feb50000
+Out:   serial@feb50000
+Err:   serial@feb50000
+Model: Radxa ROCK 5B+
+SoC:   RK3588
+Net:   No ethernet found.
+Hit any key to stop autoboot: 0
+=> env print fdtfile
+fdtfile=rockchip/rk3588-rock-5b-plus.dtb
+=> fdt print / model
+No FDT memory address configured. Please configure
+the FDT address via "fdt addr <address>" command.
+Aborting!
+=> fdt print / compatible
+No FDT memory address configured. Please configure
+the FDT address via "fdt addr <address>" command.
+Aborting!
+=> usb start
+starting USB...
+USB EHCI 1.00
+USB OHCI 1.0
+USB EHCI 1.00
+USB OHCI 1.0
+Register 2000140 NbrPorts 2
+Starting the controller
+USB XHCI 1.10
+Register 2000140 NbrPorts 2
+Starting the controller
+USB XHCI 1.10
+Bus usb@fc800000: 1 USB Device(s) found
+Bus usb@fc840000: 1 USB Device(s) found
+Bus usb@fc880000: 1 USB Device(s) found
+Bus usb@fc8c0000: 1 USB Device(s) found
+Bus usb@fcd00000: 1 USB Device(s) found
+Bus usb@fc400000: 1 USB Device(s) found
+       scanning usb for storage devices... 0 Storage Device(s) found
+=> mmc list
+mmc@fe2c0000: 1
+mmc@fe2e0000: 0
+=> bdinfo
+boot_params = 0x0000000000000000
+DRAM bank   = 0x0000000000000000
+-> start    = 0x0000000000200000
+-> size     = 0x00000000efe00000
+DRAM bank   = 0x0000000000000001
+-> start    = 0x0000000100000000
+-> size     = 0x00000002fc000000
+DRAM bank   = 0x0000000000000002
+-> start    = 0x00000003fc500000
+-> size     = 0x0000000003a00000
+DRAM bank   = 0x0000000000000003
+-> start    = 0x0000000400000000
+-> size     = 0x0000000400000000
+flashstart  = 0x0000000000000000
+flashsize   = 0x0000000000000000
+flashoffset = 0x0000000000000000
+baudrate    = 1500000 bps
+relocaddr   = 0x00000000eff07000
+reloc off   = 0x00000000ef507000
+Build       = 64-bit
+current eth = unknown
+eth-1addr   = (not set)
+IP addr     = <NULL>
+fdt_blob    = 0x00000000edbe0a00
+lmb_dump_all:
+ memory.count = 0x4
+ memory[0]	[0x200000-0xefffffff], 0xefe00000 bytes, flags: none
+ memory[1]	[0x100000000-0x3fbffffff], 0x2fc000000 bytes, flags: none
+ memory[2]	[0x3fc500000-0x3ffefffff], 0x3a00000 bytes, flags: none
+ memory[3]	[0x400000000-0x7ffffffff], 0x400000000 bytes, flags: none
+ reserved.count = 0x5
+ reserved[0]	[0xecbdd000-0xecbdffff], 0x3000 bytes, flags: no-notify, no-overwrite
+ reserved[1]	[0xecbe09f0-0xefffffff], 0x341f610 bytes, flags: no-overwrite
+ reserved[2]	[0x100000000-0x3fbffffff], 0x2fc000000 bytes, flags: no-overwrite
+ reserved[3]	[0x3fc500000-0x3ffefffff], 0x3a00000 bytes, flags: no-overwrite
+ reserved[4]	[0x400000000-0x7ffffffff], 0x400000000 bytes, flags: no-overwrite
+devicetree  = separate
+serial addr = 0x00000000feb50000
+ width      = 0x0000000000000004
+ shift      = 0x0000000000000002
+ offset     = 0x0000000000000000
+ clock      = 0x00000000016e3600
+arch_number = 0x0000000000000000
+TLB addr    = 0x00000000efff0000
+irq_sp      = 0x00000000edbe09f0
+sp start    = 0x00000000edbe09f0
+Early malloc usage: 2700 / 10000
+=> fdt addr 0x00000000edbe0a00
+Working FDT set to edbe0a00
+=> fdt print / model
+model = "Radxa ROCK 5B+"
+

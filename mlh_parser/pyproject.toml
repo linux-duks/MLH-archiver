@@ -3,12 +3,13 @@ name = "mlh-parser"
 version = "0.1.0"
 description = "Add your description here"
 authors = [{ name = "Rafael Passos", email = "rafael@rcpassos.me" }]
-requires-python = ">=3.11"
-dependencies = ["polars~=1.36", "python-dateutil>=2.9.0.post0", "tqdm~=4.67"]
+requires-python = ">=3.14"
 
-[project.optional-dependencies]
-dev = ["pytest"]
-
+dependencies = [
+  "polars~=1.39",
+  "python-dateutil>=2.9.0.post0",
+  "tqdm~=4.67",
+]
 
 [project.scripts]
 mlh-parser = "mlh_parser:main"
@@ -21,3 +22,12 @@ build-backend = "uv_build"
 
 [tool.pytest.ini_options]
 pythonpath = ["./src"]
+
+[dependency-groups]
+dev = [
+    "freezegun>=1.5",
+    "nox>=2026.2",
+    "pytest>=9.0",
+]
+
+

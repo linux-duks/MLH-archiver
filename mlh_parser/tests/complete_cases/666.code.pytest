@@ -1,0 +1,18 @@
+[""""---
+ rust/kernel/bindings_helper.h | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/rust/kernel/bindings_helper.h b/rust/kernel/bindings_helper.h
+index 99a7d785ae01..a79f3f398b93 100644
+--- a/rust/kernel/bindings_helper.h
++++ b/rust/kernel/bindings_helper.h
+@@ -10,7 +10,6 @@
+ #include <linux/sysctl.h>
+ #include <linux/uaccess.h>
+ #include <linux/uio.h>
+-#include <linux/version.h>
+ #include <linux/miscdevice.h>
+ #include <linux/poll.h>
+ #include <linux/mm.h>
+-- 
+2.20.1.7.g153144c"""]

@@ -1,0 +1,118 @@
+Return-Path: <u-boot-bounces@lists.denx.de>
+X-Spam-Checker-Version: SpamAssassin 3.4.0 (2014-02-07) on
+	aws-us-west-2-korg-lkml-1.web.codeaurora.org
+Received: from phobos.denx.de (phobos.denx.de [85.214.62.61])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by smtp.lore.kernel.org (Postfix) with ESMTPS id 22AD2D3B7E0
+	for <u-boot@archiver.kernel.org>; Sat,  6 Dec 2025 20:05:41 +0000 (UTC)
+Received: from h2850616.stratoserver.net (localhost [IPv6:::1])
+	by phobos.denx.de (Postfix) with ESMTP id AD26683A7A;
+	Sat,  6 Dec 2025 21:05:39 +0100 (CET)
+Authentication-Results: phobos.denx.de; dmarc=pass (p=none dis=none) header.from=gmail.com
+Authentication-Results: phobos.denx.de; spf=pass smtp.mailfrom=u-boot-bounces@lists.denx.de
+Authentication-Results: phobos.denx.de;
+	dkim=pass (2048-bit key; unprotected) header.d=gmail.com header.i=@gmail.com header.b="R4auqTyW";
+	dkim-atps=neutral
+Received: by phobos.denx.de (Postfix, from userid 109)
+ id 54A7E83A83; Sat,  6 Dec 2025 21:05:38 +0100 (CET)
+Received: from mail-lj1-x22e.google.com (mail-lj1-x22e.google.com
+ [IPv6:2a00:1450:4864:20::22e])
+ (using TLSv1.3 with cipher TLS_AES_128_GCM_SHA256 (128/128 bits))
+ (No client certificate requested)
+ by phobos.denx.de (Postfix) with ESMTPS id 2BFCD83957
+ for <u-boot@lists.denx.de>; Sat,  6 Dec 2025 21:05:36 +0100 (CET)
+Authentication-Results: phobos.denx.de;
+ dmarc=pass (p=none dis=none) header.from=gmail.com
+Authentication-Results: phobos.denx.de;
+ spf=pass smtp.mailfrom=festevam@gmail.com
+Received: by mail-lj1-x22e.google.com with SMTP id
+ 38308e7fff4ca-37e6dd536b0so27823981fa.2
+ for <u-boot@lists.denx.de>; Sat, 06 Dec 2025 12:05:36 -0800 (PST)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+ d=gmail.com; s=20230601; t=1765051535; x=1765656335; darn=lists.denx.de;
+ h=content-transfer-encoding:cc:to:subject:message-id:date:from
+ :in-reply-to:references:mime-version:from:to:cc:subject:date
+ :message-id:reply-to;
+ bh=ICyUSjZqgpOzYYjk4LtDZBO4quMu7QwWyGRra1RDlZ4=;
+ b=R4auqTyWEBP7+MwolqADIEgBS8z6HUV4Mb19ZOiszs8Wl2mvP3pJ8+40H6d0/63yFe
+ YUVlOiAxAa7pbQmNNxN5P8JCgxb2ScINBqDD46+GmVhJx18+egm/l2x/KIafvCtqi1n1
+ bdATaniT+motdtkZ4Ehy10oVMq1S8lirMjLQ7NoIPz05bJTl/9GNU5PVF9lI3Nj8epoE
+ IU1Mdpc8J/rIYefprQc5KyRzc7svP7zoz72KOIhyq6exrzFHuRfFEy6xRxaHMUBaeF1Z
+ 70FjADzwH76DtwrD8vdKbq71W59TBU+pYoNp9SBT6qFj1xcqLPfodP9obz59Sgo24W3y
+ MpNA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+ d=1e100.net; s=20230601; t=1765051535; x=1765656335;
+ h=content-transfer-encoding:cc:to:subject:message-id:date:from
+ :in-reply-to:references:mime-version:x-gm-gg:x-gm-message-state:from
+ :to:cc:subject:date:message-id:reply-to;
+ bh=ICyUSjZqgpOzYYjk4LtDZBO4quMu7QwWyGRra1RDlZ4=;
+ b=EMbS1HErMk74XPxGS0SbbeaVpJHORQZI92gRr9g7CqfsXNyRivD5W7+zmU7kMGVkml
+ /OxURW5lcberPVI9siIBM1JeOBKkeXNAXovuLOLNL1YMtbSDzqn69G1S0jtJSBogZIlU
+ 1AmserYgv5QNW5/6Eh06HYUjHs1ZXnuADiDhxoPlsu/tLl+czwKpjaCfb1RL7X8fff9x
+ IvvB2trOph7tqbTrGOoZcGwOgtxeL9Lyk9vliIBmueBlW175zy7mIigIEwUj5yRBVR/X
+ I468yi6wKG6SqU8GxNowqZINvXr6BZ0ktAxFKL4yFA/B13Xj/jtbsXmxxmo21rmD0GL1
+ oMoA==
+X-Forwarded-Encrypted: i=1;
+ AJvYcCXDMtj9LSEEyLbhU7HLnee2QcCF1Y+xKw88pe9KuPKM4tAI5a7yPv6kR9VnwAZ+Ya4PCzM91ew=@lists.denx.de
+X-Gm-Message-State: AOJu0YzfuIGYWX93CuZ3NGrtKBNLQ7XPg9rgsIpK2dCtCjDCz8wdbnUH
+ 9yJH9W6VKO4+e0+6sK1WFyIR1Wg6A/NlxPKsup0Zu5xylK3s8QbtlGh3Jgv8/XCXJ+G028XTVy8
+ cL7OAeL7rcuMJfeg5vADM0Mb/485BdrgZjM/6
+X-Gm-Gg: ASbGnctFDaYy+3N78OpT+lw5OJ6auzJO5l1OthhtIiyjLHawCIv/a5HPsvFd0AVXvj1
+ SpDvyALLDjkD6neSJoYKBe7Cl/nJE1SFucVaVZuw9hUfU8H/Tnehx2xsBn6Jviz22yg41bWIIbH
+ fbhuDSd54MZKwKQr7RC0y5TAm+y6o0GVNxhga0HPEKjT83IGtZYh0xKvR7RrHRY/9mvHUu4jwd/
+ 00OKT+c4faTFqMvy0skOFdCht99JHrP7dRtYt9O/cgkLHVYPh8f/da7fDBghyN8FddMgAnYt9NO
+ KcFEG0bo98dkbGaLiq0WyIWoWZg=
+X-Google-Smtp-Source: AGHT+IF01ApWYFDIXrzwe23jSnNZmnpMbtKkop/zbNGJfoDGse4MIEeJEQ+qdOinr7EQwuM0L3P5iWbzOM/n2zSuabQ=
+X-Received: by 2002:a2e:b8d6:0:b0:37a:44c6:1756 with SMTP id
+ 38308e7fff4ca-37ed2036e7fmr8744271fa.22.1765051535115; Sat, 06 Dec 2025
+ 12:05:35 -0800 (PST)
+MIME-Version: 1.0
+References: <202512042130.5B4LUUcU013524@simong.net>
+ <20251205171354.GI303283@bill-the-cat>
+In-Reply-To: <20251205171354.GI303283@bill-the-cat>
+From: Fabio Estevam <festevam@gmail.com>
+Date: Sat, 6 Dec 2025 17:05:23 -0300
+X-Gm-Features: AQt7F2p1G2eYjwjZwB5qdSKY_kRTmfvIEGzQgf3je3BmJrJo8dmO0Mjw_1WhZbc
+Message-ID: <CAOMZO5Buq06PTjQK4sZzUePR6JqeV4cfN8Fjds+N_XkEVNq9QQ@mail.gmail.com>
+Subject: Re: [PATCH v2] nitrogen6x: change maintainer
+To: Tom Rini <trini@konsulko.com>
+Cc: Simon Gaynor <boundary@simong.net>,
+ U-BOOT Mailing List <u-boot@lists.denx.de>, 
+ Simon Gaynor <simon.gaynor@ezurio.com>
+Content-Type: text/plain; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+X-BeenThere: u-boot@lists.denx.de
+X-Mailman-Version: 2.1.39
+Precedence: list
+List-Id: U-Boot discussion <u-boot.lists.denx.de>
+List-Unsubscribe: <https://lists.denx.de/options/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=unsubscribe>
+List-Archive: <https://lists.denx.de/pipermail/u-boot/>
+List-Post: <mailto:u-boot@lists.denx.de>
+List-Help: <mailto:u-boot-request@lists.denx.de?subject=help>
+List-Subscribe: <https://lists.denx.de/listinfo/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=subscribe>
+Errors-To: u-boot-bounces@lists.denx.de
+Sender: "U-Boot" <u-boot-bounces@lists.denx.de>
+X-Virus-Scanned: clamav-milter 0.103.8 at phobos.denx.de
+X-Virus-Status: Clean
+Xref: nntp.lore.kernel.org de.denx.lists.u-boot:604550
+Newsgroups: de.denx.lists.u-boot
+Path: nntp.lore.kernel.org!not-for-mail
+
+On Fri, Dec 5, 2025 at 2:14=E2=80=AFPM Tom Rini <trini@konsulko.com> wrote:
+>
+> On Thu, Dec 04, 2025 at 01:29:21PM -0800, Simon Gaynor wrote:
+>
+> > Simon Gaynor shall be the new maintainer
+> >
+> > Signed-off-by: Simon Gaynor <simon.gaynor@ezurio.com>
+> >
+> > diff --git a/board/boundary/nitrogen6x/MAINTAINERS b/board/boundary/nit=
+rogen6x/MAINTAINERS
+> > index 17018d69f64..c7355b0e40e 100644
+>
+> Reviewed-by: Tom Rini <trini@konsulko.com>
+
+Applied to u-boot-imx/next, thanks.

@@ -1,0 +1,13 @@
+name: Parser Test
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  parser-tests:
+    uses: ./.github/workflows/py-tests.yaml
+    name: parser-tests
+    with:
+      path: ./mlh_parser
+

@@ -1,0 +1,199 @@
+Return-Path: <u-boot-bounces@lists.denx.de>
+X-Spam-Checker-Version: SpamAssassin 3.4.0 (2014-02-07) on
+	aws-us-west-2-korg-lkml-1.web.codeaurora.org
+Received: from phobos.denx.de (phobos.denx.de [85.214.62.61])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES128-GCM-SHA256 (128/128 bits))
+	(No client certificate requested)
+	by smtp.lore.kernel.org (Postfix) with ESMTPS id 4F3FCD2F7DA
+	for <u-boot@archiver.kernel.org>; Fri,  5 Dec 2025 10:55:43 +0000 (UTC)
+Received: from h2850616.stratoserver.net (localhost [IPv6:::1])
+	by phobos.denx.de (Postfix) with ESMTP id D9A1B841CF;
+	Fri,  5 Dec 2025 11:55:41 +0100 (CET)
+Authentication-Results: phobos.denx.de; dmarc=pass (p=quarantine dis=none) header.from=cherry.de
+Authentication-Results: phobos.denx.de; spf=pass smtp.mailfrom=u-boot-bounces@lists.denx.de
+Authentication-Results: phobos.denx.de;
+	dkim=pass (1024-bit key; unprotected) header.d=cherry.de header.i=@cherry.de header.b="A2Fbwtk/";
+	dkim-atps=neutral
+Received: by phobos.denx.de (Postfix, from userid 109)
+ id 1C9FB841DA; Fri,  5 Dec 2025 11:55:41 +0100 (CET)
+Received: from AM0PR02CU008.outbound.protection.outlook.com
+ (mail-westeuropeazlp170130006.outbound.protection.outlook.com
+ [IPv6:2a01:111:f403:c201::6])
+ (using TLSv1.3 with cipher TLS_AES_256_GCM_SHA384 (256/256 bits))
+ (No client certificate requested)
+ by phobos.denx.de (Postfix) with ESMTPS id D557F841A2
+ for <u-boot@lists.denx.de>; Fri,  5 Dec 2025 11:55:38 +0100 (CET)
+Authentication-Results: phobos.denx.de; dmarc=pass (p=quarantine dis=none)
+ header.from=cherry.de
+Authentication-Results: phobos.denx.de;
+ spf=pass smtp.mailfrom=quentin.schulz@cherry.de
+ARC-Seal: i=1; a=rsa-sha256; s=arcselector10001; d=microsoft.com; cv=none;
+ b=llY+t0/6Qbv94nf5Tnn1x0OPNs6M93fA064hEzIY5/688K/+RwdF4IPyRWxMIa8dccno1tDcNqBiM8QMEHpDTQyGBb4hoCiQpXkak/iA0StN8j6CxDFdauivqP08XRTWdqt73UQmqaY2ffcnXC8fJ5fBIHCrlCGuVLXagzlI5eeZPSPpQkI7NWHbbFLww7hyzF3CeHV2EBjk6ozTaWBxgIVwciAzgcdp0UwdnH0UM/Tgl4OuX5M7wJlhvM9gb5xunsclu7l69kvChwP3fCX3F7gXWruT7/9jude2QKydbHEQxpmAf7s/suPksb7p+ozpwPlvb5nl9Qbi30K/CeYhOg==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=microsoft.com; 
+ s=arcselector10001;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-AntiSpam-MessageData-ChunkCount:X-MS-Exchange-AntiSpam-MessageData-0:X-MS-Exchange-AntiSpam-MessageData-1;
+ bh=1QB6uEUTnE1XlCPaSe5tjz5OLWcFW1bng7UB9Gtezbk=;
+ b=h5kDE3YLg6DQx6k2fnQN8/en9SRp0JjvvYWDPOPQHWZf3+QppCiEHYb74FcgKhxfJafBplp0amL8QhD5rhRq3d53dROcuAn5OgQHBSLX2vu9Nn2w3mdejNEVeBHvHsh5B8zhD8TAyVARtxIj3w2NcSK9M1lwc+XQ+8axCafu2s+/NVbLddcnnjVMaU8poJVQAzdgVZrIq9QO8T6asfWc84bcrT5Azqc1znCWNJYS2EBWVynFmEwL/WpYtGTFMx6iCusAWfrPsDEdrp0hU4KKOp9Bu/IHYjWtyN/mVM5xo7Jb9nTzq5fNS2fechWEJZMr0xKxnBwcvoM6us/IvPn83A==
+ARC-Authentication-Results: i=1; mx.microsoft.com 1; spf=pass
+ smtp.mailfrom=cherry.de; dmarc=pass action=none header.from=cherry.de;
+ dkim=pass header.d=cherry.de; arc=none
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=cherry.de; s=selector1;
+ h=From:Date:Subject:Message-ID:Content-Type:MIME-Version:X-MS-Exchange-SenderADCheck;
+ bh=1QB6uEUTnE1XlCPaSe5tjz5OLWcFW1bng7UB9Gtezbk=;
+ b=A2Fbwtk/blbf7YUU68SlhSPqsHwBnLidSUlmWs/rEp2rJUwaWuYIWh5C2EXU4hmfSck53gJ4jGeCASvIE+I9VeMu5uQIZ48srRaf3cYNkMcf6c6JAySeX8A3fe7qMUTQSb200zpxkE1H22TqQ06dPau7lNgqFe5FRTXzd5jLE8M=
+Authentication-Results: dkim=none (message not signed)
+ header.d=none;dmarc=none action=none header.from=cherry.de;
+Received: from GVXPR04MB12038.eurprd04.prod.outlook.com (2603:10a6:150:2be::5)
+ by PA4PR04MB7581.eurprd04.prod.outlook.com (2603:10a6:102:f3::6) with
+ Microsoft SMTP Server (version=TLS1_2,
+ cipher=TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384) id 15.20.9388.11; Fri, 5 Dec
+ 2025 10:55:37 +0000
+Received: from GVXPR04MB12038.eurprd04.prod.outlook.com
+ ([fe80::1033:5a9a:dc18:dad]) by GVXPR04MB12038.eurprd04.prod.outlook.com
+ ([fe80::1033:5a9a:dc18:dad%4]) with mapi id 15.20.9388.009; Fri, 5 Dec 2025
+ 10:55:36 +0000
+Message-ID: <8f705652-e0da-47c8-950c-b8d364a890a7@cherry.de>
+Date: Fri, 5 Dec 2025 11:55:35 +0100
+User-Agent: Mozilla Thunderbird
+Subject: Re: [PATCH v2] nitrogen6x: change maintainer
+To: Simon Gaynor <boundary@simong.net>,
+ U-BOOT Mailing List <u-boot@lists.denx.de>
+Cc: Simon Gaynor <simon.gaynor@ezurio.com>
+References: <202512042130.5B4LUUcU013524@simong.net>
+Content-Language: en-US
+From: Quentin Schulz <quentin.schulz@cherry.de>
+In-Reply-To: <202512042130.5B4LUUcU013524@simong.net>
+Content-Type: text/plain; charset=UTF-8; format=flowed
+Content-Transfer-Encoding: 7bit
+X-ClientProxiedBy: WA2P291CA0046.POLP291.PROD.OUTLOOK.COM
+ (2603:10a6:1d0:1f::15) To GVXPR04MB12038.eurprd04.prod.outlook.com
+ (2603:10a6:150:2be::5)
+MIME-Version: 1.0
+X-MS-PublicTrafficType: Email
+X-MS-TrafficTypeDiagnostic: GVXPR04MB12038:EE_|PA4PR04MB7581:EE_
+X-MS-Office365-Filtering-Correlation-Id: ed6be501-b404-48d9-14b9-08de33ecd25a
+X-MS-Exchange-SenderADCheck: 1
+X-MS-Exchange-AntiSpam-Relay: 0
+X-Microsoft-Antispam: BCL:0;
+ ARA:13230040|376014|366016|10070799003|1800799024|7053199007; 
+X-Microsoft-Antispam-Message-Info: =?utf-8?B?Zk5MbC9nOGtRRUtqMUEzS3BOUkFrbTVrWDNCZndMeGVRWnBoWDNEWXRQOUZP?=
+ =?utf-8?B?MnI1TGhqQnUxZldHK0gvSFNyK3FDQ2RScGtGWE5GbG51NWY0Sm04YkFSU0lX?=
+ =?utf-8?B?WHNKWmpzZ2VZM1VxSHBBVGhiclhLdWRhNkcxQ3JDWll2S0FrWFRkSVZqaVFj?=
+ =?utf-8?B?VDFlckRDSlozSDFFOTNtOEVMWVNWZHY5eWc0Q1ZFWTJ1U1laME9EMG1PL0Qz?=
+ =?utf-8?B?dmFVRVNlT3dwZlpnamc0NFVET01ONGF4bnF5ci8xNnl6ZEZCem5DeFB1alho?=
+ =?utf-8?B?Y3lhdnNuSlVTL2tjRTJVSGlWWWQ0eVRwT3FlN1FDdk1Jdkh3cEE1VGJaQVB6?=
+ =?utf-8?B?YWQvU0pTM0V6eis5dStDSkx0RGdvcWZjeks3Tm15RmdhWmZGL0piWGJDZ1VL?=
+ =?utf-8?B?Myt0SDFlUW4ydVpvRU53d3MvTzNiQXFOY0xZWG10aXVjQTgrd1NyWU9jaG9k?=
+ =?utf-8?B?SmgwU1Yzc0szVXhraTF6SFN5aTQzNVJiczFjYnlYNWxjME50bkNBRld2Wnha?=
+ =?utf-8?B?UmZUa3lGNWpabStZSEVTZCs0bldPRGNlZmNKWjNXT3lOTWlDZXZtUVRkOUd6?=
+ =?utf-8?B?WEZYMS9ldDlJV1NMVFNGK3Y0TUV4Yk4yOURjMGVwWUxrL3MxV2NnbW9ZbE05?=
+ =?utf-8?B?aUg0ZWxkdE55bGR3WXM1U3JEbXJURzI1eEY3TE8yUUNVdytMN3pOdmM1OFhG?=
+ =?utf-8?B?QmhnemNiQk1yQ2lmZnNNUGNMZzV2SFhzWjdFYS9PbHlvWE1FMUxmQk4xdDlh?=
+ =?utf-8?B?SzhGdHY0eTJyNjFKU2JybE5WdlZ0c29XVGxwSkxHcGExdXl6bmRPTi8xSVE2?=
+ =?utf-8?B?dkhiVlhXWnp0S2pMc083c0V4VTZMTU1qVWw2RkowMTE5MlR4dFViMGZLZVBX?=
+ =?utf-8?B?TW5KYm5HL3Fyc1pNR2M1a0t6VW03UktoUDZUQzFwTDBMeEYvSk5KRldFSzJ2?=
+ =?utf-8?B?aFZQcWlXMm9wc1UvN0hOOFNVdTFVblNJYU5lSlluZittajhzdGlOWTJ6QVN0?=
+ =?utf-8?B?TDdBWjVsY3lQZ3Z3UVZkbEk5TUNzTjJaUUlTUDlVNGZQSkxweTQ2Vk5qSi9W?=
+ =?utf-8?B?VHRCQmpzalQ5dkdLK1E1L2wzcW9KZVFTWDJmdjZscXI1WndsVE1kd1pZUzA1?=
+ =?utf-8?B?MldjL3lMSGpuSFBnTklSSlFubk1aQ1dQdUIxaER0a2I3RW9VZCtzV1hsNzJy?=
+ =?utf-8?B?a09hS3ZpRkFJRWRJdkxhMll5M0hZSUhFa3pDempsTEJFNUR2eFUxVFNkejlt?=
+ =?utf-8?B?QjNKU1JwdWVMT2RJM01xR1pnUWRBbW8rTnBBY2pSM1JCV1orTXBxU3NCZmdP?=
+ =?utf-8?B?S0ZXYTNzajc4clpXRkVUZHNFRkVkbnczQjhqUW8xNXpYTEtTR280dVBkNzZz?=
+ =?utf-8?B?MVZ5SXdieTNCRUM0RXhtaWRTQzRleG8vejlRencvRVl1TUdxNFRVVmpHWWRB?=
+ =?utf-8?B?TDJTNGVsT2F5eDlpOWZmWllsS0RDVjhRZm1GZllEOWJYT3J6M050YXFQT0J2?=
+ =?utf-8?B?UGdkNytpSG9WaGNCN3A5Z2lGSEVEYUp4MklNcE1nZVNuempxa0Vsbm1aU0Yv?=
+ =?utf-8?B?L1U1VnJJYW5BTlQzRWk4SEZYbWNNWlpNamNXV0hCWStsdHVxeTg1a1hoMGxZ?=
+ =?utf-8?B?K3lrN21FUkM2K0Z1c2NBc0hSVllsQnExR3JSRW5Yd000dWRwcUVmazdqYjB2?=
+ =?utf-8?B?WE8wSHRWTUhteVdjeWs2ZGFGelZ4QS9oYnN5OFNEOXR4R0ZTVlVtd3BvZktS?=
+ =?utf-8?B?TDY2Y3E5VEdZWit4U2ZCYzFTQmtoYlVwazF0czlSclNidFJ0V3lBUU1OVXNT?=
+ =?utf-8?B?Y09pTzNJVEdHNklqT2U2M3NNRFo0Vit2OGYvVzV2VkoyeWpJK0gvQVlJZ1FP?=
+ =?utf-8?B?OEZZWW8wVWFud09USTZLMkxWVDl4NmVIb2ZVbkZjZ3lkcm4yK29LZ1dXZmh2?=
+ =?utf-8?B?QllRcGpRc0d5MGNidVh5SlJjS0EzUEdHQlR2VGZqRXpvWklHUGJjZjkzK3BM?=
+ =?utf-8?B?OGJPYzAvRWlBPT0=?=
+X-Forefront-Antispam-Report: CIP:255.255.255.255; CTRY:; LANG:en; SCL:1; SRV:;
+ IPV:NLI; SFV:NSPM; H:GVXPR04MB12038.eurprd04.prod.outlook.com; PTR:; CAT:NONE;
+ SFS:(13230040)(376014)(366016)(10070799003)(1800799024)(7053199007); DIR:OUT;
+ SFP:1101; 
+X-MS-Exchange-AntiSpam-MessageData-ChunkCount: 1
+X-MS-Exchange-AntiSpam-MessageData-0: =?utf-8?B?MWhDTjNadHVJZ0wzZkVjYkhXc2hoZWZyQ21kRFg1ZEZ1Z1ZlSHZTSENwKzl5?=
+ =?utf-8?B?d2I3QnZMVmxtVzY2TWI1SUsyV3V0Y0xBOEQ1Z0lyMCtLNTBheFRneldEbmpy?=
+ =?utf-8?B?WWRrWWd3aHF3TEdZVTgwblRySW56YnVsVC9BdjRwbzM3VE4yZERHMmhMOEk5?=
+ =?utf-8?B?VWFPVy9FSjVIT2hVRDBVdWZQSkxvdUZTbnFkc0hyenV3SmorTENPK0h0RU5T?=
+ =?utf-8?B?Mk1MdDRMaytYNVZtaXJaYU9UNHBodDN2bFprVXF1YUhJODFnRGFPbjNUa0sw?=
+ =?utf-8?B?Yk9ZWllwN3p6QTh3QW42Z3FEa29jckErcWxOTzRKMWZmeEgxa1VZMkRxNnNa?=
+ =?utf-8?B?THZQclZJaUd6bXJMVzhxVlp5SVlwYXJVY25weFRhcXBKZXFvMmlwOXVPeU5x?=
+ =?utf-8?B?VGVvdFZrL1RCYzJTdVFraUFFS2thZzduMW4xeFFxeGg2NjdMZDVGMDlHSXB6?=
+ =?utf-8?B?TEhGbnVmY2NUOUo1RWtKeHAwQ2xnS3huSGpHV3lDS2FXdURtUnlJTzNTdHBM?=
+ =?utf-8?B?WHNqQ3Ewb3hNeUdTb2R1WHVRd2ZPc3VTd29PK1VZNXFZbDcrd1k2U0VaQjgz?=
+ =?utf-8?B?SjJJWGVzS3RCWlg3VERNUEJRNW9KZWdtRG0wS2RyZlE3ZHVCNU96aTRUMytW?=
+ =?utf-8?B?cHhoYWFvSlpva2ZVOFI1dGxFcUIzSmJ1RGQ2N0dQM1BhRlI5djdqc3AyY2xT?=
+ =?utf-8?B?eFR2SFl4bGNvMEg4VTFVQVUyU2RaVUc4djRSM0ZuQnVuNFRtTzQ1YUR3ZEk0?=
+ =?utf-8?B?VXNHM21lbFdTM3dyeWlQNWF4NlJNYUNWMkxudEdsM3dWSkYxMytyeDM5elB2?=
+ =?utf-8?B?aWJSQnAra05WL0wrM0pKOU1HcmdPQzhMV3BTL3BtRDBUb0ZGTEtEUmU3N0Nk?=
+ =?utf-8?B?M2tSRGpjYnp1ZmpYVnlSUk84RTBFc0hhYUluU0R5aWI1K2MxeUE4VWR5MnRG?=
+ =?utf-8?B?YUZHNVdpSTFvZ0wvMkY1VkhZeDluUmtrOEF5Y25rRlA5K3h2L0huUWRXZnY5?=
+ =?utf-8?B?QUNlTW5VYWJ3c1RacG5NWFdqL29oU2JycG1pRnBpTlV6dUpGSGZMUUs1NlRN?=
+ =?utf-8?B?OUVSaFlEbnEvT3JXOE83VEQyQmtPNk80NXJaNXd4Z0REUGk4TDV4Nlc3K3pF?=
+ =?utf-8?B?UDZhenhmamFwYVYyalh0R0ZRMDZCZzRPM3pkRGw1NjV3NGxuVi9TZkJwUzJX?=
+ =?utf-8?B?L290RUx3TE9NL0NHY0Q3NDMyMjNFYTZqZTh5Z2J4U3ZRSlp3cFNCR0M3UHZh?=
+ =?utf-8?B?aEhzVTYvVkNUWElMK0JFUmlCK3B1Z2ZjZ2VXeWFOdGNaNmI2WEttaVhOenhO?=
+ =?utf-8?B?OU1iQ0RhdTRwL3NYODAwK0dGZHdZcU9aQktzdStqcmdtRHMrcmt3eVUyYmVG?=
+ =?utf-8?B?cmMwaVNBcGRUMk5DNk9kWDM0RFdmL2FMR1RONjRCNk1Ud0VjaU85OXRVQktq?=
+ =?utf-8?B?VXlWd05BZzhRQU4rVHZrTWR3WlF2UUV1bGxoQm9nUUZUNFZzajNzMStJa1Vy?=
+ =?utf-8?B?cWlnRkxxNTNDcjQweFNhSjc4V284S0Y0cWg3eGdLdXFIcThKVlFlaG55MzY3?=
+ =?utf-8?B?WDFXVWVVTGZkNGV2WGVsd2N4cDRKQlErd3RIUG4zKzFPSU1TT2tiSUFUNHdl?=
+ =?utf-8?B?dS9OQkEwWjFSTjRkLzJVbndvYzFhZTQ0N1JqeGUrQXBGTkQrMDlaeExMa1Zp?=
+ =?utf-8?B?T1NsU0Q0MFdkb0VPbjBka0JtYmxKbE1TcDhiMm03Z3M1aXJ6WmZ4TjNkV3VZ?=
+ =?utf-8?B?UG1mQzJtMVYrZ3JuamF0U1hteS84K0ZRTmtxd0d1SWVMM1gyQ2cwWlBGdlMv?=
+ =?utf-8?B?VTNPQjBhdDRPczd6dDZiekJwelpCVXJWK0h2c09tOGRMUFNERVUvc3FIcVVa?=
+ =?utf-8?B?a0xkOXAzZDBPR2NJR3pSTCtqT0hwU0dDQUdKNDlZaDRDSmhvVnpEQ2tkRTRi?=
+ =?utf-8?B?MEJCZzE2Y3IrZERncWtyd1pBUHUyUk96b0MrRDNJVFErUW5peWF2d0JGRnJR?=
+ =?utf-8?B?WFJJdStXMmpSbkdFT3ZNSjVYR1pNSEtWWFJBUkJjZ2t2blowVmNEVFA1eGU3?=
+ =?utf-8?B?bi85WVFFSkpHQllEQk8vbzlRTHZJeUtsaGJRR1dac0tCbHNsTXpRNE5qNEw5?=
+ =?utf-8?B?V0lzRllxZTZDaGFIRnAxemxuUjhDWlBadGUwbnZaNFd4NVRqdFNLNE1FNkcv?=
+ =?utf-8?Q?nzML+REv4ipShMTcBFeKmEw=3D?=
+X-OriginatorOrg: cherry.de
+X-MS-Exchange-CrossTenant-Network-Message-Id: ed6be501-b404-48d9-14b9-08de33ecd25a
+X-MS-Exchange-CrossTenant-AuthSource: GVXPR04MB12038.eurprd04.prod.outlook.com
+X-MS-Exchange-CrossTenant-AuthAs: Internal
+X-MS-Exchange-CrossTenant-OriginalArrivalTime: 05 Dec 2025 10:55:36.9129 (UTC)
+X-MS-Exchange-CrossTenant-FromEntityHeader: Hosted
+X-MS-Exchange-CrossTenant-Id: 5e0e1b52-21b5-4e7b-83bb-514ec460677e
+X-MS-Exchange-CrossTenant-MailboxType: HOSTED
+X-MS-Exchange-CrossTenant-UserPrincipalName: POAEM8gjCYlgczcN3y8/FlUohcy84WwDgVPwJJ8FVDXUqP+vQBOiUCvl3wgmOHMo5d9XAWFzcofm4Nzqw9QY4UzQv3bm3F+z8eS2wlmp0tE=
+X-MS-Exchange-Transport-CrossTenantHeadersStamped: PA4PR04MB7581
+X-BeenThere: u-boot@lists.denx.de
+X-Mailman-Version: 2.1.39
+Precedence: list
+List-Id: U-Boot discussion <u-boot.lists.denx.de>
+List-Unsubscribe: <https://lists.denx.de/options/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=unsubscribe>
+List-Archive: <https://lists.denx.de/pipermail/u-boot/>
+List-Post: <mailto:u-boot@lists.denx.de>
+List-Help: <mailto:u-boot-request@lists.denx.de?subject=help>
+List-Subscribe: <https://lists.denx.de/listinfo/u-boot>,
+ <mailto:u-boot-request@lists.denx.de?subject=subscribe>
+Errors-To: u-boot-bounces@lists.denx.de
+Sender: "U-Boot" <u-boot-bounces@lists.denx.de>
+X-Virus-Scanned: clamav-milter 0.103.8 at phobos.denx.de
+X-Virus-Status: Clean
+Xref: nntp.lore.kernel.org de.denx.lists.u-boot:604483
+Newsgroups: de.denx.lists.u-boot
+Path: nntp.lore.kernel.org!not-for-mail
+
+Hi Simon,
+
+On 12/4/25 10:29 PM, Simon Gaynor wrote:
+> [You don't often get email from boundary@simong.net. Learn why this is important at https://aka.ms/LearnAboutSenderIdentification ]
+> 
+> Simon Gaynor shall be the new maintainer
+> 
+
+boundarydevices.com redirects to https://www.ezurio.com/boundary-devices 
+where the announcement about the rename is made, so a maintainer with 
+that new domain looks legit to me.
+
+Reviewed-by: Quentin Schulz <quentin.schulz@cherry.de>
+
+Thanks!
+Quentin

@@ -5,7 +5,10 @@ PARQUET_COLS_SCHEMA = {
     "to": pl.List(pl.String),
     "cc": pl.List(pl.String),
     "subject": pl.String,
+    # parsed and best-effort-corrected date
     "date": pl.Datetime,
+    # date reported by the email client (incorrect in many cases)
+    "client-date": pl.List(pl.String),
     "message-id": pl.String,
     "in-reply-to": pl.String,
     "references": pl.List(pl.String),

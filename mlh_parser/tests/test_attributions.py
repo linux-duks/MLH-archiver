@@ -65,7 +65,7 @@ Signed-off-by: Example Contributor <example@contributor.com>
 """
 
 
-def test_corret_email() -> None:
+def test_correct_email() -> None:
     attr = extract_attributions(input_example_mail)
     assert len(attr) == 1
     assert attr == [
