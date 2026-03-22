@@ -234,6 +234,79 @@ result = (
 )
 ```
 
+### Test Structure
+
+The test suite uses real email samples (`.eml` files) paired with expected output files (`.pytest` extension). This approach allows testing with actual mailing list emails while maintaining readable expected values.
+
+#### Test File Organization
+
+```
+tests/
+├── complete_cases/          # Full email parsing tests (trailers + code)
+│   ├── 14.eml              # Raw email file
+│   ├── 14.trailers.pytest  # Expected trailers (Python literal)
+│   └── 14.code.pytest      # Expected code/patches (Python literal)
+├── date_cases/              # Date parsing test cases
+│   ├── org.kernel...6592.eml           # Raw email file
+│   └── org.kernel...6592.date.pytest   # Expected parsed date
+├── test_complete_parsers.py  # Test runner for complete cases
+├── test_dates.py             # Test runner for date parsing
+├── test_attributions.py      # Unit tests for attribution extraction
+├── test_patches.py           # Unit tests for patch extraction
+└── helpers.py                # Test utilities
+```
+
+#### File Naming Convention
+
+Test files are grouped by a common prefix:
+
+| File Pattern | Purpose |
+|--------------|---------|
+| `<prefix>.eml` | Raw RFC 822 email input |
+| `<prefix>.trailers.pytest` | Expected trailers (Python list literal) |
+| `<prefix>.code.pytest` | Expected code patches (Python list literal) |
+| `<prefix>.date.pytest` | Expected parsed date (first line is the date) |
+| `<prefix>.client-date.pytest` | Expected raw client dates (one per line) |
+
+#### Adding New Test Cases
+
+1. **Save the raw email**: Place your `.eml` file in the appropriate directory (`complete_cases/` or `date_cases/`)
+
+2. **Create expected output files**: For each `.eml` file, create corresponding `.pytest` files with the expected parsed values as Python literals:
+
+   ```python
+   # Example: 14.trailers.pytest
+   [
+       {
+           "attribution": "Signed-off-by",
+           "identification": "Example Developer <example-dev@company.com>",
+       },
+   ]
+   
+   # Example: 14.code.pytest
+   [
+       """---
+   drivers/file.c | 10 ++++++++++
+   1 file changed, 10 insertions(+)
+   ...
+   """
+   ]
+   
+   # Example: email.date.pytest
+   Tue,  4 Nov 2025 22:14:47 +0000
+   # Note: Additional lines are treated as comments
+   ```
+
+3. **Run tests**: The test runners automatically discover files by extension and match them by prefix.
+
+#### Test Helpers
+
+The `helpers.py` module provides utilities:
+
+- `list_files_with_extension(directory, ext)`: List all files with given extension
+- `map_to_file_extensions(email_file, extensions)`: Map `.eml` to its `.pytest` counterparts
+- `resolve_test_file_path(directory, filename)`: Resolve absolute path to test file
+
 ## Troubleshooting
 
 ### "Input directory is missing or empty"
