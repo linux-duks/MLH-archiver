@@ -1,0 +1,66 @@
+{
+	"$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
+	"packages": [
+		"python@3.14",
+		"uv@latest",
+		"git@latest",
+		"rustup@latest",
+		"libiconv@latest"
+	],
+	"env": {
+		"PROJECT_DIR": "$PWD",
+		"UV_PYTHON": "$PWD/.venv/bin/python"
+	},
+	"shell": {
+		"init_hook": [
+			"echo 'Welcome to devbox!' > /dev/null",
+			". set-env.sh",
+			"rustup default stable",
+			"cargo fetch"
+		],
+		"scripts": {
+			"build": [
+				"make build"
+			],
+			"run": [
+				"make run"
+			],
+			"parse": [
+				"make parse"
+			],
+			"anonymize": [
+				"make anonymize"
+			],
+			"analysis": [
+				"make analysis"
+			],
+			"rebuild": [
+				"make rebuild"
+			],
+			"test": [
+				"make test"
+			],
+			"test-archiver": [
+				"make test-archiver"
+			],
+			"test-parser": [
+				"make test-parser"
+			],
+			"test-anonymizer": [
+				"make test-anonymizer"
+			],
+			"clean": [
+				"make clean"
+			],
+			"debug-parser": [
+				"make debug-parser"
+			],
+			"debug-anonymizer": [
+				"make debug-anonymizer"
+			],
+			"debug-analysis": [
+				"make debug-analysis"
+			]
+		}
+	}
+}
