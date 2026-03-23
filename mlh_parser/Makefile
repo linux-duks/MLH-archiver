@@ -41,7 +41,7 @@ run:
 
 .PHONY: rebuild
 rebuild:
-	$(CONTAINER)-compose build
+	$(CONTAINER)-compose build --no-cache
 
 
 .PHONY: debug
