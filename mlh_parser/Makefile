@@ -46,7 +46,7 @@ rebuild:
 
 .PHONY: debug
 debug:
-	INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+	DEBUG=true INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
 
 
 .PHONY: clean

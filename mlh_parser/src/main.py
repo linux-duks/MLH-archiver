@@ -3,10 +3,7 @@ import os
 import logging
 
 from mlh_parser.parser import parse_mail_at
-from mlh_parser.constants import (
-    N_PROC,
-    LISTS_TO_PARSE,
-)
+from mlh_parser.configs import N_PROC, LISTS_TO_PARSE
 
 DEBUG = os.getenv("DEBUG", "false")
 level = logging.INFO

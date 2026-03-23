@@ -8,9 +8,11 @@ from tqdm import tqdm
 import logging
 
 from mlh_parser.parser_algorithm import parse_email_bytes_to_dict
+from mlh_parser.configs import (
+    REDO_FAILED_PARSES,
+)
 from mlh_parser.constants import (
     PARQUET_COLS_SCHEMA,
-    REDO_FAILED_PARSES,
     SINGLE_VALUED_COLS,
 )
 

@@ -120,7 +120,6 @@ class TestParseMailAtCompleteCases:
         # Verify expected columns exist
         expected_columns = PARQUET_COLS_SCHEMA.keys()
 
-
         assert len(df.columns) == len(expected_columns), "Numer of columns missmatch"
         for col in expected_columns:
             assert col in df.columns, f"Missing expected column: {col}"

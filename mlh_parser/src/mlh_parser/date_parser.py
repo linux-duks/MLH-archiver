@@ -27,8 +27,6 @@ def process_date(email_as_dict):
         if date_value:
             date_options.append(date_value)
 
-    logging.debug(f"Found {len(date_options)} options from the date header")
-
     # detect if found dates are valid
     safe_options = [date for date in date_options if not check_date_issues(date)]
 

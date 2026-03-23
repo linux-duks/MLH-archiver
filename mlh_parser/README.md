@@ -110,12 +110,44 @@ The Parquet dataset includes the following columns:
 
 ## Configuration
 
-Configuration is done via environment variables when running in container mode:
+Configuration is done via environment variables. These can be set in your shell, in a `.env` file, or passed directly to the command.
+
+### Runtime Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INPUT_DIR` | `/parser/input` | Directory containing raw emails |
-| `OUTPUT_DIR` | `/parser/output` | Output directory for Parquet files |
+| `INPUT_DIR` | `/parser/input` | Directory containing raw emails (container mode) |
+| `OUTPUT_DIR` | `/parser/output` | Output directory for Parquet files (container mode) |
+| `DEBUG` | `False` | Enable debug mode (sets `N_PROC=1` and enables verbose logging) |
+| `N_PROC` | `cpu_count() / 2` | Number of parallel processes to use (ignored if `DEBUG=True`) |
+| `REDO_FAILED_PARSES` | `False` | If `True`, re-parse only emails that previously failed |
+| `LISTS_TO_PARSE` | `""` (all lists) | Comma-separated list of mailing lists to parse. Empty means parse all available lists. |
+
+### Examples
+
+```bash
+# Run with debug mode (single process, verbose logging)
+DEBUG=True uv run src/main.py
+
+# Parse only specific mailing lists
+LISTS_TO_PARSE="list1,list2,list3" uv run src/main.py
+
+# Re-parse only failed emails from previous run
+REDO_FAILED_PARSES=True uv run src/main.py
+
+# Use 4 parallel processes
+N_PROC=4 uv run src/main.py
+
+# Native execution with custom directories
+INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+```
+
+### Notes
+
+- **`DEBUG` mode**: When enabled, forces single-threaded execution (`N_PROC=1`) for easier debugging
+- **`N_PROC`**: Defaults to half of available CPU cores for balanced performance
+- **`LISTS_TO_PARSE`**: Useful for testing or incremental parsing of specific lists
+- **`REDO_FAILED_PARSES`**: Reads from the `errors/` directory instead of the main input directory
 
 ## Development
 

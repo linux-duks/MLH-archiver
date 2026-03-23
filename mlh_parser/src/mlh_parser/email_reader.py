@@ -17,25 +17,25 @@ logger = logging.getLogger("email_reader")
 # Pattern to match common email header lines at the start of body content
 # These are often added by git send-email or mailing list software
 HEADER_LINE_PATTERN = re.compile(
-    r'^(From|To|Cc|Subject|Date|Message-ID|In-Reply-To|References|User-Agent|X-Mailer):[ \t]*.*$',
-    re.IGNORECASE | re.MULTILINE
+    r"^(From|To|Cc|Subject|Date|Message-ID|In-Reply-To|References|User-Agent|X-Mailer):[ \t]*.*$",
+    re.IGNORECASE | re.MULTILINE,
 )
 
 # Pattern to match valid email addresses with optional name
 # Matches: "Name <email@domain>" or "email@domain"
 EMAIL_PATTERN = re.compile(
-    r'^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$'
+    r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$"
 )
 
 # Pattern to match obfuscated email with (a)
 EMAIL_OBFUSCATED_A_PATTERN = re.compile(
-    r'^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$'
+    r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$"
 )
 
 # Pattern to match obfuscated email with " at "
 EMAIL_OBFUSCATED_AT_PATTERN = re.compile(
-    r'^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$',
-    re.IGNORECASE
+    r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$",
+    re.IGNORECASE,
 )
 
 
@@ -71,10 +71,10 @@ def _is_valid_email_address(value: str) -> bool:
 def _score_email_address(value: str) -> tuple:
     """
     Score an email address by quality.
-    
+
     Returns a tuple (has_name, has_valid_email, obfuscation_type) for sorting.
     Higher scores are better.
-    
+
     Scoring:
     - (True, True, None) = Best: "Name <email@domain>"
     - (False, True, None) = Good: "email@domain"
@@ -82,10 +82,10 @@ def _score_email_address(value: str) -> tuple:
     - (False, False, '(a)') = Low: "email(a)domain"
     - (True, False, ' at ') = Low: "Name <email at domain>"
     - (False, False, ' at ') = Lowest: "email at domain"
-    
+
     Args:
         value: Email address string
-        
+
     Returns:
         Tuple (has_name: bool, has_valid_email: bool, obfuscation: str|None)
     """
@@ -94,19 +94,19 @@ def _score_email_address(value: str) -> tuple:
     if match:
         name = match.group(1).strip() if match.group(1) else ""
         return (bool(name), True, None)
-    
+
     # Check for (a) obfuscation
     match = EMAIL_OBFUSCATED_A_PATTERN.match(value)
     if match:
         name = match.group(1).strip() if match.group(1) else ""
-        return (bool(name), False, '(a)')
-    
+        return (bool(name), False, "(a)")
+
     # Check for " at " obfuscation
     match = EMAIL_OBFUSCATED_AT_PATTERN.match(value)
     if match:
         name = match.group(1).strip() if match.group(1) else ""
-        return (bool(name), False, ' at ')
-    
+        return (bool(name), False, " at ")
+
     # No valid pattern found
     return (False, False, None)
 
@@ -114,14 +114,14 @@ def _score_email_address(value: str) -> tuple:
 def _normalize_email(value: str) -> str:
     """
     Normalize an email address by converting obfuscation to @.
-    
+
     Converts:
     - "user(a)domain.com" -> "user@domain.com"
     - "user at domain.com" -> "user@domain.com"
-    
+
     Args:
         value: Email address string (possibly obfuscated)
-        
+
     Returns:
         Normalized email address
     """
@@ -133,7 +133,7 @@ def _normalize_email(value: str) -> str:
         if name:
             return f"{name} <{email}>"
         return email
-    
+
     # Check for " at " obfuscation
     match = EMAIL_OBFUSCATED_AT_PATTERN.match(value)
     if match:
@@ -142,7 +142,7 @@ def _normalize_email(value: str) -> str:
         if name:
             return f"{name} <{email}>"
         return email
-    
+
     # Already valid or unknown format, return as-is
     return value
 
@@ -150,7 +150,7 @@ def _normalize_email(value: str) -> str:
 def _select_best_from_header(values: list | str) -> str:
     """
     Select the best 'From' header value from multiple candidates.
-    
+
     Scoring priority (best to worst):
     1. Complete identity with valid email: "Name <email@domain>"
     2. Email only with valid format: "email@domain"
@@ -158,23 +158,23 @@ def _select_best_from_header(values: list | str) -> str:
     4. Email only with (a) obfuscation: "email(a)domain"
     5. Complete identity with " at " obfuscation: "Name <email at domain>"
     6. Email only with " at " obfuscation: "email at domain"
-    
+
     Args:
         values: Single string or list of header values
-        
+
     Returns:
         Best email header value, normalized
     """
     if isinstance(values, str):
         return _normalize_email(values)
-    
+
     if not values:
         return ""
-    
+
     # Score all values and sort by score (descending)
     scored = [(_score_email_address(v), v) for v in values]
     scored.sort(key=lambda x: x[0], reverse=True)
-    
+
     # Return the best one, normalized
     best_value = scored[0][1]
     return _normalize_email(best_value)
@@ -183,10 +183,10 @@ def _select_best_from_header(values: list | str) -> str:
 def _clean_body_leading_headers(body: str, ctx: dict = None) -> str:
     """
     Remove leading header-like lines from email body.
-    
+
     Mailing list emails often have header-like lines at the start of the body
     (e.g., "From: Author <email>" from git send-email) that should be stripped.
-    
+
     If a valid 'From:' line is found in the body and the context has no valid
     'from' header, it will be stored in ctx['from'] for later use.
 
@@ -200,7 +200,7 @@ def _clean_body_leading_headers(body: str, ctx: dict = None) -> str:
     if not body:
         return body
 
-    lines = body.split('\n')
+    lines = body.split("\n")
     start_idx = 0
     extracted_from = None
 
@@ -214,7 +214,7 @@ def _clean_body_leading_headers(body: str, ctx: dict = None) -> str:
         match = HEADER_LINE_PATTERN.match(stripped)
         if match:
             # Check if this is a valid From: line with email address
-            if match.group(1).lower() == 'from':
+            if match.group(1).lower() == "from":
                 # Extract the value after "From:"
                 from_value = stripped[5:].strip()  # Skip "From:"
                 if _is_valid_email_address(from_value):
@@ -230,9 +230,9 @@ def _clean_body_leading_headers(body: str, ctx: dict = None) -> str:
 
     # Store extracted 'from' in context for get_headers to use
     if extracted_from and ctx is not None:
-        ctx['extracted_from'] = extracted_from
+        ctx["extracted_from"] = extracted_from
 
-    return '\n'.join(lines[start_idx:]) if start_idx > 0 else body
+    return "\n".join(lines[start_idx:]) if start_idx > 0 else body
 
 
 def decode_mail(email_raw, ctx: dict = None) -> EmailMessage:
@@ -255,13 +255,15 @@ def decode_mail(email_raw, ctx: dict = None) -> EmailMessage:
     return msg
 
 
-def get_headers(msg: EmailMessage, ctx: dict = None, raw_email: bytes = None) -> Dict[str, str | list[str]]:
+def get_headers(
+    msg: EmailMessage, ctx: dict = None, raw_email: bytes = None
+) -> Dict[str, str | list[str]]:
     """
     Extract headers from email message.
 
     Uses raw header access to avoid parsing errors with malformed addresses.
     Unfolds folded headers (RFC 5322) by replacing CRLF+whitespace with single space.
-    
+
     For the 'from' header, collects all candidates (from headers and body),
     scores them by quality, and selects the best one.
 
@@ -278,15 +280,15 @@ def get_headers(msg: EmailMessage, ctx: dict = None, raw_email: bytes = None) ->
 
     headers = {}
     from_candidates = []
-    
+
     try:
         # Use raw headers to avoid parsing errors with malformed addresses
         for key, value in msg._headers:
             key = key.lower()
             # Unfold header: replace CRLF followed by whitespace with single space
-            unfolded_value = ' '.join(value.split())
-            
-            if key == 'from':
+            unfolded_value = " ".join(value.split())
+
+            if key == "from":
                 from_candidates.append(unfolded_value)
             elif key in headers:
                 existing = headers.get(key)
@@ -297,16 +299,16 @@ def get_headers(msg: EmailMessage, ctx: dict = None, raw_email: bytes = None) ->
                     headers[key] = [existing, unfolded_value]
             else:
                 headers[key] = unfolded_value
-        
+
         # Extract additional From candidates from body
         if raw_email:
             body_from_candidates = _extract_all_from_from_body(raw_email)
             from_candidates.extend(body_from_candidates)
-        
+
         # Select the best From header
         if from_candidates:
-            headers['from'] = _select_best_from_header(from_candidates)
-            
+            headers["from"] = _select_best_from_header(from_candidates)
+
     except Exception as e:
         _ctx_log(ctx, "error", "Failed to extract headers: %s", e)
         ctx["errors"].append(f"get_headers: {e}")
@@ -317,43 +319,43 @@ def get_headers(msg: EmailMessage, ctx: dict = None, raw_email: bytes = None) ->
 def _extract_all_from_from_body(raw_email: bytes) -> list:
     """
     Extract all 'From:' email addresses from the email body.
-    
+
     This is used to find valid From headers that may appear in the body
     (common in git send-email patches).
-    
+
     Handles common email obfuscation like "(a)" for "@" and " at " for "@".
-    
+
     Args:
         raw_email: Raw email bytes
-        
+
     Returns:
         List of From header values found in body
     """
     candidates = []
     try:
         # Decode email to text
-        email_text = raw_email.decode('utf-8', errors='replace')
-        
+        email_text = raw_email.decode("utf-8", errors="replace")
+
         # Look for pattern "From: Name <email@domain>" or "From: Name <email(a)domain>"
         # or "From: email at domain"
         from_patterns = [
             # Standard @ pattern
             re.compile(
-                r'^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>',
-                re.MULTILINE | re.IGNORECASE
+                r"^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>",
+                re.MULTILINE | re.IGNORECASE,
             ),
             # (a) obfuscation pattern
             re.compile(
-                r'^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>',
-                re.MULTILINE | re.IGNORECASE
+                r"^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>",
+                re.MULTILINE | re.IGNORECASE,
             ),
             # " at " obfuscation pattern
             re.compile(
-                r'^From:\s*([^<\n]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?',
-                re.MULTILINE | re.IGNORECASE
+                r"^From:\s*([^<\n]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?",
+                re.MULTILINE | re.IGNORECASE,
             ),
         ]
-        
+
         for pattern in from_patterns:
             for match in pattern.finditer(email_text):
                 name = match.group(1).strip() if match.group(1) else ""
@@ -364,10 +366,10 @@ def _extract_all_from_from_body(raw_email: bytes) -> list:
                         candidates.append(f"{name} <{email}>")
                     else:
                         candidates.append(email)
-            
+
     except Exception:
         pass
-    
+
     return candidates
 
 
