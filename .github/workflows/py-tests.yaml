@@ -6,6 +6,9 @@ on:
       path:
         required: true
         type: string
+      project-name:
+        required: true
+        type: string
 
 jobs:
   python-tests:
@@ -30,5 +33,20 @@ jobs:
       - name: Install the project
         run: cd ${{ inputs.path }}  && uv sync --locked --all-extras --dev
 
-      - name: Run tests
-        run: cd ${{ inputs.path }} && uv tool run nox
+      - name: Run tests with coverage
+        run: cd ${{ inputs.path }} && uv tool run nox -s tests
+
+      - name: Upload coverage XML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ inputs.project-name }}-py${{ matrix.python-version }}
+          path: ${{ inputs.path }}/coverage.xml
+          if-no-files-found: ignore
+
+      - name: Upload coverage HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html-${{ inputs.project-name }}-py${{ matrix.python-version }}
+          path: ${{ inputs.path }}/htmlcov/
+          if-no-files-found: ignore
+          retention-days: 7

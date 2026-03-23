@@ -1,0 +1,84 @@
+name: Coverage Summary
+
+on:
+  workflow_run:
+    workflows:
+      - "Parser Test"
+      - "Anonymizer Test"
+      - "Lint and Test Rust Component"
+    types:
+      - completed
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  coverage-summary:
+    runs-on: ubuntu-latest
+    name: Generate Coverage Summary
+    
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0  # Full history for git diff
+      
+      - name: Download all coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: ./coverage-artifacts
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+      
+      - name: Install coverage tools
+        run: |
+          pip install coverage lcov-parser
+      
+      - name: Download previous coverage (if exists)
+        uses: actions/cache/restore@v4
+        with:
+          path: ./coverage-history
+          key: coverage-history-${{ github.sha }}
+          fail-on-cache-miss: false
+      
+      - name: Generate coverage summary
+        id: summary
+        run: |
+          python scripts/generate_coverage_summary.py \
+            --artifacts-dir ./coverage-artifacts \
+            --output-file coverage-summary.md \
+            --base-ref ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD~1' }} \
+            --head-ref ${{ github.event.pull_request.head.sha || github.sha }}
+        
+      - name: Display coverage summary
+        run: cat coverage-summary.md
+      
+      - name: Upload coverage summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-summary
+          path: coverage-summary.md
+          retention-days: 30
+      
+      - name: Save coverage history
+        uses: actions/cache/save@v4
+        with:
+          path: ./coverage-history
+          key: coverage-history-${{ github.sha }}
+      
+      - name: Comment PR with coverage summary
+        if: github.event.pull_request.number
+        uses: thollander/actions-comment-pull-request@v3
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          file-path: coverage-summary.md
+          comment-tag: coverage-summary
+          mode: upsert

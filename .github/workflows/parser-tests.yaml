@@ -12,4 +12,5 @@ jobs:
     name: parser-tests
     with:
       path: ./mlh_parser
+      project-name: mlh_parser
 

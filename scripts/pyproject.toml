@@ -9,3 +9,9 @@ dependencies = [
 
 [project.scripts]
 peek-files = "peek_files:main"
+generate-coverage-summary = "generate_coverage_summary:main"
+
+[dependency-groups]
+dev = [
+    "coverage[toml]>=7.0",
+]
