@@ -4,8 +4,7 @@
 		"python@3.14",
 		"uv@latest",
 		"git@latest",
-		"rustup@latest",
-		"libiconv@latest"
+		"rustup@latest"
 	],
 	"env": {
 		"PROJECT_DIR": "$PWD",
@@ -13,10 +12,7 @@
 	},
 	"shell": {
 		"init_hook": [
-			"echo 'Welcome to devbox!' > /dev/null",
-			". set-env.sh",
-			"rustup default stable",
-			"cargo fetch"
+			"echo 'Welcome to devbox!' > /dev/null"
 		],
 		"scripts": {
 			"build": [
@@ -60,6 +56,9 @@
 			],
 			"debug-analysis": [
 				"make debug-analysis"
+			],
+			"peek": [
+				"uv run scripts/peek_files.py \"$@\""
 			]
 		}
 	}

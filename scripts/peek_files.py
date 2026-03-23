@@ -1,0 +1,189 @@
+#!/usr/bin/env python3
+"""
+Peek into Parquet files or directories.
+
+Usage:
+    peek-files <path>
+    peek-files --dir <path>
+
+Displays:
+    - DataFrame preview (df.show())
+    - Total row count
+    - Row count per partition (if hive-partitioned)
+    - Schema
+"""
+
+import sys
+from pathlib import Path
+
+import polars as pl
+
+
+def parse_args(args: list[str]) -> str:
+    """Parse command line arguments and return the target path."""
+    if not args:
+        print("Usage: peek-files <path>")
+        print("       peek-files --dir <path>")
+        print("  path: Path to a parquet file or directory")
+        sys.exit(1)
+
+    # Support --dir flag
+    if args[0] == "--dir":
+        if len(args) < 2:
+            print("Error: --dir requires a path argument")
+            sys.exit(1)
+        return args[1]
+
+    # Positional argument
+    return args[0]
+
+
+def expand_path(path_str: str) -> Path:
+    """Expand and resolve the given path to an absolute path."""
+    path = Path(path_str).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    return path.resolve()
+
+
+def find_parquet_files(path: Path) -> list[Path]:
+    """Find all parquet files in the given path."""
+    if path.is_file():
+        if path.suffix in (".parquet", ".pq"):
+            return [path]
+        return []
+    elif path.is_dir():
+        return sorted(path.rglob("*.parquet"))
+    else:
+        return []
+
+
+def detect_partitions(path: Path, parquet_files: list[Path]) -> dict[str, Path] | None:
+    """
+    Detect hive partitioning from directory structure.
+    Returns dict mapping partition value to directory if hive-partitioned.
+    """
+    if not parquet_files:
+        return None
+
+    # Check if files are in hive-partitioned directories
+    # e.g., mailing_list=foo/part-0.parquet
+    partitions = {}
+    for pf in parquet_files:
+        parent = pf.parent
+        if "=" in parent.name:
+            # This looks like a hive partition
+            partition_key = parent.name
+            partitions[partition_key] = parent
+
+    return partitions if partitions else None
+
+
+def show_partition_stats(parquet_files: list[Path]) -> None:
+    """Show row count per partition."""
+    print("\nPartition Statistics:")
+    print("-" * 50)
+
+    # Group files by their parent directory (partition)
+    partition_groups: dict[Path, list[Path]] = {}
+    for pf in parquet_files:
+        parent = pf.parent
+        if parent not in partition_groups:
+            partition_groups[parent] = []
+        partition_groups[parent].append(pf)
+
+    for partition_dir, files in sorted(partition_groups.items()):
+        partition_name = partition_dir.name
+        total_rows = 0
+
+        for pf in files:
+            try:
+                # Use scan for efficiency
+                lf = pl.scan_parquet(pf)
+                count = lf.select(pl.len()).collect().item()
+                total_rows += count
+            except Exception as e:
+                print(f"  Warning: Could not read {pf.name}: {e}")
+
+        print(f"  {partition_name}: {total_rows:,} rows ({len(files)} file(s))")
+
+    total = sum(
+        pl.scan_parquet(pf).select(pl.len()).collect().item() for pf in parquet_files
+    )
+    print("-" * 50)
+    print(f"  TOTAL: {total:,} rows across {len(parquet_files)} file(s)")
+
+
+def show_file_info(path: Path) -> None:
+    """Show info for a single parquet file."""
+    print(f"\nFile: {path}")
+    print("-" * 50)
+
+    df = pl.read_parquet(path)
+    print(f"\nShape: {df.shape[0]:,} rows x {df.shape[1]} columns")
+
+    print("\nSchema:")
+    for col, dtype in df.schema.items():
+        print(f"  {col}: {dtype}")
+
+    print("\nPreview (df.show()):")
+    df.show()
+
+
+def show_directory_info(path: Path, parquet_files: list[Path]) -> None:
+    """Show info for a directory of parquet files."""
+    print(f"\nDirectory: {path}")
+    print(f"Found {len(parquet_files)} parquet file(s)")
+    print("-" * 50)
+
+    # Check for hive partitioning
+    partitions = detect_partitions(path, parquet_files)
+
+    if partitions:
+        print("\nDetected hive partitioning")
+        show_partition_stats(parquet_files)
+    else:
+        # No partitioning, just show total
+        total_rows = sum(
+            pl.scan_parquet(pf).select(pl.len()).collect().item()
+            for pf in parquet_files
+        )
+        print(f"\nTotal: {total_rows:,} rows across {len(parquet_files)} file(s)")
+
+    # Show schema from first file
+    if parquet_files:
+        print("\nSchema (from first file):")
+        df_sample = pl.read_parquet(parquet_files[0], n_rows=0)
+        for col, dtype in df_sample.schema.items():
+            print(f"  {col}: {dtype}")
+
+        # Show preview
+        print("\nPreview (first 10 rows from first file):")
+        df_preview = pl.read_parquet(parquet_files[0], n_rows=10)
+        df_preview.show()
+
+
+def main():
+    path_str = parse_args(sys.argv[1:])
+    path = expand_path(path_str)
+
+    print(f"Inspecting: {path}")
+
+    if not path.exists():
+        print(f"Error: Path does not exist: {path}")
+        sys.exit(1)
+
+    parquet_files = find_parquet_files(path)
+
+    if not parquet_files:
+        print(f"No parquet files found at: {path}")
+        sys.exit(1)
+
+    if len(parquet_files) == 1 and path.is_file():
+        show_file_info(path)
+    else:
+        show_directory_info(path, parquet_files)
+
+
+if __name__ == "__main__":
+    main()

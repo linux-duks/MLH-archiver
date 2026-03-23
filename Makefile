@@ -87,3 +87,5 @@ clean:
 	$(MAKE) -C mlh_parser clean
 	$(MAKE) -C anonymizer clean
 	$(MAKE) -C analysis clean
+	$(MAKE) -C scripts clean
+
