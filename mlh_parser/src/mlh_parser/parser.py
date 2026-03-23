@@ -73,6 +73,7 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
 
     email_dict_array = [None] * len(all_emails)
 
+    # TODO: this progress bar needs rework https://github.com/linux-duks/MLH-archiver/issues/11
     for index, email_name in tqdm(
         enumerate(all_emails),
         total=len(all_emails),
@@ -108,6 +109,9 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
             )
             continue
 
+        email_as_dict = sanitize_surrogate_characters(email_as_dict)
+
+        # track the file name processed
         email_as_dict["__file_name"] = email_name
 
         email_dict_array[index] = email_as_dict
@@ -130,6 +134,31 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
     all_parsed = all_parsed.drop("index")
     all_parsed.write_parquet(parquet_path)
     logger.info(f"Saved all parsed mail on list '{mailing_list}'")
+
+
+def sanitize_surrogate_characters(email_as_dict: dict) -> dict:
+    # Sanitize surrogate characters from all string fields to prevent
+    # UnicodeEncodeError when creating Polars DataFrame
+    if email_as_dict is None:
+        return None
+    for key, value in email_as_dict.items():
+        if isinstance(value, str):
+            email_as_dict[key] = value.encode("utf-8", errors="surrogatepass").decode(
+                "utf-8", errors="replace"
+            )
+        elif isinstance(value, list):
+            for j, item in enumerate(value):
+                if isinstance(item, str):
+                    value[j] = item.encode("utf-8", errors="surrogatepass").decode(
+                        "utf-8", errors="replace"
+                    )
+                elif isinstance(item, dict):
+                    for k, v in item.items():
+                        if isinstance(v, str):
+                            item[k] = v.encode("utf-8", errors="surrogatepass").decode(
+                                "utf-8", errors="replace"
+                            )
+    return email_as_dict
 
 
 def post_process_parsed_mail(email_as_dict: dict, ctx: dict = None):
