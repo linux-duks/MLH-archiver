@@ -85,7 +85,7 @@ jobs:
           if-no-files-found: ignore
       
       - name: Upload coverage HTML
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: coverage-html-mlh-archiver
           path: mlh-archiver/target/llvm-cov/html/
