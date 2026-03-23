@@ -71,9 +71,6 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
             and os.path.isfile(os.path.join(list_input_path, f))
         ]
 
-    # newly_parsed = pl.DataFrame(schema=PARQUET_COLS_SCHEMA)
-    # newly_parsed = newly_parsed.with_row_index()
-
     email_dict_array = [None] * len(all_emails)
 
     for index, email_name in tqdm(
@@ -123,16 +120,9 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
         email_file.close()
         email_file_bytes.close()
 
-    # import json
-
-    # print("dict values", json.dumps(email_as_dict, default=str))
-
-    newly_parsed = pl.DataFrame(email_dict_array, schema=PARQUET_COLS_SCHEMA)
-    # email_as_df = email_as_df.with_columns(
-    #     # Let's keep our datetimes naive
-    #     pl.col("date").dt.replace_time_zone(None)
-    # )
-    #
+    newly_parsed = pl.DataFrame(
+        email_dict_array, schema=PARQUET_COLS_SCHEMA
+    ).with_row_index()
 
     print(f"Converting {mailing_list} to Polars DataFrame")
 

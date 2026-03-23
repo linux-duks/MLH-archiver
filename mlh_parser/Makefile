@@ -29,7 +29,7 @@ test:
 
 .PHONY: run
 run:
-	@if [ ! -d "output" ] || [ -z "$$(ls output 2>/dev/null)" ]; then \
+	@if [ ! -d "../output" ] || [ -z "$$(ls ../output 2>/dev/null)" ]; then \
 		echo "==> Error: 'output' directory is missing or empty."; \
 		echo "==> Please run the archiver first to generate files."; \
 		exit 1; \

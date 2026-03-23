@@ -18,6 +18,7 @@ PARQUET_COLS_SCHEMA = {
     ),
     "code": pl.List(pl.String),
     "raw_body": pl.String,
+    "__file_name": pl.String,
 }
 
 SIGNED_BLOCK = "trailers"
@@ -53,4 +54,5 @@ KEYS_MASK = [
     SIGNED_BLOCK,
     "code",
     "raw_body",
+    "__file_name",
 ]

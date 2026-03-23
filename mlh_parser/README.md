@@ -104,8 +104,8 @@ The Parquet dataset includes the following columns:
 | `in-reply-to` | string | In-Reply-To header |
 | `references` | list\<string\> | References headers |
 | `x-mailing-list` | string | Mailing list name |
-| `trailers` | list | Signature block attribution and identification |
-| `code` | list | Code snippets extracted from email |
+| `trailers` | list\<struct\<attribution: string, identification: string\>\> | Signature block attribution and identification |
+| `code` | list\<string\> | Code snippets extracted from email |
 | `raw_body` | string | Complete raw email body |
 
 ## Configuration
@@ -245,11 +245,14 @@ tests/
 ├── complete_cases/          # Full email parsing tests (trailers + code)
 │   ├── 14.eml              # Raw email file
 │   ├── 14.trailers.pytest  # Expected trailers (Python literal)
-│   └── 14.code.pytest      # Expected code/patches (Python literal)
+│   ├── 14.code.pytest      # Expected code/patches (Python literal)
+│   ├── 14.body.pytest      # Expected email body
+│   └── 14.headers.pytest   # Expected headers (raw format)
 ├── date_cases/              # Date parsing test cases
 │   ├── org.kernel...6592.eml           # Raw email file
 │   └── org.kernel...6592.date.pytest   # Expected parsed date
 ├── test_complete_parsers.py  # Test runner for complete cases
+├── test_base_email_parsers.py  # Tests for body and header parsing
 ├── test_dates.py             # Test runner for date parsing
 ├── test_attributions.py      # Unit tests for attribution extraction
 ├── test_patches.py           # Unit tests for patch extraction
@@ -265,6 +268,8 @@ Test files are grouped by a common prefix:
 | `<prefix>.eml` | Raw RFC 822 email input |
 | `<prefix>.trailers.pytest` | Expected trailers (Python list literal) |
 | `<prefix>.code.pytest` | Expected code patches (Python list literal) |
+| `<prefix>.body.pytest` | Expected email body |
+| `<prefix>.headers.pytest` | Expected headers (raw format) |
 | `<prefix>.date.pytest` | Expected parsed date (first line is the date) |
 | `<prefix>.client-date.pytest` | Expected raw client dates (one per line) |
 
