@@ -136,7 +136,7 @@ def parse_email_bytes_to_dict(email_raw: bytes, ctx: dict = None) -> dict:
 
     msg = decode_mail(email_raw, ctx=ctx)
 
-    data = get_headers(msg, ctx=ctx)
+    data = get_headers(msg, ctx=ctx, raw_email=email_raw)
     data["raw_body"] = get_body(msg, ctx=ctx)
 
     # TODO: refactor
