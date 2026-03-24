@@ -28,17 +28,24 @@ def parse_mail_at_wrap(mail_l):
 
 
 def main():
-    p = Pool(N_PROC)
+    # parse specific lists or all in the directory
+    lists = LISTS_TO_PARSE if len(LISTS_TO_PARSE) > 0 else os.listdir(INPUT_DIR_PATH)
 
-    if len(LISTS_TO_PARSE) > 0:
-        p.map(parse_mail_at_wrap, LISTS_TO_PARSE)
+    if N_PROC == 1:
+        sequential(lists)
     else:
-        p.map(parse_mail_at_wrap, os.listdir(INPUT_DIR_PATH))
+        with Pool(N_PROC) as p:
+            try:
+                p.map(parse_mail_at_wrap, lists)
+            except KeyboardInterrupt:
+                logging.info("Interrupted, shutting down workers...")
+                p.terminate()
+                p.join()
 
 
 # for debugging only
-def sequential():
-    for mail_l in os.listdir(INPUT_DIR_PATH):
+def sequential(lists: list):
+    for mail_l in lists:
         parse_mail_at_wrap(mail_l)
 
 
