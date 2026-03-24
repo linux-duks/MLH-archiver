@@ -111,7 +111,14 @@ def parse_date_tentative(date):
         except Exception as ee:
             date_value = last_effort_date_finder(date)
             if not date_value:
-                logging.error("failed reading date", e, ee)
+                logging.debug("failed reading date with all parsers: %s | %s", e, ee)
+                raise ValueError(f"Could not parse date {date!r}") from ee
+            else:
+                logging.debug(
+                    "failed reading date with standard parsers, used fallback: %s | %s",
+                    e,
+                    ee,
+                )
 
     if date_value is not None and not _has_valid_utc_offset(date_value):
         logging.warning(f"Discarding date with invalid UTC offset: {date!r}")
