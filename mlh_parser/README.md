@@ -140,6 +140,12 @@ N_PROC=4 uv run src/main.py
 
 # Native execution with custom directories
 INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+
+# Using Make with environment variables
+make parse N_PROC=4
+make parse LISTS_TO_PARSE="list1,list2,list3"
+make parse REDO_FAILED_PARSES=true N_PROC=2
+make debug-parser N_PROC=1 LISTS_TO_PARSE="dev.rcpassos.me.lists.gfs2"
 ```
 
 ### Notes

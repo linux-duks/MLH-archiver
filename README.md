@@ -107,6 +107,9 @@ The root `Makefile` orchestrates all components. Run commands from the project r
 | `make build` | Build the archiver (Rust) |
 | `make run` | Run the archiver |
 | `make parse` | Run the mailing list parser |
+| `make parse N_PROC=4` | Run parser with 4 parallel processes |
+| `make parse LISTS_TO_PARSE="list1,list2"` | Run parser for specific lists only |
+| `make parse REDO_FAILED_PARSES=true` | Re-parse only previously failed emails |
 | `make anonymize` | Run the anonymizer |
 | `make analysis` | Run example analyses |
 | `make rebuild` | Rebuild all components |

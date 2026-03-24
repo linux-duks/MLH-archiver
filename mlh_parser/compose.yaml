@@ -8,6 +8,9 @@ services:
     environment:
       INPUT_DIR: "/parser/input"
       OUTPUT_DIR: "/parser/output"
+      N_PROC: ${N_PROC:-}
+      REDO_FAILED_PARSES: ${REDO_FAILED_PARSES:-}
+      LISTS_TO_PARSE: ${LISTS_TO_PARSE:-}
     stdin_open: true
     user: "${UID}:${GID}"
     volumes:

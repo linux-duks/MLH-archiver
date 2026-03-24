@@ -16,7 +16,7 @@ run:
 
 .PHONY: parse
 parse:
-	$(MAKE) -C mlh_parser run
+	$(MAKE) -C mlh_parser run N_PROC="$(N_PROC)" REDO_FAILED_PARSES="$(REDO_FAILED_PARSES)" LISTS_TO_PARSE="$(LISTS_TO_PARSE)"
 
 .PHONY: anonymize
 anonymize:
@@ -51,7 +51,7 @@ rebuild-analysis:
 
 .PHONY: debug-parser
 debug-parser:
-	$(MAKE) -C mlh_parser debug
+	$(MAKE) -C mlh_parser debug N_PROC="$(N_PROC)" REDO_FAILED_PARSES="$(REDO_FAILED_PARSES)" LISTS_TO_PARSE="$(LISTS_TO_PARSE)"
 
 .PHONY: debug-anonymizer
 debug-anonymizer:
