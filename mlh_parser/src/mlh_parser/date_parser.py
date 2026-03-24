@@ -20,6 +20,8 @@ def process_date(email_as_dict):
 
     date_options = []
     for date in email_as_dict["date"]:
+        if date is None:
+            continue
         date = date.strip()
 
         res = StringDateFinder.search(date)
@@ -86,22 +88,34 @@ def last_effort_date_finder(date_text):
     return date
 
 
+def _has_valid_utc_offset(date_value) -> bool:
+    """Return False if the timezone offset is outside Python's valid ±24h range."""
+    try:
+        offset = date_value.utcoffset()
+    except ValueError:
+        return False
+    if offset is None:
+        return True
+    return dt.timedelta(hours=-24) < offset < dt.timedelta(hours=24)
+
+
 def parse_date_tentative(date):
     if not date:
         return None
     date_value = None
     try:
         date_value = date_parser.parse(date)
-        return date_value
-
     except Exception as e:
         try:
             date_value = utils.parsedate_to_datetime(date)
-            return date_value
         except Exception as ee:
             date_value = last_effort_date_finder(date)
             if not date_value:
                 logging.error("failed reading date", e, ee)
+
+    if date_value is not None and not _has_valid_utc_offset(date_value):
+        logging.warning(f"Discarding date with invalid UTC offset: {date!r}")
+        return None
     return date_value
 
 

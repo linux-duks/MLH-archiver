@@ -1,0 +1,13 @@
+From: developer@example.com
+To: linux-test@vger.kernel.org
+Subject: [PATCH] test: synthetic invalid timezone +9900
+Date: Fri, 01 Mar 2024 12:00:00 +9900
+Message-ID: <synthetic-invalid-tz-9900@example.com>
+Received: by relay.example.org (Postfix) with ESMTP id AABB1234;
+	Fri, 01 Mar 2024 09:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Synthetic test email.
+The Date header has an out-of-range timezone offset (+9900 = 99 hours).
+The parser should discard it and fall back to the Received header date.
