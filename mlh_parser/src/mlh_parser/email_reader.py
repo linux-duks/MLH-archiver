@@ -292,7 +292,7 @@ def get_headers(
             key = key.lower()
             # RFC 5322 unfolding: replace only fold sequences (CRLF/LF + LWSP)
             # with a single space, preserving internal tabs and multiple spaces.
-            unfolded_value = re.sub(r'\r?\n[ \t]+', ' ', value).strip()
+            unfolded_value = re.sub(r"\r?\n[ \t]+", " ", value).strip()
 
             if key == "from":
                 from_candidates.append(unfolded_value)
@@ -410,7 +410,12 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                 try:
                     cte = part.get("Content-Transfer-Encoding", "").lower()
                     if cte == "base64":
-                        _ctx_log(ctx, "debug", "Decoding base64-encoded %s part", content_type)
+                        _ctx_log(
+                            ctx,
+                            "debug",
+                            "Decoding base64-encoded %s part",
+                            content_type,
+                        )
                     payload = part.get_payload(decode=True)
                     if payload is None:
                         continue
@@ -435,7 +440,12 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                     try:
                         text = payload.decode(charset or "utf-8", errors="replace")
                     except LookupError:
-                        _ctx_log(ctx, "warning", "Invalid charset '%s', falling back to utf-8", charset)
+                        _ctx_log(
+                            ctx,
+                            "warning",
+                            "Invalid charset '%s', falling back to utf-8",
+                            charset,
+                        )
                         text = payload.decode("utf-8", errors="replace")
                     body_parts.append(text)
                 except Exception as part_error:
@@ -453,7 +463,9 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
 
         cte = msg.get("Content-Transfer-Encoding", "").lower()
         if cte == "base64":
-            _ctx_log(ctx, "debug", "Decoding base64-encoded single-part %s", content_type)
+            _ctx_log(
+                ctx, "debug", "Decoding base64-encoded single-part %s", content_type
+            )
 
         charset = msg.get_content_charset()
         body = msg.get_payload(decode=True)
@@ -474,7 +486,9 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
         try:
             return body.decode(charset or "utf-8", errors="replace")
         except LookupError:
-            _ctx_log(ctx, "warning", "Invalid charset '%s', falling back to utf-8", charset)
+            _ctx_log(
+                ctx, "warning", "Invalid charset '%s', falling back to utf-8", charset
+            )
             return body.decode("utf-8", errors="replace")
 
     try:

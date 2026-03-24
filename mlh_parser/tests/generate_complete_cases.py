@@ -17,7 +17,6 @@ Usage (from mlh_parser/ directory):
 """
 
 import argparse
-import io
 import pprint
 import sys
 from pathlib import Path
@@ -29,7 +28,12 @@ from mlh_parser.email_reader import decode_mail, get_body, get_headers
 from mlh_parser.parser import parse_and_process_email
 
 COMPLETE_CASES_DIR = Path(__file__).parent / "complete_cases"
-FIXTURE_EXTENSIONS = [".body.pytest", ".headers.pytest", ".trailers.pytest", ".code.pytest"]
+FIXTURE_EXTENSIONS = [
+    ".body.pytest",
+    ".headers.pytest",
+    ".trailers.pytest",
+    ".code.pytest",
+]
 
 # Suffixes that mark a fixture file (e.g. .body, .headers) — used to detect
 # files like "foo.body.eml" that are misnamed fixtures, not real emails.
@@ -39,6 +43,7 @@ _FIXTURE_STEMS = {ext.replace(".pytest", "") for ext in FIXTURE_EXTENSIONS}
 # ---------------------------------------------------------------------------
 # Formatters
 # ---------------------------------------------------------------------------
+
 
 def _write_headers(headers: dict) -> str:
     """Serialise headers dict back to key: value lines for .headers.pytest."""
@@ -61,11 +66,13 @@ def _write_python_literal(obj) -> str:
 # Core
 # ---------------------------------------------------------------------------
 
+
 def missing_fixtures(eml_path: Path) -> list[str]:
     """Return list of extension strings (e.g. '.body.pytest') that are absent."""
     stem = eml_path.stem
     return [
-        ext for ext in FIXTURE_EXTENSIONS
+        ext
+        for ext in FIXTURE_EXTENSIONS
         if not (eml_path.parent / (stem + ext)).exists()
     ]
 
@@ -141,13 +148,21 @@ def generate_fixtures(eml_path: Path, targets: list[str], dry_run: bool) -> None
 # CLI
 # ---------------------------------------------------------------------------
 
+
 def main():
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Print what would be created without writing anything")
-    parser.add_argument("--all", action="store_true",
-                        help="Regenerate all fixture files, even those that already exist")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print what would be created without writing anything",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Regenerate all fixture files, even those that already exist",
+    )
     args = parser.parse_args()
 
     all_eml = sorted(COMPLETE_CASES_DIR.glob("*.eml"))
@@ -173,14 +188,16 @@ def main():
         print("All .eml files already have complete fixture sets.")
         return
 
-    print(f"{'Would process' if args.dry_run else 'Processing'} "
-          f"{len(work)} .eml file(s):\n")
+    print(
+        f"{'Would process' if args.dry_run else 'Processing'} "
+        f"{len(work)} .eml file(s):\n"
+    )
 
     for eml, targets in work:
         print(f"{eml.name}  →  {', '.join(targets)}")
         generate_fixtures(eml, targets, dry_run=args.dry_run)
 
-    print(f"\nDone.")
+    print("\nDone.")
 
 
 if __name__ == "__main__":
