@@ -35,12 +35,12 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
     if not os.path.isdir(list_output_path):
         logger.info(f"First parse of list '{mailing_list}'")
 
-        if not os.path.isdir(parquet_dir_path):
-            os.mkdir(parquet_dir_path)
-
-        os.mkdir(list_output_path)
-        os.mkdir(success_output_path)
-        os.mkdir(error_output_path)
+        # Use makedirs with exist_ok=True to safely handle concurrent workers
+        # all trying to create the same parquet_dir_path simultaneously
+        os.makedirs(parquet_dir_path, exist_ok=True)
+        os.makedirs(list_output_path, exist_ok=True)
+        os.makedirs(success_output_path, exist_ok=True)
+        os.makedirs(error_output_path, exist_ok=True)
     else:
         if REDO_FAILED_PARSES:
             try:
