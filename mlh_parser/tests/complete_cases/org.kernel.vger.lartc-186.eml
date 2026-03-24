@@ -1,0 +1,73 @@
+From: Rick Goh Siow Mong rickgoh@cyberway.com.sg
+Date: Sun, 19 Nov 2000 10:50:45 +0000
+Subject: [LARTC] CBQ - tc
+MIME-Version: 1
+Content-Type: multipart/mixed; boundary="----=_NextPart_000_008F_01C05259.9FFE1610"
+Message-Id: <marc-lartc-98373938216953@msgid-missing>
+List-Id: <lartc.vger.kernel.org>
+To: lartc@vger.kernel.org
+Xref: nntp.lore.kernel.org org.kernel.vger.lartc:186
+Newsgroups: org.kernel.vger.lartc
+Path: nntp.lore.kernel.org!not-for-mail
+
+<PRE>This is a multi-part message in MIME format.
+
+------=_NextPart_000_008F_01C05259.9FFE1610
+Content-Type: text/plain;
+	charset=&quot;iso-8859-1&quot;
+Content-Transfer-Encoding: quoted-printable
+
+After i key in this,
+#tc qdisc add dev eth0 root handle 10: cbq bandwidth 10Mbit avpkt 1000
+
+linux kernel gives me this reply:
+&quot; RTNETLINK answers: Invalid argument.&quot;=20
+
+PLease help. i can't even get past the first stage!!
+
+i'm running Linux Mandrake 7.2 with default kernel 2.2.17
+
+
+Rick Goh.
+
+
+------=_NextPart_000_008F_01C05259.9FFE1610
+Content-Type: text/html;
+	charset=&quot;iso-8859-1&quot;
+Content-Transfer-Encoding: quoted-printable
+
+&lt;!DOCTYPE HTML PUBLIC &quot;-//W3C//DTD HTML 4.0 Transitional//EN&quot;&gt;
+&lt;HTML&gt;&lt;HEAD&gt;
+&lt;META http-equiv=3DContent-Type content=3D&quot;text/html; =
+charset=3Diso-8859-1&quot;&gt;
+&lt;META content=3D&quot;MSHTML 5.50.4522.1800&quot; name=3DGENERATOR&gt;
+&lt;STYLE&gt;&lt;/STYLE&gt;
+&lt;/HEAD&gt;
+&lt;BODY bgColor=3D#ffffff background=3D&quot;&quot;&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;After i key in this,&lt;BR&gt;#tc qdisc add =
+dev eth0 root=20
+handle 10: cbq bandwidth 10Mbit avpkt 1000&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;&lt;/FONT&gt;&amp;nbsp;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;linux kernel &lt;/FONT&gt;&lt;FONT face=3DArial =
+size=3D2&gt;gives=20
+me this reply:&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;&quot; RTNETLINK answers: Invalid argument.&quot; =
+
+&lt;BR&gt;&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;PLease help. i can't even get past the =
+first=20
+stage!!&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;&lt;/FONT&gt;&amp;nbsp;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;i'm running Linux Mandrake 7.2 with =
+default kernel=20
+2.2.17&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;&lt;/FONT&gt;&amp;nbsp;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;&lt;/FONT&gt;&amp;nbsp;&lt;/DIV&gt;
+&lt;DIV&gt;&lt;FONT face=3DArial size=3D2&gt;Rick Goh.&lt;/FONT&gt;&lt;/DIV&gt;
+&lt;DIV&gt;&amp;nbsp;&lt;/DIV&gt;&lt;/BODY&gt;&lt;/HTML&gt;
+
+------=_NextPart_000_008F_01C05259.9FFE1610--
+
+
+
+</PRE>

@@ -1,0 +1,24 @@
+received: from smtp.kernel.org (aws-us-west-2-korg-mail-1.web.codeaurora.org [10.30.226.201]) (using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits)) (No client certificate requested) by smtp.subspace.kernel.org (Postfix) with ESMTPS id B54EC7F9; Mon,  1 Jan 2024 01:01:39 +0000 (UTC)
+received: by smtp.kernel.org (Postfix) with ESMTPSA id 2D4A7C433C8; Mon,  1 Jan 2024 01:01:39 +0000 (UTC)
+authentication-results: smtp.subspace.kernel.org; dkim=pass (2048-bit key) header.d=kernel.org header.i=@kernel.org header.b="TkYG3HND"
+dkim-signature: v=1; a=rsa-sha256; c=relaxed/simple; d=kernel.org; s=k20201202; t=1704070899; bh=P1eEzr0BokPFcfCFa/BXeWCAtFOYWxo7JQ0feEnXhY8=; h=Date:Subject:From:To:Cc:In-Reply-To:References:From; b=TkYG3HND9iWUJFpN4iytta16UrTrA6Dr2UCt8U7yl3F0hDzevShP3C5KrzBoZdrX2 LnjAtCN8hp83ojDQBZNZs6pMQGxnCFxIYRVLQHmahB6HirKfhmgHSzc2LxH3u89wH7 carvhScT+oUtGstGi+ROF44XirzUcoPei2jqmyvK1fynsGKhP9wfMbGPCTrxIRbj+w AV2fVzbqCxhd2ouCTrMqdiFsYQ0G7mxh6rqziV3Q60p4VBmlwKjFwqZ0aBEOAX26BF jRL4becGKD4W4Pi9O720bWzoO1nqoUs4G9wMnXDYef3sleA/0wgMEmB/D147GYIopd A1LJs0cV5FZKA==
+date: Sun, 31 Dec 2023 17:01:38 +9900
+subject: [PATCH 1/9] xfs/122: update fields for realtime reflink
+to: djwong@kernel.org, zlang@redhat.com
+cc: guan@eryu.me, linux-xfs@vger.kernel.org, fstests@vger.kernel.org
+message-id: <170405032029.1827358.6809381410014348048.stgit@frogsfrogsfrogs>
+in-reply-to: <170405032011.1827358.11723561661069109569.stgit@frogsfrogsfrogs>
+references: <170405032011.1827358.11723561661069109569.stgit@frogsfrogsfrogs>
+user-agent: StGit/0.19
+precedence: bulk
+x-mailing-list: fstests@vger.kernel.org
+list-id: <fstests.vger.kernel.org>
+list-subscribe: <mailto:fstests+subscribe@vger.kernel.org>
+list-unsubscribe: <mailto:fstests+unsubscribe@vger.kernel.org>
+mime-version: 1.0
+content-type: text/plain; charset="utf-8"
+content-transfer-encoding: 7bit
+xref: nntp.lore.kernel.org org.kernel.vger.fstests:24447 org.kernel.vger.linux-xfs:137148
+newsgroups: org.kernel.vger.fstests,org.kernel.vger.linux-xfs
+path: nntp.lore.kernel.org!not-for-mail
+from: "Darrick J. Wong" <djwong@kernel.org>

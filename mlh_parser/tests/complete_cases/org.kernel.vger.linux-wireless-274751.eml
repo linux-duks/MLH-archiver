@@ -1,0 +1,164 @@
+Received: from mail.unwrap.rs (mail.unwrap.rs [172.232.15.166])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits))
+	(No client certificate requested)
+	by smtp.subspace.kernel.org (Postfix) with ESMTPS id 944562D8780
+	for <linux-wireless@vger.kernel.org>; Wed, 18 Feb 2026 14:44:37 +0000 (UTC)
+Authentication-Results: smtp.subspace.kernel.org; arc=none smtp.client-ip=172.232.15.166
+ARC-Seal:i=1; a=rsa-sha256; d=subspace.kernel.org; s=arc-20240116;
+	t=1771425878; cv=none; b=T63C5iE3m+fVI2d51sy2MAO91sbXjxwzwtQjYgeXgF4uTgAJRCOkbWoVfvz8yYzQh1cjpPiNJmVaWyhKynn1rPV4L8dSk4YtrYS+H8MtuVNgoUedQp1H6anVN2msPb0WCCrtEGigEqj/5l+La8GtR/VKH0/WXPcHAnwC+CUyxtA=
+ARC-Message-Signature:i=1; a=rsa-sha256; d=subspace.kernel.org;
+	s=arc-20240116; t=1771425878; c=relaxed/simple;
+	bh=JWEoSZSLymw1ptxAF0sXBut2uNDli54zqr+gVjQLOTE=;
+	h=From:To:Cc:Subject:In-Reply-To:References:MIME-Version:
+	 Content-Type; b=BHF5VKGdQIJ1MixbJfRPZY469uRrGWs7TO6NLv9HCEELgVIYBAW4vJrEG8bra4W8abpLFmNryNwOkbNqym8boA/1RfHtut8VmpGunawYybn5rcWNT2qAwuHFEadPiIeSPn/E92B+TpUIjdm1+CT23qjwZjSvJWSE8Pd6oDy+1JI=
+ARC-Authentication-Results:i=1; smtp.subspace.kernel.org; dmarc=pass (p=reject dis=none) header.from=unwrap.rs; spf=pass smtp.mailfrom=unwrap.rs; arc=none smtp.client-ip=172.232.15.166
+Authentication-Results: smtp.subspace.kernel.org; dmarc=pass (p=reject dis=none) header.from=unwrap.rs
+Authentication-Results: smtp.subspace.kernel.org; spf=pass smtp.mailfrom=unwrap.rs
+From: Cole Leavitt <cole@unwrap.rs>
+To: Ben Greear <greearb@candelatech.com>
+Cc: Johannes Berg <johannes@sipsolutions.net>,
+ linux-wireless@vger.kernel.org,
+ Miri Korenblit <miriam.rachel.korenblit@intel.com>
+Subject: Re: [PATCH] wifi: iwlwifi: prevent NAPI processing after firmware error
+In-Reply-To: <9edde56d-bfdc-40f6-862c-b69950cc2f25@candelatech.com>
+References: <c6f886d4-b9ed-48a6-9723-a738af055b64@candelatech.com>
+ <20260214181018.6091-1-cole@unwrap.rs>
+ <5be8a502-d53a-4cce-821f-202368c44f6d@candelatech.com>
+ <20260214183306.10188-1-cole@unwrap.rs>
+ <9edde56d-bfdc-40f6-862c-b69950cc2f25@candelatech.com>
+Precedence: bulk
+X-Mailing-List: linux-wireless@vger.kernel.org
+List-Id: <linux-wireless.vger.kernel.org>
+List-Subscribe: <mailto:linux-wireless+subscribe@vger.kernel.org>
+List-Unsubscribe: <mailto:linux-wireless+unsubscribe@vger.kernel.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+Message-ID: <20260218144437.XycjFngUdJdBdQlwtituhtifOwTQiPwQBhMCNXueTSA@z>
+Xref: nntp.lore.kernel.org org.kernel.vger.linux-wireless:274751
+Newsgroups: org.kernel.vger.linux-wireless
+Path: nntp.lore.kernel.org!not-for-mail
+
+Ben,
+
+I've been digging into the use-after-free crash you reported on your
+BE200 running the MLD driver (tcp_shifted_skb refcount underflow,
+followed by NULL deref in tcp_rack_detect_loss). I think I found the
+root cause -- it's a missing guard in the MLD TSO segmentation path
+that lets num_subframes=0 reach skb_gso_segment(), producing the 32k+
+segment explosion you're seeing.
+
+Here's the full chain:
+
+1) mld/tlc.c:790 -- when firmware's TLC notification disables AMSDU for
+   a TID (bit not set in amsdu_enabled), the MLD driver sets:
+
+     link_sta->agg.max_tid_amsdu_len[i] = 1;
+
+   This sentinel value 1 means "AMSDU disabled on this TID".
+
+2) mld/tx.c:836-837 -- the TSO path checks:
+
+     max_tid_amsdu_len = sta->cur->max_tid_amsdu_len[tid];
+     if (!max_tid_amsdu_len)   // <-- only catches zero, not 1
+         return iwl_tx_tso_segment(skb, 1, ...);
+
+   Value 1 passes this check.
+
+3) mld/tx.c:847 -- the division produces zero:
+
+     num_subframes = (1 + 2) / (1534 + 2) = 0
+
+   Any max_tid_amsdu_len below ~1534 (one subframe) produces 0 here.
+
+4) iwl-utils.c:27 -- gso_size is set to zero:
+
+     skb_shinfo(skb)->gso_size = num_subframes * mss = 0 * 1460 = 0
+
+5) iwl-utils.c:30 -- skb_gso_segment() with gso_size=0 creates 32001+
+   tiny segments, which is the error you're seeing:
+
+     "skbuff: ERROR: Found more than 32000 packets in skb_segment"
+     "iwl-mvm-tx-tso-segment, list gso-segment list is huge: 32001"
+
+6) mld/tx.c:912-936 -- the loop queues ~1024 of those segments to the
+   TX ring before it fills up, then purges the rest. This creates a
+   massive burst of tiny frames that stress the BA completion path.
+
+The MVM driver is immune because it checks mvmsta->amsdu_enabled (a
+separate bitmap) at tx.c:912 and tx.c:936 BEFORE ever reaching the
+num_subframes calculation. MLD has no equivalent -- it relies solely on
+max_tid_amsdu_len, and the sentinel value 1 slips through.
+
+This explains all your observations:
+- 6.18 regression: BE200 moved from MVM (has guard) to MLD (no guard)
+- AP-specific: the problem AP causes firmware to disable AMSDU for the
+  active TID (other APs enable it, so max_tid_amsdu_len gets a proper
+  value from iwl_mld_get_amsdu_size_of_tid())
+- 28min gap between TSO explosion and UAF: the ~1024 micro-frame burst
+  creates massive alloc/free churn in the skb slab, which can corrupt
+  TCP retransmit queue entries allocated from the same cache
+- No firmware error: firmware is fine, the bug is purely in MLD's TSO
+  parameter calculation
+
+Fix below. It adds a guard after the num_subframes calculation -- if
+it's zero, fall back to single-subframe TSO (num_subframes=1), which
+correctly sets gso_size=mss. This matches what MVM effectively does via
+its amsdu_enabled checks.
+
+Could you test this against the problem AP? Two things that would help
+confirm the theory:
+
+1) Before applying the fix, add this debug print to see the actual
+   max_tid_amsdu_len value with the problem AP:
+
+     // In iwl_mld_tx_tso_segment(), after line 847
+     if (!num_subframes)
+         pr_warn_once("iwlmld: num_subframes=0, max_tid_amsdu_len=%u "
+                      "subf_len=%u mss=%u\n",
+                      max_tid_amsdu_len, subf_len, mss);
+
+2) After applying the fix, run against the problem AP for 1+ day and
+   check if both the TSO explosion AND the UAF are gone.
+
+I also noticed a few secondary defense-in-depth regressions in MLD's
+TX completion path vs MVM:
+
+- MLD's iwl_mld_tx_reclaim_txq() has no per-TID reclaim tracking
+  (MVM has tid_data->next_reclaimed and validates tid_data->txq_id)
+- The transport-level reclaim_lock prevents direct double-free, but
+  MLD is missing MVM's extra safety checks
+
+These are probably not directly causing your crash, but worth noting.
+
+---
+ drivers/net/wireless/intel/iwlwifi/mld/tx.c | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/drivers/net/wireless/intel/iwlwifi/mld/tx.c b/drivers/net/wireless/intel/iwlwifi/mld/tx.c
+index fbb672f4d8c7..1d47254a4148 100644
+--- a/drivers/net/wireless/intel/iwlwifi/mld/tx.c
++++ b/drivers/net/wireless/intel/iwlwifi/mld/tx.c
+@@ -846,6 +846,17 @@ static int iwl_mld_tx_tso_segment(struct iwl_mld *mld, struct sk_buff *skb,
+ 	 */
+ 	num_subframes = (max_tid_amsdu_len + pad) / (subf_len + pad);
+ 
++	/* If the AMSDU length limit is too small to fit even a single
++	 * subframe (e.g. max_tid_amsdu_len is the sentinel value 1 set by
++	 * the TLC notification when AMSDU is disabled for this TID), fall
++	 * back to non-AMSDU TSO segmentation. Without this guard,
++	 * num_subframes=0 causes gso_size=0 in iwl_tx_tso_segment(),
++	 * which makes skb_gso_segment() produce tens of thousands of
++	 * 1-byte segments, overloading the TX ring and completion path.
++	 */
++	if (!num_subframes)
++		return iwl_tx_tso_segment(skb, 1, netdev_flags, mpdus_skbs);
++
+ 	if (sta->max_amsdu_subframes &&
+ 	    num_subframes > sta->max_amsdu_subframes)
+ 		num_subframes = sta->max_amsdu_subframes;
+-- 
+2.52.0
+
+Cole
+
