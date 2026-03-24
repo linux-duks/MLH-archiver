@@ -8,7 +8,7 @@ from tqdm import tqdm
 import logging
 
 from mlh_parser.parser_algorithm import parse_email_bytes_to_dict
-from mlh_parser.configs import REDO_FAILED_PARSES, PARQUET_DIR_PATH, PARQUET_FILE_NAME
+from mlh_parser.configs import REDO_FAILED_PARSES, PARQUET_FILE_NAME
 from mlh_parser.constants import (
     PARQUET_COLS_SCHEMA,
     SINGLE_VALUED_COLS,
@@ -25,7 +25,8 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
 
     list_input_path = input_dir_path + "/" + mailing_list
     list_output_path = output_dir_path + "/" + mailing_list
-    success_output_path = PARQUET_DIR_PATH + "/list=" + mailing_list
+    parquet_dir_path = output_dir_path + "/parsed"
+    success_output_path = parquet_dir_path + "/list=" + mailing_list
     parquet_path = success_output_path + "/" + PARQUET_FILE_NAME
     error_output_path = list_output_path + "/errors"
 
@@ -34,8 +35,8 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
     if not os.path.isdir(list_output_path):
         logger.info(f"First parse of list '{mailing_list}'")
 
-        if not os.path.isdir(PARQUET_DIR_PATH):
-            os.mkdir(PARQUET_DIR_PATH)
+        if not os.path.isdir(parquet_dir_path):
+            os.mkdir(parquet_dir_path)
 
         os.mkdir(list_output_path)
         os.mkdir(success_output_path)
