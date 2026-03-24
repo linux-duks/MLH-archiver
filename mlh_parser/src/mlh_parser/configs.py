@@ -3,7 +3,7 @@ import os
 import math
 
 DEBUG = os.getenv("DEBUG", False)
-N_PROC = os.getenv("N_PROC")
+N_PROC = os.getenv("N_PROC", "")
 N_PROC = (
     int(N_PROC) if N_PROC.isdecimal() else math.ceil(multiprocessing.cpu_count() / 3)
 )
@@ -18,3 +18,10 @@ REDO_FAILED_PARSES = os.getenv(
 
 
 LISTS_TO_PARSE = [item for item in os.getenv("LISTS_TO_PARSE", "").split(",") if item]
+
+
+# directory locations
+INPUT_DIR_PATH = os.getenv("INPUT_DIR", "")
+OUTPUT_DIR_PATH = os.getenv("OUTPUT_DIR", "")
+PARQUET_DIR_PATH = OUTPUT_DIR_PATH + "/parsed"
+PARQUET_FILE_NAME = "list_data.parquet"

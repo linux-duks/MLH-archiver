@@ -3,9 +3,14 @@ import os
 import logging
 
 from mlh_parser.parser import parse_mail_at
-from mlh_parser.configs import N_PROC, LISTS_TO_PARSE
+from mlh_parser.configs import (
+    N_PROC,
+    LISTS_TO_PARSE,
+    DEBUG,
+    INPUT_DIR_PATH,
+    OUTPUT_DIR_PATH,
+)
 
-DEBUG = os.getenv("DEBUG", "false")
 level = logging.INFO
 if DEBUG != "false":
     level = logging.DEBUG
@@ -15,13 +20,6 @@ logging.basicConfig(
     format="[%(asctime)s] {%(pathname)s:%(lineno)d} %(levelname)s - %(message)s",
     datefmt="%H:%M:%S",
 )
-
-
-# TODO: move to config location
-INPUT_DIR_PATH = os.environ["INPUT_DIR"]
-OUTPUT_DIR_PATH = os.environ["OUTPUT_DIR"]
-PARQUET_DIR_PATH = OUTPUT_DIR_PATH + "/parsed"
-PARQUET_FILE_NAME = "list_data.parquet"
 
 
 def parse_mail_at_wrap(mail_l):
