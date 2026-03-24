@@ -75,6 +75,7 @@ class TestParseMailAtCompleteCases:
             mailing_list=self.mailing_list,
             input_dir_path=self.input_dir,
             output_dir_path=self.output_dir,
+            fail_on_parsing_error=True,
         )
 
         # Locate the output parquet file
@@ -104,6 +105,7 @@ class TestParseMailAtCompleteCases:
             mailing_list=self.mailing_list,
             input_dir_path=self.input_dir,
             output_dir_path=self.output_dir,
+            fail_on_parsing_error=True,
         )
 
         # Locate the output parquet file
@@ -159,6 +161,7 @@ class TestParseMailAtDateCases:
             mailing_list=self.mailing_list,
             input_dir_path=self.input_dir,
             output_dir_path=self.output_dir,
+            fail_on_parsing_error=True,
         )
 
         # Locate the output parquet file
@@ -188,6 +191,7 @@ class TestParseMailAtDateCases:
             mailing_list=self.mailing_list,
             input_dir_path=self.input_dir,
             output_dir_path=self.output_dir,
+            fail_on_parsing_error=True,
         )
 
         # Locate the output parquet file
@@ -238,6 +242,7 @@ class TestParseMailAtEmptyDirectory:
             mailing_list=self.mailing_list,
             input_dir_path=self.input_dir,
             output_dir_path=self.output_dir,
+            fail_on_parsing_error=True,
         )
 
         # Locate the output parquet file

@@ -9,6 +9,7 @@ from mlh_parser.configs import (
     DEBUG,
     INPUT_DIR_PATH,
     OUTPUT_DIR_PATH,
+    FAIL_ON_PARSING_ERROR,
 )
 
 level = logging.INFO
@@ -23,7 +24,7 @@ logging.basicConfig(
 
 
 def parse_mail_at_wrap(mail_l):
-    return parse_mail_at(mail_l, INPUT_DIR_PATH, OUTPUT_DIR_PATH)
+    return parse_mail_at(mail_l, INPUT_DIR_PATH, OUTPUT_DIR_PATH, FAIL_ON_PARSING_ERROR)
 
 
 def main():

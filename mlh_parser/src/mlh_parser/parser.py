@@ -8,9 +8,7 @@ from tqdm import tqdm
 import logging
 
 from mlh_parser.parser_algorithm import parse_email_bytes_to_dict
-from mlh_parser.configs import (
-    REDO_FAILED_PARSES,
-)
+from mlh_parser.configs import REDO_FAILED_PARSES, PARQUET_DIR_PATH, PARQUET_FILE_NAME
 from mlh_parser.constants import (
     PARQUET_COLS_SCHEMA,
     SINGLE_VALUED_COLS,
@@ -19,14 +17,11 @@ from mlh_parser.constants import (
 logger = logging.getLogger(__name__)
 
 
-def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
+def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing_error):
     """
     Parses the emails from a single specified list,
     to be found in INPUT_DIR_PATH/mailing_list
     """
-
-    PARQUET_DIR_PATH = output_dir_path + "/parsed"
-    PARQUET_FILE_NAME = "list_data.parquet"
 
     list_input_path = input_dir_path + "/" + mailing_list
     list_output_path = output_dir_path + "/" + mailing_list
@@ -109,7 +104,10 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
                 email_file_bytes=email_file_bytes,
                 ctx=ctx,
             )
-            continue
+            if fail_on_parsing_error:
+                raise parsing_error
+            else:
+                continue
 
         email_as_dict = sanitize_surrogate_characters(email_as_dict)
 
@@ -135,6 +133,12 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path):
     all_parsed.extend(newly_parsed)
     all_parsed = all_parsed.drop("index")
     all_parsed.write_parquet(parquet_path)
+
+    if REDO_FAILED_PARSES:
+        ERROR_FILES_TO_DELETE.append(error_output_path + "/" + email_name)
+        for erro_file in ERROR_FILES_TO_DELETE:
+            os.remove(erro_file)
+
     logger.info(f"Saved all parsed mail on list '{mailing_list}'")
 
 

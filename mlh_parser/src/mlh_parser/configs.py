@@ -18,6 +18,7 @@ REDO_FAILED_PARSES = os.getenv(
 
 
 LISTS_TO_PARSE = [item for item in os.getenv("LISTS_TO_PARSE", "").split(",") if item]
+FAIL_ON_PARSING_ERROR = os.getenv("FAIL_ON_PARSING_ERROR", False)
 
 
 # directory locations
