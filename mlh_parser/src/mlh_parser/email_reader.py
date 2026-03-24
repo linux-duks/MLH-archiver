@@ -180,6 +180,11 @@ def _select_best_from_header(values: list | str) -> str:
     return _normalize_email(best_value)
 
 
+def _is_text_content_type(content_type: str) -> bool:
+    """Return True for text/* MIME types worth extracting as body text."""
+    return content_type.startswith("text/")
+
+
 def _clean_body_leading_headers(body: str, ctx: dict = None) -> str:
     """
     Remove leading header-like lines from email body.
@@ -398,10 +403,13 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                 # Skip attachments and non-text parts
                 if content_disposition.startswith("attachment"):
                     continue
-                if content_type not in ("text/plain", "text/html"):
+                if not _is_text_content_type(content_type):
                     continue
 
                 try:
+                    cte = part.get("Content-Transfer-Encoding", "").lower()
+                    if cte == "base64":
+                        _ctx_log(ctx, "debug", "Decoding base64-encoded %s part", content_type)
                     payload = part.get_payload(decode=True)
                     if payload is None:
                         continue
@@ -433,6 +441,15 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
             return "\n".join(body_parts)
 
         # For single-part emails
+        content_type = msg.get_content_type()
+        if not _is_text_content_type(content_type):
+            _ctx_log(ctx, "debug", "Skipping single-part binary body: %s", content_type)
+            return ""
+
+        cte = msg.get("Content-Transfer-Encoding", "").lower()
+        if cte == "base64":
+            _ctx_log(ctx, "debug", "Decoding base64-encoded single-part %s", content_type)
+
         charset = msg.get_content_charset()
         body = msg.get_payload(decode=True)
 
