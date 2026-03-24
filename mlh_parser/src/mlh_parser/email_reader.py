@@ -428,7 +428,7 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                             import codecs
 
                             codecs.lookup(charset)
-                        except LookupError, ValueError:
+                        except (LookupError, ValueError):
                             _ctx_log(
                                 ctx,
                                 "warning",
@@ -479,7 +479,7 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                 import codecs
 
                 codecs.lookup(charset)
-            except LookupError, ValueError:
+            except (LookupError, ValueError):
                 _ctx_log(ctx, "warning", "Invalid charset '%s', using utf-8", charset)
                 charset = "utf-8"
 

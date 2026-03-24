@@ -14,7 +14,7 @@ from mlh_parser.configs import (
 )
 
 level = logging.INFO
-if DEBUG != "false":
+if DEBUG:
     level = logging.DEBUG
 
 logging.basicConfig(

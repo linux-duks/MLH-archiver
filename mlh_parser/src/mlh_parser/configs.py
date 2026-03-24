@@ -2,7 +2,7 @@ import multiprocessing
 import os
 import math
 
-DEBUG = os.getenv("DEBUG", False)
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 N_PROC = os.getenv("N_PROC", "")
 N_PROC = (
     int(N_PROC) if N_PROC.isdecimal() else math.ceil(multiprocessing.cpu_count() / 3)
