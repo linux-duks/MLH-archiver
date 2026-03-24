@@ -290,8 +290,9 @@ def get_headers(
         # Use raw headers to avoid parsing errors with malformed addresses
         for key, value in msg._headers:
             key = key.lower()
-            # Unfold header: replace CRLF followed by whitespace with single space
-            unfolded_value = " ".join(value.split())
+            # RFC 5322 unfolding: replace only fold sequences (CRLF/LF + LWSP)
+            # with a single space, preserving internal tabs and multiple spaces.
+            unfolded_value = re.sub(r'\r?\n[ \t]+', ' ', value).strip()
 
             if key == "from":
                 from_candidates.append(unfolded_value)
