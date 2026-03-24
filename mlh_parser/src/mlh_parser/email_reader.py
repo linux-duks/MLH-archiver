@@ -432,7 +432,11 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                             )
                             charset = "utf-8"
 
-                    text = payload.decode(charset or "utf-8", errors="replace")
+                    try:
+                        text = payload.decode(charset or "utf-8", errors="replace")
+                    except LookupError:
+                        _ctx_log(ctx, "warning", "Invalid charset '%s', falling back to utf-8", charset)
+                        text = payload.decode("utf-8", errors="replace")
                     body_parts.append(text)
                 except Exception as part_error:
                     _ctx_log(ctx, "warning", "Failed to decode part: %s", part_error)
@@ -467,7 +471,11 @@ def get_body(msg: EmailMessage, ctx: dict = None) -> str:
                 _ctx_log(ctx, "warning", "Invalid charset '%s', using utf-8", charset)
                 charset = "utf-8"
 
-        return body.decode(charset or "utf-8", errors="replace")
+        try:
+            return body.decode(charset or "utf-8", errors="replace")
+        except LookupError:
+            _ctx_log(ctx, "warning", "Invalid charset '%s', falling back to utf-8", charset)
+            return body.decode("utf-8", errors="replace")
 
     try:
         body = __get_body().replace("\r\n", "\n")
