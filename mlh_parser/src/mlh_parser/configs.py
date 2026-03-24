@@ -1,8 +1,9 @@
 import multiprocessing
 import os
+import math
 
 DEBUG = os.getenv("DEBUG", False)
-N_PROC = os.getenv("N_PROC", multiprocessing.cpu_count() / 2 if not DEBUG else 1)
+N_PROC = os.getenv("N_PROC", math.ceil(multiprocessing.cpu_count() / 2 if not DEBUG else 1))
 if DEBUG:
     print(f"Running in DEBUG mode. N_PROC {N_PROC}")
 
