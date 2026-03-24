@@ -21,5 +21,11 @@ COPY . /app
 RUN --mount=type=cache,target=/root/.cache/uv \
 	uv sync --locked
 
+# Build-time git info (injected at build time, available at runtime)
+ARG GIT_COMMIT=unknown
+ARG GIT_DATE=unknown
+ENV BUILD_GIT_COMMIT=$GIT_COMMIT
+ENV BUILD_GIT_DATE=$GIT_DATE
+
 CMD ["uv", "run", "python", "src/main.py"]
 

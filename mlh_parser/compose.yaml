@@ -5,6 +5,9 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_DATE: ${GIT_DATE:-unknown}
     environment:
       INPUT_DIR: "/parser/input"
       OUTPUT_DIR: "/parser/output"
