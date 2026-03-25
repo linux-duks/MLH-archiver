@@ -107,6 +107,9 @@ The root `Makefile` orchestrates all components. Run commands from the project r
 | `make build` | Build the archiver (Rust) |
 | `make run` | Run the archiver |
 | `make parse` | Run the mailing list parser |
+| `make parse N_PROC=4` | Run parser with 4 parallel processes |
+| `make parse LISTS_TO_PARSE="list1,list2"` | Run parser for specific lists only |
+| `make parse REDO_FAILED_PARSES=true` | Re-parse only previously failed emails |
 | `make anonymize` | Run the anonymizer |
 | `make analysis` | Run example analyses |
 | `make rebuild` | Rebuild all components |
@@ -124,7 +127,17 @@ The root `Makefile` orchestrates all components. Run commands from the project r
 - **Archiver**: Requires Rust/Cargo, or Podman/Docker for containerized builds
 - **Parser & Anonymizer**: Requires Podman/Podman-compose or Docker/Docker-compose
 
-## Devbox Commands
+---
+
+## Setting up Devbox
+
+```bash
+devbox shell
+```
+
+This will set up the development environment with all required dependencies (Python, uv, Rust, etc.).
+
+### Devbox Commands
 
 [Devbox](https://www.jetify.com/devbox/) is a command-line tool that lets you easily create isolated shells for development. It uses Nix packages to be portable across different systems. See the [installation guide](https://www.jetify.com/docs/devbox/quickstart) to get started.
 
@@ -145,12 +158,89 @@ If using devbox for development environment management, all commands are availab
 | `devbox run clean` | Clean all build artifacts |
 | `devbox run debug-parser` | Run parser in debug mode |
 | `devbox run debug-anonymizer` | Run anonymizer in debug mode |
-| `devbox run debug-analysis` | Run analysis in debug mode |
+| `devbox run debug-analysis` | Run analysis in debug mode  |
+| `devbox run peek path`|  Quick peek at files |
 
-### Setting up Devbox
+
+---
+## Scripts
+
+The `scripts/` directory contains utility scripts for working with the parsed data.
+
+### peek-files
+
+Quick inspection tool for Parquet files and directories.
 
 ```bash
-devbox shell
+# Using devbox
+devbox run peek <path>
+
+# Using uv directly
+uv run scripts/peek_files.py <path>
 ```
 
-This will set up the development environment with all required dependencies (Python, uv, Rust, etc.).
+**Features:**
+
+- DataFrame preview (shows first 10 rows)
+- Total row count
+- Row count per partition (if hive-partitioned)
+- Schema display
+
+**Examples:**
+
+```bash
+# Inspect a single parquet file
+devbox run peek-files parser_output/parsed/list=dev.rcpassos.me.lists.gfs2/list_data.parquet
+
+# Inspect a directory (automatically finds all .parquet files)
+devbox run peek-files parser_output/parsed/
+
+# Inspect the raw archiver output
+devbox run peek-files ./output/
+```
+
+**Sample Output:**
+
+```
+devbox run peek ./parser_output 
+Inspecting: .../parser_output
+
+Directory: ./parser_output
+Found 1 parquet file(s)
+--------------------------------------------------
+
+Detected hive partitioning
+
+Partition Statistics:
+--------------------------------------------------
+  list=org.kernel.vger.linux-iio: 109,954 rows (1 file(s))
+--------------------------------------------------
+  TOTAL: 109,954 rows across 1 file(s)
+
+Schema (from first file):
+  from: String
+  to: List(String)
+  cc: List(String)
+  subject: String
+  date: Datetime(time_unit='us', time_zone=None)
+  client-date: List(String)
+  message-id: String
+  in-reply-to: String
+  references: List(String)
+  x-mailing-list: String
+  trailers: List(Struct({'attribution': String, 'identification': String}))
+  code: List(String)
+  raw_body: String
+  __file_name: String
+
+Preview (first 10 rows from first file):
+shape: (5, 14)
+┌──────────────────────┬───────────────────────────┬───────────────────────────┬───────────────────────────┬───┬───────────────────────────┬───────────────────────────┬───────────────────────────┬─────────────┐
+│ from                 ┆ to                        ┆ cc                        ┆ subject                   ┆ … ┆ trailers                  ┆ code                      ┆ raw_body                  ┆ __file_name │
+│ ---                  ┆ ---                       ┆ ---                       ┆ ---                       ┆   ┆ ---                       ┆ ---                       ┆ ---                       ┆ ---         │
+│ str                  ┆ list[str]                 ┆ list[str]                 ┆ str                       ┆   ┆ list[struct[2]]           ┆ list[str]                 ┆ str                       ┆ str         │
+╞══════════════════════╪═══════════════════════════╪═══════════════════════════╪═══════════════════════════╪═══╪═══════════════════════════╪═══════════════════════════╪═══════════════════════════╪═════════════╡
+│ "Developer Name"     ┆ ["List of emails          ┆ ["more Emails             ┆ Re: [PATCH] staging       ┆ … ┆ [{"Acked-by","developer   ┆ []                        ┆ On Feb 23 2010,           ┆ 1.eml       │
+│ ...                  ┆ ...                       ┆ ...                       ┆ ...                       ┆   ┆ ...                       ┆ ...                       ┆ ...                       ┆             │
+└──────────────────────┴───────────────────────────┴───────────────────────────┴───────────────────────────┴───┴───────────────────────────┴───────────────────────────┴───────────────────────────┴─────────────┘
+```

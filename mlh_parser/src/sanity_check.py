@@ -8,8 +8,7 @@ from the original list.
 import os
 import polars as pl
 
-# TODO: fix
-from main import INPUT_DIR_PATH, PARQUET_DIR_PATH, PARQUET_FILE_NAME
+from mlh_parser.configs import INPUT_DIR_PATH, PARQUET_DIR_PATH, PARQUET_FILE_NAME
 
 
 def main():

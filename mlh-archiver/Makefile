@@ -37,7 +37,6 @@ build:
 	@echo "==> Copying binary '$(BINARY_NAME).out' from target..."
 	cp $(TARGET_PATH) ./$(BINARY_NAME).out
 
-
 .PHONY: run
 run:
 	@if [ ! -f ./$(BINARY_NAME).out ]; then \

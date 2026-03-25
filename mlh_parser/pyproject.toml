@@ -28,6 +28,21 @@ dev = [
     "freezegun>=1.5",
     "nox>=2026.2",
     "pytest>=9.0",
+    "pytest-cov>=6.0",
+]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+omit = ["tests/*", ".venv/*", "*/__pycache__/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
 ]
 
 

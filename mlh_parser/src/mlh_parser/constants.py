@@ -18,6 +18,7 @@ PARQUET_COLS_SCHEMA = {
     ),
     "code": pl.List(pl.String),
     "raw_body": pl.String,
+    "__file_name": pl.String,
 }
 
 SIGNED_BLOCK = "trailers"
@@ -32,14 +33,6 @@ SINGLE_VALUED_COLS = [
     "raw_body",
 ]
 
-N_PROC = 4
-
-REDO_FAILED_PARSES = (
-    False  # Parse only the emails that were unsuccessfully parsed on previous runs.
-)
-
-LISTS_TO_PARSE = []
-
 KEYS_MASK = [
     "from",
     "to",
@@ -53,4 +46,5 @@ KEYS_MASK = [
     SIGNED_BLOCK,
     "code",
     "raw_body",
+    "__file_name",
 ]

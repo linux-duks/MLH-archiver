@@ -9,7 +9,7 @@ from mlh_parser.constants import (
 logger = logging.getLogger(__name__)
 
 
-# TODO: use to folder for wanted headers only
+# TODO: use to filter for wanted headers only
 def filter_data(data: dict) -> dict:
     result_dict = {key: data.get(key, "") for key in KEYS_MASK}
     return result_dict
@@ -17,17 +17,21 @@ def filter_data(data: dict) -> dict:
 
 # extract_attributions adapted from duks
 # https://archive.softwareheritage.org/swh:1:cnt:23277d72e0a7a6f76db8542b10ab36e02a1e6006;origin=https://github.com/linux-duks/DUKS;visit=swh:1:snp:7539517b28d48726b43e4ef69332f3168b251aa0;anchor=swh:1:rev:de4af688e88757f0d496c7a16e331845a40d3f1c;path=/scripts/grpc_script.py;lines=82
-def extract_attributions(commit_message) -> list[dict] | list[str]:
+def extract_attributions(commit_message, ctx: dict = None) -> list[dict] | list[str]:
     """
     Parses a git commit message and extracts all personal attributions.
 
     Args:
         commit_message (str): The full git commit message.
+        ctx: Context dict with file_name, mailing_list, errors
 
     Returns:
         list: A list of dictionaries, where each dictionary contains
               'type' (e.g., 'Signed-off-by'), 'name', and 'email' for each attribution found.
     """
+    if ctx is None:
+        ctx = {"file_name": "unknown", "mailing_list": "unknown", "errors": []}
+
     # This regex looks for lines starting with "Word-by:"
     # followed by a name (can contain various characters), and then an email in angle brackets.
     # It captures the "Word-by" type, the name, and the email separately.
@@ -70,7 +74,20 @@ def extract_attributions(commit_message) -> list[dict] | list[str]:
     return attributions
 
 
-def extract_patches(email_body) -> list[str]:
+def extract_patches(email_body, ctx: dict = None) -> list[str]:
+    """
+    Extracts patch content from email body.
+
+    Args:
+        email_body: Email body text
+        ctx: Context dict with file_name, mailing_list, errors
+
+    Returns:
+        list: List of patch strings found in the email
+    """
+    if ctx is None:
+        ctx = {"file_name": "unknown", "mailing_list": "unknown", "errors": []}
+
     patches = []
     # a few regex options that will match a few styles found in patches
     regexes = [
@@ -103,19 +120,38 @@ def extract_patches(email_body) -> list[str]:
     return []
 
 
-def parse_email_bytes_to_dict(email_raw: bytes) -> dict:
-    msg = decode_mail(email_raw)
+def parse_email_bytes_to_dict(email_raw: bytes, ctx: dict = None) -> dict:
+    """
+    Parses raw email bytes into a dictionary.
 
-    data = get_headers(msg)
-    data["raw_body"] = get_body(msg)
+    Args:
+        email_raw: Raw email bytes
+        ctx: Context dict with file_name, mailing_list, errors
+
+    Returns:
+        dict: Parsed email data
+    """
+    if ctx is None:
+        ctx = {"file_name": "unknown", "mailing_list": "unknown", "errors": []}
+
+    msg = decode_mail(email_raw, ctx=ctx)
+
+    data = get_headers(msg, ctx=ctx, raw_email=email_raw)
+    data["raw_body"] = get_body(msg, ctx=ctx)
 
     # TODO: refactor
-    data[SIGNED_BLOCK] = extract_attributions(data["raw_body"])
+    data[SIGNED_BLOCK] = extract_attributions(data["raw_body"], ctx=ctx)
 
     try:
-        data["code"] = extract_patches(data["raw_body"])
+        data["code"] = extract_patches(data["raw_body"], ctx=ctx)
     except Exception as e:
-        logger.error("Body when failure appeared: \n %s", data["raw_body"])
+        logger.error(
+            "[%s/%s] Failed to extract patches: %s",
+            ctx["mailing_list"],
+            ctx["file_name"],
+            e,
+        )
+        ctx["errors"].append(f"extract_patches: {e}")
         raise e
 
     # data = filter_data(data)

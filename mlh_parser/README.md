@@ -104,18 +104,56 @@ The Parquet dataset includes the following columns:
 | `in-reply-to` | string | In-Reply-To header |
 | `references` | list\<string\> | References headers |
 | `x-mailing-list` | string | Mailing list name |
-| `trailers` | list | Signature block attribution and identification |
-| `code` | list | Code snippets extracted from email |
+| `trailers` | list\<struct\<attribution: string, identification: string\>\> | Signature block attribution and identification |
+| `code` | list\<string\> | Code snippets extracted from email |
 | `raw_body` | string | Complete raw email body |
 
 ## Configuration
 
-Configuration is done via environment variables when running in container mode:
+Configuration is done via environment variables. These can be set in your shell, in a `.env` file, or passed directly to the command.
+
+### Runtime Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INPUT_DIR` | `/parser/input` | Directory containing raw emails |
-| `OUTPUT_DIR` | `/parser/output` | Output directory for Parquet files |
+| `INPUT_DIR` | `/parser/input` | Directory containing raw emails (container mode) |
+| `OUTPUT_DIR` | `/parser/output` | Output directory for Parquet files (container mode) |
+| `DEBUG` | `False` | Enable debug mode (sets `N_PROC=1` and enables verbose logging) |
+| `N_PROC` | `cpu_count() / 2` | Number of parallel processes to use (ignored if `DEBUG=True`) |
+| `REDO_FAILED_PARSES` | `False` | If `True`, re-parse only emails that previously failed |
+| `LISTS_TO_PARSE` | `""` (all lists) | Comma-separated list of mailing lists to parse. Empty means parse all available lists. |
+
+### Examples
+
+```bash
+# Run with debug mode (single process, verbose logging)
+DEBUG=True uv run src/main.py
+
+# Parse only specific mailing lists
+LISTS_TO_PARSE="list1,list2,list3" uv run src/main.py
+
+# Re-parse only failed emails from previous run
+REDO_FAILED_PARSES=True uv run src/main.py
+
+# Use 4 parallel processes
+N_PROC=4 uv run src/main.py
+
+# Native execution with custom directories
+INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+
+# Using Make with environment variables
+make parse N_PROC=4
+make parse LISTS_TO_PARSE="list1,list2,list3"
+make parse REDO_FAILED_PARSES=true N_PROC=2
+make debug-parser N_PROC=1 LISTS_TO_PARSE="dev.rcpassos.me.lists.gfs2"
+```
+
+### Notes
+
+- **`DEBUG` mode**: When enabled, forces single-threaded execution (`N_PROC=1`) for easier debugging
+- **`N_PROC`**: Defaults to half of available CPU cores for balanced performance
+- **`LISTS_TO_PARSE`**: Useful for testing or incremental parsing of specific lists
+- **`REDO_FAILED_PARSES`**: Reads from the `errors/` directory instead of the main input directory
 
 ## Development
 
@@ -233,6 +271,84 @@ result = (
     .collect()
 )
 ```
+
+### Test Structure
+
+The test suite uses real email samples (`.eml` files) paired with expected output files (`.pytest` extension). This approach allows testing with actual mailing list emails while maintaining readable expected values.
+
+#### Test File Organization
+
+```
+tests/
+├── complete_cases/          # Full email parsing tests (trailers + code)
+│   ├── 14.eml              # Raw email file
+│   ├── 14.trailers.pytest  # Expected trailers (Python literal)
+│   ├── 14.code.pytest      # Expected code/patches (Python literal)
+│   ├── 14.body.pytest      # Expected email body
+│   └── 14.headers.pytest   # Expected headers (raw format)
+├── date_cases/              # Date parsing test cases
+│   ├── org.kernel...6592.eml           # Raw email file
+│   └── org.kernel...6592.date.pytest   # Expected parsed date
+├── test_complete_parsers.py  # Test runner for complete cases
+├── test_base_email_parsers.py  # Tests for body and header parsing
+├── test_dates.py             # Test runner for date parsing
+├── test_attributions.py      # Unit tests for attribution extraction
+├── test_patches.py           # Unit tests for patch extraction
+└── helpers.py                # Test utilities
+```
+
+#### File Naming Convention
+
+Test files are grouped by a common prefix:
+
+| File Pattern | Purpose |
+|--------------|---------|
+| `<prefix>.eml` | Raw RFC 822 email input |
+| `<prefix>.trailers.pytest` | Expected trailers (Python list literal) |
+| `<prefix>.code.pytest` | Expected code patches (Python list literal) |
+| `<prefix>.body.pytest` | Expected email body |
+| `<prefix>.headers.pytest` | Expected headers (raw format) |
+| `<prefix>.date.pytest` | Expected parsed date (first line is the date) |
+| `<prefix>.client-date.pytest` | Expected raw client dates (one per line) |
+
+#### Adding New Test Cases
+
+1. **Save the raw email**: Place your `.eml` file in the appropriate directory (`complete_cases/` or `date_cases/`)
+
+2. **Create expected output files**: For each `.eml` file, create corresponding `.pytest` files with the expected parsed values as Python literals:
+
+   ```python
+   # Example: 14.trailers.pytest
+   [
+       {
+           "attribution": "Signed-off-by",
+           "identification": "Example Developer <example-dev@company.com>",
+       },
+   ]
+   
+   # Example: 14.code.pytest
+   [
+       """---
+   drivers/file.c | 10 ++++++++++
+   1 file changed, 10 insertions(+)
+   ...
+   """
+   ]
+   
+   # Example: email.date.pytest
+   Tue,  4 Nov 2025 22:14:47 +0000
+   # Note: Additional lines are treated as comments
+   ```
+
+3. **Run tests**: The test runners automatically discover files by extension and match them by prefix.
+
+#### Test Helpers
+
+The `helpers.py` module provides utilities:
+
+- `list_files_with_extension(directory, ext)`: List all files with given extension
+- `map_to_file_extensions(email_file, extensions)`: Map `.eml` to its `.pytest` counterparts
+- `resolve_test_file_path(directory, filename)`: Resolve absolute path to test file
 
 ## Troubleshooting
 
