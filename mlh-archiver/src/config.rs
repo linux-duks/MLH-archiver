@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Parser, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct Opts {
     // config file location override
-    #[arg(short, long, default_value = "nntp_config*", value_hint = ValueHint::FilePath)]
+    #[arg(short, long, default_value = "archiver_config*", value_hint = ValueHint::FilePath)]
     config_file: String,
 
     #[clap(flatten)]
@@ -113,7 +113,7 @@ impl AppConfig {
                 let mut selected_lists = HashMap::new();
                 selected_lists.insert("group_lists", answer.clone());
 
-                match file_utils::write_yaml("nntp_config_selected_lists.yml", &selected_lists) {
+                match file_utils::write_yaml("archiver_config_selected_lists.yml", &selected_lists) {
                     Ok(_) => Ok(()),
                     Err(e) => Err(ConfigError::Io(e)),
                 }?;

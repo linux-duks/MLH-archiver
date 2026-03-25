@@ -10,14 +10,13 @@ all: build run
 build:
 	$(MAKE) -C mlh-archiver build
 
-.PHONY: run
-run:
+.PHONY: run-archiver
+run-archiver:
 	$(MAKE) -C mlh-archiver run
 
 .PHONY: parse
 parse:
 	$(MAKE) -C mlh_parser run N_PROC="$(N_PROC)" REDO_FAILED_PARSES="$(REDO_FAILED_PARSES)" LISTS_TO_PARSE="$(LISTS_TO_PARSE)"
-
 .PHONY: anonymize
 anonymize:
 	$(MAKE) -C anonymizer run
@@ -83,9 +82,9 @@ test-anonymizer:
 .PHONY: clean
 clean:
 	@echo "==> Cleaning up build artifacts..."
-	$(MAKE) -C mlh-archiver clean
 	$(MAKE) -C mlh_parser clean
 	$(MAKE) -C anonymizer clean
 	$(MAKE) -C analysis clean
 	$(MAKE) -C scripts clean
+	$(MAKE) -C mlh-archiver clean
 

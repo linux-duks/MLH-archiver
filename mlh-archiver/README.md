@@ -77,7 +77,7 @@ The compiled binary will be copied to `./mlh-archiver.out`.
 Usage: mlh-archiver [OPTIONS]
 
 Options:
-  -c, --config-file <CONFIG_FILE>      Path to config file [default: nntp_config*]
+  -c, --config-file <CONFIG_FILE>      Path to config file [default: archiver_config*]
   -H, --hostname <HOSTNAME>            NNTP server domain/IP
   -p, --port <PORT>                    NNTP server port [default: 119]
   -o, --output-dir <OUTPUT_DIR>        Output directory [default: ./output]
@@ -104,7 +104,7 @@ NNTP_HOSTNAME="nntp.example.com" NNTP_PORT=119 cargo run
 cargo run -- -H nntp.example.com -p 119
 
 # Using a config file
-cargo run -- -c nntp_config.yaml
+cargo run -- -c archiver_config.yaml
 
 # With debug logging
 RUST_LOG=debug cargo run -- -H nntp.example.com -p 119
@@ -112,12 +112,12 @@ RUST_LOG=debug cargo run -- -H nntp.example.com -p 119
 
 ## Configuration
 
-The archiver looks for configuration files matching `nntp_config*.{json,yaml,toml}` in the current directory by default.
+The archiver looks for configuration files matching `archiver_config*.{json,yaml,toml}` in the current directory by default.
 
 ### Example YAML Configuration
 
 ```yaml
-# nntp_config.yaml
+# archiver_config.yaml
 hostname: "nntp.example.com"
 port: 119
 nthreads: 2

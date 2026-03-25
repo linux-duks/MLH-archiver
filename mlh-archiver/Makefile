@@ -34,17 +34,32 @@ build:
 			$(RUST_DOCKER_IMAGE) \
 			cargo build --release; \
 	fi
-	@echo "==> Copying binary '$(BINARY_NAME).out' from target..."
-	cp $(TARGET_PATH) ./$(BINARY_NAME).out
 
 .PHONY: run
 run:
-	@if [ ! -f ./$(BINARY_NAME).out ]; then \
+	@if [ ! -f ../$(TARGET_PATH) ]; then \
 		echo "==> Binary './$(BINARY_NAME).out' not found. Building first..."; \
 		$(MAKE) build; \
 	fi
 	@echo "==> Running application..."
-	@./$(BINARY_NAME).out
+	@cd .. && ./$(TARGET_PATH)
+
+
+.PHONY: debug 
+debug:
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "==> Found Rust toolchain, building natively..."; \
+		cargo run; \
+	else \
+		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-v ./:/usr/src/app:z \
+			-w /usr/src/app \
+			$(RUST_DOCKER_IMAGE) \
+			cargo run; \
+	fi
 
 
 .PHONY: test

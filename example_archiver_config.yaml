@@ -1,0 +1,7 @@
+protocol: nntp
+nntp:
+  hostname: "localhost"
+  port: 119
+nthreads: 3
+output_dir: "./output"
+group_lists: ["ALL"]
