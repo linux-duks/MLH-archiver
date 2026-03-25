@@ -79,7 +79,13 @@ impl Worker {
             }
 
             log::info!("W{}: Reading new group from channel", self.id);
-            let group_name = self.receiver.recv().unwrap();
+            let group_name = match self.receiver.recv() {
+                Ok(name) => name,
+                Err(crossbeam_channel::RecvError) => {
+                    log::warn!("W{}: Channel closed, worker exiting", self.id);
+                    return Ok(());
+                }
+            };
             // let handler_result =
             match self.handle_group(group_name.clone()) {
                 Ok(return_status) => {
