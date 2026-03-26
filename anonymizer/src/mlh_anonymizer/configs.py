@@ -1,6 +1,10 @@
-import multiprocessing
+"""Configuration and environment variable handling for the anonymizer."""
+
 import os
+import multiprocessing
 import math
+
+from mlh_anonymizer.constants import N_PROC_DEFAULT_MAX
 
 
 def _parse_n_proc() -> int:
@@ -12,7 +16,7 @@ def _parse_n_proc() -> int:
     n_proc_env = os.getenv("N_PROC", "")
     if n_proc_env.isdecimal():
         return int(n_proc_env)
-    return max(math.ceil(multiprocessing.cpu_count() / 3), 16)
+    return max(math.ceil(multiprocessing.cpu_count() / 3), N_PROC_DEFAULT_MAX)
 
 
 def _is_debug() -> bool:
@@ -28,21 +32,16 @@ def _is_debug() -> bool:
 DEBUG: bool = _is_debug()
 N_PROC: int = _parse_n_proc()
 
+# Override N_PROC for debug mode
 if DEBUG:
     N_PROC = 1
     print(f"Running in DEBUG mode. N_PROC {N_PROC}")
 
-REDO_FAILED_PARSES = os.getenv(
-    "REDO_FAILED_PARSES", False
-)  # Parse only the emails that were unsuccessfully parsed on previous runs.
+# List of specific mailing lists to parse (empty = parse all)
+LISTS_TO_PARSE: list[str] = [
+    item for item in os.getenv("LISTS_TO_PARSE", "").split(",") if item
+]
 
-
-LISTS_TO_PARSE = [item for item in os.getenv("LISTS_TO_PARSE", "").split(",") if item]
-FAIL_ON_PARSING_ERROR = os.getenv("FAIL_ON_PARSING_ERROR", False)
-
-
-# directory locations
-INPUT_DIR_PATH = os.getenv("INPUT_DIR", "")
-OUTPUT_DIR_PATH = os.getenv("OUTPUT_DIR", "")
-PARQUET_DIR_PATH = OUTPUT_DIR_PATH + "/parsed"
-PARQUET_FILE_NAME = "list_data.parquet"
+# Directory paths (required environment variables)
+INPUT_DIR_PATH: str = os.environ["INPUT_DIR"]
+OUTPUT_DIR_PATH: str = os.environ["OUTPUT_DIR"]

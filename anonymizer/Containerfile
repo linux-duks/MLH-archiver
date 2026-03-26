@@ -15,11 +15,11 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 	uv sync --locked --no-install-project
 
 # Copy the project into the image
-ADD . /app
+COPY . /app
 
 # Sync the project
 RUN --mount=type=cache,target=/root/.cache/uv \
 	uv sync --locked
 
-CMD ["uv", "run", "mlh-anonymizer"]
+CMD ["uv", "run", "python", "src/main.py"]
 
