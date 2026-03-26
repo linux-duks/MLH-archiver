@@ -6,8 +6,8 @@ all: build run
 # APPLICATION TARGETS
 # ------------------------------------------------------------------------------
 
-.PHONY: build
-build:
+.PHONY: build-archiver
+ build-archiver:
 	$(MAKE) -C mlh-archiver build
 
 .PHONY: run-archiver
@@ -30,7 +30,7 @@ analysis:
 # ------------------------------------------------------------------------------
 
 .PHONY: rebuild
-rebuild: rebuild-parser rebuild-anonymizer rebuild-analysis
+rebuild: rebuild-parser rebuild-anonymizer rebuild-analysis build-archiver
 
 .PHONY: rebuild-parser
 rebuild-parser:
