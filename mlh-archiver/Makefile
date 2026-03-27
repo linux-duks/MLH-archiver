@@ -45,20 +45,20 @@ run:
 	@cd .. && ./$(TARGET_PATH)
 
 
-.PHONY: debug 
+.PHONY: debug
 debug:
 	@if command -v cargo >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
-		cargo run; \
+		cd .. && cargo run --bin $(BINARY_NAME); \
 	else \
 		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
 			--network=host \
-			-v ./:/usr/src/app:z \
+			-v ../:/usr/src/app:z \
 			-w /usr/src/app \
 			$(RUST_DOCKER_IMAGE) \
-			cargo run; \
+			cargo run --bin $(BINARY_NAME); \
 	fi
 
 

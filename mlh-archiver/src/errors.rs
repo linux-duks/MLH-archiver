@@ -14,10 +14,15 @@ pub enum Error {
     #[allow(clippy::upper_case_acronyms)]
     #[error(transparent)]
     NNTP(#[from] nntp::NNTPError),
+
+    #[error(transparent)]
+    Config(#[from] ConfigError),
 }
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
+    #[error("missing hostname: provide NNTP server hostname via --hostname/-H, NNTP_HOSTNAME env var, or config file")]
+    MissingHostname,
     #[error("invalid list selection. At least one should be configured, or selected in runtime")]
     ListSelectionEmpty,
     #[error("configured list(s) not available in server. {} Lists with error: {}", unavailable_lists.len(), unavailable_lists.iter().map(|x| x.to_string() + ",").collect::<String>()

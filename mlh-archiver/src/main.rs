@@ -13,6 +13,20 @@ fn main() -> Result<()> {
 
     env_logger::init_from_env(env);
 
-    let mut app_config = config::read_config().unwrap();
-    return start(&mut app_config);
+    let mut app_config = match config::read_config() {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("Error: {}", e);
+            eprintln!();
+            eprintln!("Configuration options:");
+            eprintln!("  - Command line: -H HOSTNAME or --hostname HOSTNAME");
+            eprintln!("  - Environment:  NNTP_HOSTNAME=...");
+            eprintln!("  - Config file:  archiver_config.yaml (or similar)");
+            eprintln!();
+            eprintln!("Run with --help for more information.");
+            std::process::exit(1);
+        }
+    };
+
+    start(&mut app_config)
 }

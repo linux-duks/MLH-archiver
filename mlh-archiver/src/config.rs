@@ -44,34 +44,72 @@ pub struct AppConfig {
     pub article_range: Option<String>,
 }
 
-pub fn read_config() -> Result<AppConfig, anyhow::Error> {
+pub fn read_config() -> Result<AppConfig, ConfigError> {
     let opts = Opts::parse();
 
     let base_config = opts.app_config.unwrap_or_default();
 
     let defaults = Config::try_from(&base_config).unwrap();
 
-    // TODO: config layering is not working properly
-    let config = Config::builder()
+    // Collect config files from glob pattern
+    let config_files: Vec<_> = glob(&opts.config_file)
+        .map_err(|e| ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Invalid config file glob pattern '{}': {}", opts.config_file, e),
+        )))?
+        .filter_map(|path_result| {
+            match path_result {
+                Ok(path) => {
+                    log::debug!("Found config file: {}", path.display());
+                    Some(config::File::from(path))
+                }
+                Err(e) => {
+                    log::warn!("Error reading config file path: {}", e);
+                    None
+                }
+            }
+        })
+        .collect();
+
+    if config_files.is_empty() {
+        log::warn!("No config files found matching pattern: {}", opts.config_file);
+    }
+
+    // Build config with layered sources
+    let mut config_builder = Config::builder()
         .set_default("port", 119)
         .unwrap()
         .add_source(defaults)
-        // env variable config
+        // env variable config (higher priority)
         .add_source(
             config::Environment::with_prefix("NNTP")
                 .try_parsing(true)
                 .separator("_"),
-        )
-        // TODO:  add xdg_home config
-        .add_source(
-            glob(&opts.config_file)?
-                .map(|path| config::File::from(path.unwrap()))
-                .collect::<Vec<_>>(),
         );
 
-    let config = config.build().unwrap();
+    // Add each config file (highest priority)
+    for config_file in config_files {
+        config_builder = config_builder.add_source(config_file);
+    }
 
-    let app_config: AppConfig = config.try_deserialize()?;
+    let config = config_builder.build().map_err(|e| ConfigError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("Failed to build config: {}", e),
+    )))?;
+
+    log::debug!("Config built: {:?}", config);
+
+    let app_config: AppConfig = config.try_deserialize().map_err(|e| ConfigError::Io(std::io::Error::new(
+        std::io::ErrorKind::InvalidData,
+        format!("Failed to deserialize config: {}", e),
+    )))?;
+
+    log::debug!("Deserialized config: hostname={:?}", app_config.hostname);
+
+    // Validate hostname is provided
+    if app_config.hostname.is_none() {
+        return Err(ConfigError::MissingHostname);
+    }
 
     Ok(app_config)
 }

@@ -10,16 +10,18 @@ pub mod worker;
 pub use errors::Result;
 
 pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
-    let mut nntp_stream = worker::connect_to_nntp(format!(
-        "{}:{}",
-        app_config.hostname.clone().unwrap(),
-        app_config.port
-    ))?;
+    // Validate hostname before connecting
+    let hostname = app_config
+        .hostname
+        .as_ref()
+        .ok_or(crate::errors::ConfigError::MissingHostname)?;
 
-    let list_options = nntp_stream.list().unwrap();
-    let groups = app_config
-        .get_group_lists(list_options.iter().map(move |an| an.clone().name).collect())
-        .unwrap();
+    let mut nntp_stream = worker::connect_to_nntp(format!("{}:{}", hostname, app_config.port))?;
+
+    let list_options = nntp_stream.list()?;
+    let groups = app_config.get_group_lists(
+        list_options.iter().map(|an| an.clone().name).collect(),
+    )?;
 
     // close initial connection to nntp server
     let _ = nntp_stream.quit();

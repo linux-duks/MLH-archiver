@@ -14,6 +14,11 @@ all: build run
 run-archiver:
 	$(MAKE) -C mlh-archiver run
 
+
+.PHONY: debug-archiver
+debug-archiver:
+	$(MAKE) -C mlh-archiver debug
+
 .PHONY: parse
 parse:
 	$(MAKE) -C mlh_parser run N_PROC="$(N_PROC)" REDO_FAILED_PARSES="$(REDO_FAILED_PARSES)" LISTS_TO_PARSE="$(LISTS_TO_PARSE)"
