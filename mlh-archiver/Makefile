@@ -49,7 +49,7 @@ run:
 debug:
 	@if command -v cargo >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
-		cd .. && cargo run --bin $(BINARY_NAME); \
+		cd .. && DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
 	else \
 		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
@@ -58,7 +58,7 @@ debug:
 			-v ../:/usr/src/app:z \
 			-w /usr/src/app \
 			$(RUST_DOCKER_IMAGE) \
-			cargo run --bin $(BINARY_NAME); \
+			DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
 	fi
 
 

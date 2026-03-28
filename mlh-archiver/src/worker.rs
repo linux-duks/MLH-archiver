@@ -15,10 +15,10 @@ pub fn connect_to_nntp(address: String) -> nntp::Result<NNTPStream> {
     match nntp_stream.capabilities() {
         Ok(lines) => {
             if log_enabled!(Level::Debug) {
-                log::debug!("server capabilities");
-                for line in lines.iter() {
-                    log::debug!("{}", line);
-                }
+                log::debug!(
+                    "server capabilities : {}",
+                    lines.join(", ").replace("\n", " ")
+                );
             }
         }
         Err(e) => log::error!("Failed checking server capabilities: {}", e),
@@ -57,12 +57,12 @@ impl Worker {
     }
 
     pub fn run(&mut self) -> crate::Result<()> {
-        log::info!("W{}: started consumming tasks", self.id);
+        log::info!("W{}: started consuming tasks", self.id);
         loop {
             // check if reconnection is needed before trying to connect
             if self.needs_reconnection {
                 log::debug!("W{}: will attempt a reconnection soon", self.id);
-                // wait  a minute before trying to reconnect
+                // wait a minute before trying to reconnect
                 std::thread::sleep(Duration::from_secs(60));
 
                 log::info!("W{}: will attempt a reconnection", self.id);
@@ -86,7 +86,7 @@ impl Worker {
                     return Ok(());
                 }
             };
-            // let handler_result =
+
             match self.handle_group(group_name.clone()) {
                 Ok(return_status) => {
                     log::info!("W{}: completed a task with: {return_status}", self.id);
