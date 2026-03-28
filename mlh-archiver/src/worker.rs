@@ -79,10 +79,12 @@ impl Worker {
             }
 
             log::info!("W{}: Reading new group from channel", self.id);
+            // recv() blocks until a message is available or channel is closed
+            // When channel is closed AND empty, returns RecvError
             let group_name = match self.receiver.recv() {
                 Ok(name) => name,
                 Err(crossbeam_channel::RecvError) => {
-                    log::warn!("W{}: Channel closed, worker exiting", self.id);
+                    log::info!("W{}: Channel closed and empty, worker exiting", self.id);
                     return Ok(());
                 }
             };
