@@ -1,105 +1,173 @@
-# Mailing Lists Archiver - Track Mailing Lists over NNTP into local files
+# Mailing Lists Archiver - Create Datasets from Mailing Lists
 
-Collect and archive locally all emails from mailing lists.
-This is in active development. It currently supports reading from NNTP endpoints.
+Collect and archive locally all emails from mailing lists, parse them into structured datasets, and analyze them while preserving privacy.
 
-This project a few main components:
+This project is in active development. It currently supports reading from NNTP endpoints.
 
-1. [Archiver](#archiver) : Keep (raw) local copies of emails in from mailing lists
-2. [Mailing List Parser](#mailing-list-parser): Parse the raw copies into a Parquet columnar dataset
-3. [Anonymizer](#anonymizer): Pseudo-anonymize personal identification from the dataset
+## Pipeline Overview
 
-# Archiver
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  MLH Archiver   │ ──► │   MLH Parser    │ ──► │   Anonymizer    │ ──► │    Analysis     │
+│  (raw emails)   │     │  (Parquet DS)   │     │ (anonymized DS) │     │  (insights)     │
+└─────────────────┘     └─────────────────┘     └─────────────────┘     └─────────────────┘
+```
 
-## Usage
+## Project Components
 
-To compile this program, use the `make build` command. The rust compiler with the `cargo` utility is needed.
-If not available, the makefile will use `podman` or `docker` and build the program using the container image for the rust compiler.
+This project consists of four main components:
 
-The most basic way to run this program, is to provide the NNTP Hostname and port via env variables. `NNTP_HOSTNAME="rcpassos.me" NNTP_PORT=119 cargo run`, or via arguments : `cargo run -H rcpassos.me -p 119` (note: this website is not a NNTP server).
-The list of available news groups in the server will be provided for selection.
+| Component | Description | Language |
+|-----------|-------------|----------|
+| **[MLH Archiver](mlh-archiver/)** | Downloads emails from NNTP servers and stores them as raw RFC 822 files | Rust |
+| **[MLH Parser](mlh_parser/)** | Parses raw emails into structured Parquet datasets with Hive partitioning | Python |
+| **[MLH Anonymizer](anonymizer/)** | Pseudo-anonymizes personal identification using SHA1 digests | Python |
+| **[MLH Analysis](analysis/)** | Example analysis scripts for exploring mailing list data | Python |
 
-A config file can be used too (check the Example below).
-By default, this program will look for the config file in the current directory.
-It will look for archiver_config*.{json,yaml,toml}.
+Each component has its own detailed documentation:
 
-A custom config file path can be passed with the flag `-c`. Ex: `cargo run  -c other_archiver_config.yaml`
+- [Archiver Documentation](mlh-archiver/README.md)
+- [Parser Documentation](mlh_parser/README.md)
+- [Anonymizer Documentation](anonymizer/README.md)
+- [Analysis Documentation](analysis/README.md)
+
+---
+
+## Quick Start
+
+### Step 1: Configure the Archiver
+
+1. Copy the example configuration file:
+
+   ```bash
+   cp example_archiver_config.yaml archiver_config.yaml
+   ```
+
+2. Edit `archiver_config.yaml` with your NNTP server details:
+
+   ```yaml
+   hostname: "nntp.example.com"
+   port: 119
+   nthreads: 2
+   output_dir: "./output"
+   loop-groups: true
+   group_lists:
+     - dev.example.me.lists.gfs2
+     - dev.example.me.lists.iommu
+   ```
+
+> [!WARNING]
+> **Do not set `nthreads` above 4 if you don't control the server you are fetching from.**
+> Be respectful to public infrastructure. This tool is designed to avoid being seen as an abusive scraping bot.
+
+### Step 2: Run the Pipeline
 
 ```bash
-Usage: mlh-archiver [OPTIONS]
-
-Options:
-  -c, --config-file <CONFIG_FILE>      [default: archiver_config*]
-  -H, --hostname <HOSTNAME>            nntp server domain/ip
-  -p, --port <PORT>                    nntp server port [default: 119]
-  -o, --output-dir <OUTPUT_DIR>        where results will be stored [default: ./output]
-  -n, --nthreads <NTHREADS>            Number of worker threads connecting to different lists [default: 1]
-  -l, --loop-groups                    If true, the app will keep running forever. Otherwise, stop after reading all groups
-      --group-lists <GROUP_LISTS>      List of groups to be read. "ALL" will select all lists available. Empty value will prompt a selection in the TUI (and save selected values)
-      --article-range <ARTICLE_RANGE>  (optional). Read a specific range of articles from the first list provided. Comma separated values, or dash separated ranges, like low-high
-  -h, --help                           Print help
+# Build and run the whole Pipeline
+make run
 ```
 
-The `RUST_LOG=debug` variable can be used to increase logging details.
+or
 
-args: `cargo run -- -c offarchiver_config.yaml -H rcpassos.me -p 119`
+```bash
+# Build and run the archiver (collects emails)
+make run_archiver
 
-### Example config file
+# Parse raw emails into Parquet dataset
+make parse
 
-```yaml
-# archiver_config.yaml
-hostname: "rcpassos.me"
-port: 119
-nthreads: 2
-output_dir: "./output"
-loop-groups: true
-group_lists:
-  - dev.rcpassos.me.lists.gfs2
-  - dev.rcpassos.me.lists.iommu
+# Anonymize the dataset
+make anonymize
+
+# Run example analyses
+make analysis
 ```
 
-## Implementation
+---
 
-The archiver is implemented in rust, and uses a NNTP library we forked.
-It is designed to be a multi-thread* process that can keep the local files up-to-date with the articles (emails) available in the NNTP server.
-It is, however, not designed to pull emails as fast as possible, as it could be seen as a malicious or abusive scraping bot.
+## Development
 
-> *Each thread is able to check one mail-group (mailing list) at a time from the server.
-> A thread will only fetch one email at a time.
+### Setup Options
 
-![fluxogram](./docs/fluxogram.svg)
+You have three options for setting up the development environment:
 
-# Mailing List Parser
+#### Option 1: Devbox (Recommended)
 
-Used to parse the output emails from the Archiver into a columnar parquet dataset
+[Devbox](https://www.jetify.com/devbox/) is a command-line tool that creates isolated development shells using Nix packages. It provides all required dependencies (Python, uv, Rust, git) in a single command.
 
-## Usage
+**Installation:** See the [Devbox installation guide](https://www.jetify.com/docs/devbox/quickstart).
 
-Run the `make parse` command.
-It requires least `podman/podman-compose` or `docker/docker-compose`.
+**Setup:**
 
-The parsed emails will be saved in a parquet formatted archive (using hive partitioning on the name of the mailing lists) in the `parser_output/parsed/` directory.
+```bash
+devbox shell
+```
 
-Incorrectly parsed email will be `parser_output/<mailing_list>/errors` directory.
+This sets up:
 
-# Anonymizer
+- Python 3.14
+- uv package manager
+- Rust toolchain (rustup)
+- Git
 
-To pseudo-anonymize the user identification from emails, run `make anonymize`. It expects the base non-anonymized dataset to be in the default `parser_output/parsed` folder, but this can be changed in the compose.yaml file.
+**Available Commands:**
 
-This script will replace user identification by SHA1 digests, and produce a more compressed version of the dataset under the `anonymizer_output` folder.
+| Command | Description |
+|---------|-------------|
+| `devbox run build` | Build the archiver |
+| `devbox run run` | Run the archiver |
+| `devbox run parse` | Run the mailing list parser |
+| `devbox run anonymize` | Run the anonymizer |
+| `devbox run analysis` | Run example analyses |
+| `devbox run rebuild` | Rebuild all components |
+| `devbox run test` | Run all tests |
+| `devbox run test-archiver` | Run archiver tests only |
+| `devbox run test-parser` | Run parser tests only |
+| `devbox run test-anonymizer` | Run anonymizer tests only |
+| `devbox run clean` | Clean all build artifacts |
+| `devbox run debug-parser` | Run parser in debug mode |
+| `devbox run debug-anonymizer` | Run anonymizer in debug mode |
+| `devbox run debug-analysis` | Run analysis in debug mode |
+| `devbox run peek <path>` | Quick inspection of Parquet files |
 
-# Example Analysis
+#### Option 2: Manual Installation
 
-There are example analyses that were used during research in the [./analysis](./analysis) folder.
-They can be run with `make analysis`. The output will be stored in [./analysis/results/](./analysis/results/) folder.
+Install the required toolchains manually:
 
-# Build System
+**Rust/Cargo:**
 
-This project provides two ways to run commands: using **Make** or **devbox**.
+Install rustup (Rust toolchain manager): <https://rustup.rs/>
 
-## Makefile Commands
+**Python/uv:**
+Assuming you have Python installed,
+Install the uv package manager:
+<https://docs.astral.sh/uv/getting-started/installation/>
 
-The root `Makefile` orchestrates all components. Run commands from the project root:
+**Additional Requirements:**
+
+- `libiconv` (for the archiver's character encoding support)
+- Git
+
+#### Option 3: Dev Container
+
+This repository includes a [`.devcontainer`](.devcontainer/) configuration for VS Code or other compatible editors.
+
+**Features:**
+
+- Pre-configured Rust and Python environment
+- Integrated with the Devbox setup
+
+**Usage:**
+
+1. Open the project in VS Code
+2. Click "Reopen in Container" when prompted
+3. The dev container will build automatically
+
+---
+
+### Makefile Commands
+
+The root [`Makefile`](Makefile) orchestrates all components. Run commands from the project root:
 
 | Command | Description |
 |---------|-------------|
@@ -122,54 +190,40 @@ The root `Makefile` orchestrates all components. Run commands from the project r
 | `make debug-anonymizer` | Run anonymizer in debug mode |
 | `make debug-analysis` | Run analysis in debug mode |
 
-### Prerequisites
+**Prerequisites:**
 
-- **Archiver**: Requires Rust/Cargo, or Podman/Docker for containerized builds
-- **Parser & Anonymizer**: Requires Podman/Podman-compose or Docker/Docker-compose
+| Component | Requirements |
+|-----------|--------------|
+| **Archiver** | Rust/Cargo, or Podman/Docker for containerized builds |
+| **Parser & Anonymizer** | Podman/Podman-compose or Docker/Docker-compose |
 
 ---
 
-## Setting up Devbox
+## Container Runtime Configuration
+
+The project supports multiple container runtimes with automatic detection:
+
+**Priority:** podman > docker compose (v2) > docker-compose (v1)
+
+**Override the detected runtime:**
 
 ```bash
-devbox shell
+# Use nerdctl
+make run CONTAINER=nerdctl COMPOSE="nerdctl compose"
+
+# Force docker-compose (v1)
+make parse COMPOSE=docker-compose
 ```
 
-This will set up the development environment with all required dependencies (Python, uv, Rust, etc.).
-
-### Devbox Commands
-
-[Devbox](https://www.jetify.com/devbox/) is a command-line tool that lets you easily create isolated shells for development. It uses Nix packages to be portable across different systems. See the [installation guide](https://www.jetify.com/docs/devbox/quickstart) to get started.
-
-If using devbox for development environment management, all commands are available as scripts:
-
-| Command | Description |
-|---------|-------------|
-| `devbox run build` | Build the archiver |
-| `devbox run run` | Run the archiver |
-| `devbox run parse` | Run the mailing list parser |
-| `devbox run anonymize` | Run the anonymizer |
-| `devbox run analysis` | Run example analyses |
-| `devbox run rebuild` | Rebuild all components |
-| `devbox run test` | Run all tests |
-| `devbox run test-archiver` | Run archiver tests only |
-| `devbox run test-parser` | Run parser tests only |
-| `devbox run test-anonymizer` | Run anonymizer tests only |
-| `devbox run clean` | Clean all build artifacts |
-| `devbox run debug-parser` | Run parser in debug mode |
-| `devbox run debug-anonymizer` | Run anonymizer in debug mode |
-| `devbox run debug-analysis` | Run analysis in debug mode  |
-| `devbox run peek path`|  Quick peek at files |
-
+See [`containers.mk`](containers.mk) for the detection logic.
 
 ---
-## Scripts
 
-The `scripts/` directory contains utility scripts for working with the parsed data.
+## Utility Scripts
 
 ### peek-files
 
-Quick inspection tool for Parquet files and directories.
+Quick inspection tool for Parquet files and directories located in [`scripts/peek_files.py`](scripts/peek_files.py).
 
 ```bash
 # Using devbox
@@ -199,48 +253,49 @@ devbox run peek-files parser_output/parsed/
 devbox run peek-files ./output/
 ```
 
-**Sample Output:**
+---
 
-```
-devbox run peek ./parser_output 
-Inspecting: .../parser_output
+## Architecture Details
 
-Directory: ./parser_output
-Found 1 parquet file(s)
---------------------------------------------------
+### Archiver Implementation
 
-Detected hive partitioning
+The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`](mlh-archiver/rust-nntp/)).
 
-Partition Statistics:
---------------------------------------------------
-  list=org.kernel.vger.linux-iio: 109,954 rows (1 file(s))
---------------------------------------------------
-  TOTAL: 109,954 rows across 1 file(s)
+**Design Principles:**
 
-Schema (from first file):
-  from: String
-  to: List(String)
-  cc: List(String)
-  subject: String
-  date: Datetime(time_unit='us', time_zone=None)
-  client-date: List(String)
-  message-id: String
-  in-reply-to: String
-  references: List(String)
-  x-mailing-list: String
-  trailers: List(Struct({'attribution': String, 'identification': String}))
-  code: List(String)
-  raw_body: String
-  __file_name: String
+- Multi-threaded: Each worker thread handles one mailing list at a time
+- Respectful: Not designed to pull emails as fast as possible to avoid being detected as a malicious scraping bot
+- Continuous: Can keep local files up-to-date with new articles
 
-Preview (first 10 rows from first file):
-shape: (5, 14)
-┌──────────────────────┬───────────────────────────┬───────────────────────────┬───────────────────────────┬───┬───────────────────────────┬───────────────────────────┬───────────────────────────┬─────────────┐
-│ from                 ┆ to                        ┆ cc                        ┆ subject                   ┆ … ┆ trailers                  ┆ code                      ┆ raw_body                  ┆ __file_name │
-│ ---                  ┆ ---                       ┆ ---                       ┆ ---                       ┆   ┆ ---                       ┆ ---                       ┆ ---                       ┆ ---         │
-│ str                  ┆ list[str]                 ┆ list[str]                 ┆ str                       ┆   ┆ list[struct[2]]           ┆ list[str]                 ┆ str                       ┆ str         │
-╞══════════════════════╪═══════════════════════════╪═══════════════════════════╪═══════════════════════════╪═══╪═══════════════════════════╪═══════════════════════════╪═══════════════════════════╪═════════════╡
-│ "Developer Name"     ┆ ["List of emails          ┆ ["more Emails             ┆ Re: [PATCH] staging       ┆ … ┆ [{"Acked-by","developer   ┆ []                        ┆ On Feb 23 2010,           ┆ 1.eml       │
-│ ...                  ┆ ...                       ┆ ...                       ┆ ...                       ┆   ┆ ...                       ┆ ...                       ┆ ...                       ┆             │
-└──────────────────────┴───────────────────────────┴───────────────────────────┴───────────────────────────┴───┴───────────────────────────┴───────────────────────────┴───────────────────────────┴─────────────┘
-```
+See the [architecture diagram](./docs/fluxogram.svg) for a visual representation.
+
+### Parser Implementation
+
+The parser uses:
+
+- **Polars**: Fast DataFrame library for data processing
+- **Hive Partitioning**: Data organized by mailing list name for efficient querying
+- **Error Handling**: Failed parses are saved to `parser_output/<mailing_list>/errors/`
+
+### Anonymizer Implementation
+
+The anonymizer applies SHA1 hashing to personally identifiable information (PII):
+
+- Deterministic: Same input always produces the same hash
+- Enables longitudinal analysis while protecting privacy
+- See [Anonymizer Documentation](anonymizer/README.md#security-considerations) for security considerations
+
+---
+
+## Additional Resources
+
+- [Archiver Detailed Documentation](mlh-archiver/README.md)
+- [Parser Detailed Documentation](mlh_parser/README.md)
+- [Anonymizer Detailed Documentation](anonymizer/README.md)
+- [Analysis Detailed Documentation](analysis/README.md)
+- [Example Configuration](example_archiver_config.yaml)
+- [Architecture Diagram](./docs/fluxogram.svg)
+
+## License
+
+See the [LICENSE](LICENSE) file.

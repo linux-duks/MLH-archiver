@@ -67,7 +67,7 @@ podman run --rm -it -u $(id -u):$(id -g) \
   cargo build --release
 ```
 
-The compiled binary will be copied to `./mlh-archiver.out`.
+The compiled binary will be at `target/release/mlh-archiver`.
 
 ## Usage
 
