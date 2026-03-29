@@ -9,8 +9,8 @@ groups:
   -
     name: test.groups.bar
     min_index: 1
-    max_index: 3
-    total: 3
+    max_index: 2
+    total: 2
     create_ts: 2011-04-29 16:42:35.11
     description: ~
   -

@@ -90,6 +90,9 @@ fn test_read_from_local_nntp_server() {
         "./test_output/test.groups.bar",
         "./test_output/test.groups.bar/__last_article_number",
         "./test_output/test.groups.bar/1.eml",
+        "./test_output/test.groups.bar/2.eml",
+        "./test_output/test.groups.empty",
+        "./test_output/test.groups.empty/__last_article_number",
     ];
     found_files.sort();
     expected_files.sort();
