@@ -1,0 +1,9 @@
+{
+	"name": "MLH-archiver Development Container",
+	"build": {
+		"dockerfile": "./Containerfile",
+		"context": ".."
+	},
+	"customizations": {},
+	"remoteUser": "devbox"
+}

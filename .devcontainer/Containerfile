@@ -1,0 +1,11 @@
+FROM docker.io/rust:slim-trixie
+
+RUN apt update && \
+	apt upgrade -y && \
+	apt install -y python3
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+
+# Installing your devbox project
+WORKDIR /code
+
