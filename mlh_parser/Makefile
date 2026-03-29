@@ -1,8 +1,16 @@
-# if Podman is available, prefer using it over docker
+# Detect container runtime and compose command
+# Priority: podman > docker compose (v2) > docker-compose (v1)
 ifeq ($(shell command -v podman 2> /dev/null),)
     CONTAINER=docker
+    # Check for docker compose (v2 plugin) first, then docker-compose (v1 standalone)
+    ifeq ($(shell docker compose version 2> /dev/null),)
+        COMPOSE=docker-compose
+    else
+        COMPOSE=docker compose
+    endif
 else
     CONTAINER=podman
+    COMPOSE=podman-compose
 endif
 
 
@@ -56,7 +64,7 @@ run:
 		if [ -n "$(PARSER_ENV)" ]; then \
 			echo "==> With environment: $(PARSER_ENV)"; \
 		fi; \
-		$(PARSER_ENV) $(CONTAINER)-compose up && $(CONTAINER)-compose down -v; \
+		$(PARSER_ENV) $(COMPOSE) up && $(COMPOSE) down -v; \
 	fi
 
 
@@ -64,7 +72,7 @@ run:
 rebuild:
 	GIT_COMMIT=$$(git rev-parse HEAD) \
 	GIT_DATE=$$(git log -1 --format=%ci) \
-	$(CONTAINER)-compose build --no-cache
+	$(COMPOSE) build --no-cache
 
 
 .PHONY: debug

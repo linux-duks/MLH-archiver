@@ -1,8 +1,16 @@
-# if Podman is available, prefer using it over docker
+# Detect container runtime and compose command
+# Priority: podman > docker compose (v2) > docker-compose (v1)
 ifeq ($(shell command -v podman 2> /dev/null),)
     CONTAINER=docker
+    # Check for docker compose (v2 plugin) first, then docker-compose (v1 standalone)
+    ifeq ($(shell docker compose version 2> /dev/null),)
+        COMPOSE=docker-compose
+    else
+        COMPOSE=docker compose
+    endif
 else
     CONTAINER=podman
+    COMPOSE=podman-compose
 endif
 
 .PHONY: run
@@ -13,12 +21,12 @@ run:
 		exit 1; \
 	else \
 		echo "==> Running analysis..."; \
-		$(CONTAINER)-compose up && $(CONTAINER)-compose down -v; \
+		$(COMPOSE) up && $(COMPOSE) down -v; \
 	fi
 
 .PHONY: rebuild
 rebuild:
-	$(CONTAINER)-compose build --no-cache
+	$(COMPOSE) build --no-cache
 
 .PHONY: debug
 debug:
