@@ -93,6 +93,16 @@ fn test_read_from_local_nntp_server() {
         "./test_output/test.groups.bar/2.eml",
         "./test_output/test.groups.empty",
         "./test_output/test.groups.empty/__last_article_number",
+        "./test_output/test.groups.synthetic",
+        "./test_output/test.groups.synthetic/__last_article_number",
+        "./test_output/test.groups.synthetic/1.eml",
+        "./test_output/test.groups.synthetic/2.eml",
+        "./test_output/test.groups.synthetic/3.eml",
+        "./test_output/test.groups.synthetic/4.eml",
+        "./test_output/test.groups.synthetic/5.eml",
+        "./test_output/test.groups.synthetic/6.eml",
+        "./test_output/test.groups.synthetic/7.eml",
+        "./test_output/test.groups.synthetic/8.eml",
     ];
     found_files.sort();
     expected_files.sort();

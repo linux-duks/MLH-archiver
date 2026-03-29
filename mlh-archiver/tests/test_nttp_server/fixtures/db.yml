@@ -20,6 +20,13 @@ groups:
     total: 0
     create_ts: 1980-01-01 0:01:00.00
     description: Empty newsgroup
+  -
+    name: test.groups.synthetic
+    min_index: 1
+    max_index: 8
+    total: 8
+    create_ts: 2025-01-01 0:00:00.00
+    description: Synthetic test emails with variations for parser testing
 
 messages:
   # First group
@@ -29,7 +36,7 @@ messages:
     index: 1
     ts: 1997-01-15 2:59:43.10
     head: |
-      From: John Doe <j.doe@example.org>
+      From: Cassian Andor <cassian@kenari.fx>
       Xref: localhost test.groups.foo:1
     body: |
       first message in first group
@@ -39,7 +46,7 @@ messages:
     index: 2
     ts: 2017-01-16 3:14:24.05
     head: |
-      From: Richard Roe <r.roe@example.org>
+      From: Luthen Rael <luthen@coruscant.antiques>
     body: |
       second message in first group
   # Second group
@@ -49,7 +56,7 @@ messages:
     index: 1
     ts: 2016-02-11 12:34:24.48
     head: |
-      From: John Doe <j.doe@example.org>
+      From: Kleya Marki <kleya@coruscant.antiques>
     body: |
       first message in second group
   -
@@ -58,7 +65,226 @@ messages:
     index: 2
     ts: 2016-04-29 16:42:35.11
     head: |
-      From: Richard Roe <r.roe@example.org>
+      From: Bix Caleen <bix@ferrix.hub>
     body: |
       second message in second group
 
+  # Synthetic test group - emails with variations for parser testing
+  # Email 1: Obfuscated email address with (a) notation
+  -
+    group: test.groups.synthetic
+    id: synthetic-001-obfuscated@lists.example.org
+    index: 1
+    ts: 2020-11-18 15:39:56.00
+    head: |
+      From: edward.elric at alchemy.mil
+      Subject: [PATCH] Add IAX support
+      Date: Wed, 18 Nov 2020 15:39:56 -0500
+      Message-ID: <20201118203955.174903-1-edward.elric@alchemy.mil>
+      To: alchemy@lists.amestris.gov
+      Xref: localhost test.groups.synthetic:1
+    body: |
+      From: Edward Elric <edward.elric(a)alchemy.mil>
+
+      Add Alkahestry Analytics Accelerator support.
+
+      Signed-off-by: Edward Elric <edward.elric(a)alchemy.mil>
+
+  # Email 2: Multipart email with patch and trailers
+  -
+    group: test.groups.synthetic
+    id: synthetic-002-patch-trailers@lists.example.org
+    index: 2
+    ts: 2012-06-12 01:45:13.00
+    head: |
+      From: Roy Mustang <mustang@central.mil>
+      Subject: [PATCHv6 4/4] Write to config file
+      Date: Tue, 12 Jun 2012 01:45:13 +0200
+      Message-ID: <20120612014513.Horde.cXfsRXwdC4BP1oMJ5-cA9zA@central.mil>
+      In-Reply-To: <vpqmx4bmhem.fsf@bauges.imag.fr>
+      References: <1338754481-27012-1-git-send-email@example.org>
+      Cc: Riza Hawkeye <hawkeye@central.mil>,
+       Alphonse Elric <alphonse@resembool.home>
+      To: Cassian Andor <cassian@kenari.fx>
+      Xref: localhost test.groups.synthetic:2
+    body: |
+      From: Roy Mustang <mustang@central.mil>
+
+      Yes, if the XDG file doesn't exist, there is no change.
+
+      Signed-off-by: Roy Mustang <mustang@central.mil>
+      Acked-by: Alphonse Elric <alphonse@resembool.home>
+      ---
+       config.c | 10 ++++++++++
+       1 file changed, 10 insertions(+)
+
+      diff --git a/config.c b/config.c
+      index 3887873..d36f1d9 100644
+      --- a/config.c
+      +++ b/config.c
+      @@ -296,6 +296,10 @@ static int group_json_set_val(struct accfg_group *group,
+       		json_object *jobj, char *key)
+       {
+       	int rc, i;
+      +	struct accfg_device *dev = NULL;
+      +
+      +	if (group)
+      +		dev = accfg_group_get_device(group);
+
+       	if (!group || !jobj || !key)
+       		return -EINVAL;
+
+  # Email 3: Folded multi-line headers
+  -
+    group: test.groups.synthetic
+    id: synthetic-003-folded-headers@lists.example.org
+    index: 3
+    ts: 2025-12-05 11:55:35.00
+    head: |
+      From: Syril Karn <syril.karn@coruscant.isb>
+      Subject: Re: [PATCH v2] nitrogen6x: change maintainer
+      Date: Fri, 5 Dec 2025 11:55:35 +0100
+      Message-ID: <8f705652-e0da-47c8-950c-b8d364a890a7@coruscant.isb>
+      Cc: Dedra Meero <meero@coruscant.isb>,
+       ISB Central <isb@coruscant.imperial.gov>,
+       Senior Deputy Inspector <senior.deputy@coruscant.imperial.gov>
+      To: Dedra Meero <meero@coruscant.isb>,
+       ISB Central <isb@coruscant.imperial.gov>
+      In-Reply-To: <202512042130.5B4LUUcU013524@simong.net>
+      References: <202512042130.5B4LUUcU013524@simong.net>
+      Xref: localhost test.groups.synthetic:3
+    body: |
+      Hi Dedra,
+
+      On 12/4/25 10:29 PM, Dedra Meero wrote:
+      > Dedra Meero shall be the new maintainer
+
+      Reviewed-by: Syril Karn <syril.karn@coruscant.isb>
+
+      Thanks!
+      Syril
+
+  # Email 4: Millennium date issue (year typo: 103 instead of 2003)
+  -
+    group: test.groups.synthetic
+    id: synthetic-004-millennium-date@lists.example.org
+    index: 4
+    ts: 2003-09-29 10:27:42.00
+    head: |
+      From: "Alexsandr Andert" <alexsandr@ferrix.resistance>
+      Subject: Does AGP 8X work in 2.4.x yet?
+      Date: Mon, 29 Sep 103 10:34:51 -0400
+      Message-id: <3f78415a.43a8.0@ferrix.resistance>
+      X-Mailer: CWMail Web to Mail Gateway 2.4e
+      Xref: localhost test.groups.synthetic:4
+    body: |
+      Sorry for butting in, but I've been trying to find the answer
+      to this question through other means without much success.
+
+      I have an Asus A7V8X motherboard (VIA Athlon chipset, 333Mhz FSB)
+      with an AGP 8X slot on it.
+
+      Does 2.4.x work with AGP 8X?
+
+      AA
+
+  # Email 5: Body leading headers (git send-email style) + quoted-printable
+  -
+    group: test.groups.synthetic
+    id: synthetic-005-body-headers-qp@lists.example.org
+    index: 5
+    ts: 2012-06-12 01:45:13.00
+    head: |
+      From: Winona Adell <winona@fondor.shipyards>
+      Subject: [PATCH] Fix encoding issue
+      Date: Tue, 12 Jun 2012 01:45:13 +0200
+      Message-ID: <patch-005@fondor.shipyards>
+      Xref: localhost test.groups.synthetic:5
+    body: |
+      From: Winona Adell <winona@fondor.shipyards>
+      To: maintainer@kernel.org
+      Subject: [PATCH] Fix encoding issue
+
+      This patch fixes an =C3=A9ncoding issue with UTF-8 characters.
+
+      The caf=C3=A9 serves excellent coffee.
+
+      Signed-off-by: Winona Adell <winona@fondor.shipyards>
+
+  # Email 6: Extensive Received headers + custom X-headers
+  -
+    group: test.groups.synthetic
+    id: synthetic-006-received-xheaders@lists.example.org
+    index: 6
+    ts: 2025-12-05 10:55:37.00
+    head: |
+      From: Vel Saratha <vel@aldhani.rebels>
+      Subject: Re: [PATCH v2] maintainer change
+      Date: Fri, 5 Dec 2025 10:55:36 +0000
+      Message-ID: <synthetic-006@aldhani.rebels>
+      Received: from phobos.denx.de (phobos.denx.de [85.214.62.61])
+      	by smtp.lore.kernel.org (Postfix) with ESMTPS id 4F3FCD2F7DA
+      	for <list@archiver.kernel.org>; Fri,  5 Dec 2025 10:55:43 +0000 (UTC)
+      Received: from h2850616.stratoserver.net (localhost [IPv6:::1])
+      	by phobos.denx.de (Postfix) with ESMTP id D9A1B841CF;
+      	Fri,  5 Dec 2025 11:55:41 +0100 (CET)
+      Received: from mail.example.com (mail.example.com [192.168.1.1])
+      	by phobos.denx.de (Postfix) with ESMTPS id D557F841A2
+      	for <list@example.org>; Fri,  5 Dec 2025 11:55:38 +0100 (CET)
+      Authentication-Results: phobos.denx.de; dmarc=pass header.from=aldhani.rebels
+      Authentication-Results: phobos.denx.de; spf=pass smtp.mailfrom=vel@aldhani.rebels
+      X-Mailer: Mozilla Thunderbird
+      X-User-Info: 192.168.1.100
+      X-OriginatorOrg: aldhani.rebels
+      Xref: localhost test.groups.synthetic:6
+    body: |
+      Hi,
+
+      This email has extensive Received headers for testing date fallback parsing.
+
+      Reviewed-by: Vel Saratha <vel@aldhani.rebels>
+
+  # Email 7: Multiple date headers (malformed + valid)
+  -
+    group: test.groups.synthetic
+    id: synthetic-007-multi-date@lists.example.org
+    index: 7
+    ts: 2025-01-15 08:30:00.00
+    head: |
+      From: Arvel Skeen <skeen@narkina5.prison>
+      Subject: [PATCH] Multiple date headers test
+      Date: Wed, 15 Jan 2025 08:30:00 +0000
+      Date: Wed Jan 15 2025 08:30:00
+      Date: 2025-01-15 08:30:00
+      Message-ID: <synthetic-007@narkina5.prison>
+      Xref: localhost test.groups.synthetic:7
+    body: |
+      This email has multiple Date headers to test date parser selection.
+
+      The parser should select the most reliable date format.
+
+  # Email 8: Reply-To + obfuscated " at " notation + List headers
+  -
+    group: test.groups.synthetic
+    id: synthetic-008-replyto-list-headers@lists.example.org
+    index: 8
+    ts: 2025-02-20 14:00:00.00
+    head: |
+      From: Maarva Andor <maarva at ferrix dot home>
+      Reply-To: brasso at ferrix dot repair
+      Subject: [LIST] Email with list headers
+      Date: Thu, 20 Feb 2025 14:00:00 +0000
+      Message-ID: <synthetic-008@ferrix.home>
+      List-ID: <test.lists.ferrix>
+      List-Unsubscribe: <mailto:unsubscribe@ferrix.home>
+      List-Archive: <https://lists.ferrix.home/archive>
+      X-Mailing-List: test.lists@ferrix.home
+      Precedence: list
+      Xref: localhost test.groups.synthetic:8
+    body: |
+      This email tests " at " obfuscation and mailing list headers.
+
+      Contact me at: maarva at ferrix dot home
+
+      --
+      Maarva Andor
