@@ -1,17 +1,5 @@
-# Detect container runtime and compose command
-# Priority: podman > docker compose (v2) > docker-compose (v1)
-ifeq ($(shell command -v podman 2> /dev/null),)
-    CONTAINER=docker
-    # Check for docker compose (v2 plugin) first, then docker-compose (v1 standalone)
-    ifeq ($(shell docker compose version 2> /dev/null),)
-        COMPOSE=docker-compose
-    else
-        COMPOSE=docker compose
-    endif
-else
-    CONTAINER=podman
-    COMPOSE=podman-compose
-endif
+# Include shared container runtime detection
+include containers.mk
 
 .PHONY: run
 run:

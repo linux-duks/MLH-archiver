@@ -1,6 +1,11 @@
 # By default, 'make' will run the 'all' target
 .PHONY: all
-all: build run
+all: rebuild run
+
+
+# run all targets in order
+.PHONY: run
+run: run-archiver parse anonymize analysis
 
 # ------------------------------------------------------------------------------
 # APPLICATION TARGETS

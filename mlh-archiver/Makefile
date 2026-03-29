@@ -1,9 +1,5 @@
-# if Podman is available, prefer using it over docker
-ifeq ($(shell command -v podman 2> /dev/null),)
-    CONTAINER=docker
-else
-    CONTAINER=podman
-endif
+# Include shared container runtime detection
+include ../containers.mk
 
 # Define the name of your binary
 BINARY_NAME = mlh-archiver
