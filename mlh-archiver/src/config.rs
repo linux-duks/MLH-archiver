@@ -53,26 +53,32 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
 
     // Collect config files from glob pattern
     let config_files: Vec<_> = glob(&opts.config_file)
-        .map_err(|e| ConfigError::Io(std::io::Error::new(
-            std::io::ErrorKind::InvalidInput,
-            format!("Invalid config file glob pattern '{}': {}", opts.config_file, e),
-        )))?
-        .filter_map(|path_result| {
-            match path_result {
-                Ok(path) => {
-                    log::debug!("Found config file: {}", path.display());
-                    Some(config::File::from(path))
-                }
-                Err(e) => {
-                    log::warn!("Error reading config file path: {}", e);
-                    None
-                }
+        .map_err(|e| {
+            ConfigError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "Invalid config file glob pattern '{}': {}",
+                    opts.config_file, e
+                ),
+            ))
+        })?
+        .filter_map(|path_result| match path_result {
+            Ok(path) => {
+                log::debug!("Found config file: {}", path.display());
+                Some(config::File::from(path))
+            }
+            Err(e) => {
+                log::warn!("Error reading config file path: {}", e);
+                None
             }
         })
         .collect();
 
     if config_files.is_empty() {
-        log::warn!("No config files found matching pattern: {}", opts.config_file);
+        log::warn!(
+            "No config files found matching pattern: {}",
+            opts.config_file
+        );
     }
 
     // Build config with layered sources
@@ -92,17 +98,21 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
         config_builder = config_builder.add_source(config_file);
     }
 
-    let config = config_builder.build().map_err(|e| ConfigError::Io(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        format!("Failed to build config: {}", e),
-    )))?;
+    let config = config_builder.build().map_err(|e| {
+        ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Failed to build config: {}", e),
+        ))
+    })?;
 
     log::debug!("Config built: {:?}", config);
 
-    let app_config: AppConfig = config.try_deserialize().map_err(|e| ConfigError::Io(std::io::Error::new(
-        std::io::ErrorKind::InvalidData,
-        format!("Failed to deserialize config: {}", e),
-    )))?;
+    let app_config: AppConfig = config.try_deserialize().map_err(|e| {
+        ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!("Failed to deserialize config: {}", e),
+        ))
+    })?;
 
     log::debug!("Deserialized config: hostname={:?}", app_config.hostname);
 
@@ -151,7 +161,8 @@ impl AppConfig {
                 let mut selected_lists = HashMap::new();
                 selected_lists.insert("group_lists", answer.clone());
 
-                match file_utils::write_yaml("archiver_config_selected_lists.yml", &selected_lists) {
+                match file_utils::write_yaml("archiver_config_selected_lists.yml", &selected_lists)
+                {
                     Ok(_) => Ok(()),
                     Err(e) => Err(ConfigError::Io(e)),
                 }?;

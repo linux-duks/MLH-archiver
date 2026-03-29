@@ -19,9 +19,8 @@ pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
     let mut nntp_stream = worker::connect_to_nntp(format!("{}:{}", hostname, app_config.port))?;
 
     let list_options = nntp_stream.list()?;
-    let groups = app_config.get_group_lists(
-        list_options.iter().map(|an| an.clone().name).collect(),
-    )?;
+    let groups =
+        app_config.get_group_lists(list_options.iter().map(|an| an.clone().name).collect())?;
 
     // close initial connection to nntp server
     let _ = nntp_stream.quit();

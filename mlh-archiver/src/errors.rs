@@ -21,7 +21,9 @@ pub enum Error {
 
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error("missing hostname: provide NNTP server hostname via --hostname/-H, NNTP_HOSTNAME env var, or config file")]
+    #[error(
+        "missing hostname: provide NNTP server hostname via --hostname/-H, NNTP_HOSTNAME env var, or config file"
+    )]
     MissingHostname,
     #[error("invalid list selection. At least one should be configured, or selected in runtime")]
     ListSelectionEmpty,

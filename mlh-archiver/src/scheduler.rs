@@ -46,8 +46,10 @@ impl Scheduler {
 
     pub fn run(&mut self) -> crate::Result<()> {
         // Create channel - sender stays with main thread, receivers go to workers
-        let (sender, receiver): (crossbeam_channel::Sender<String>, crossbeam_channel::Receiver<String>) = 
-            bounded(self.nthreds as usize);
+        let (sender, receiver): (
+            crossbeam_channel::Sender<String>,
+            crossbeam_channel::Receiver<String>,
+        ) = bounded(self.nthreds as usize);
 
         // Collect thread handles
         let mut handles = Vec::with_capacity(self.nthreds as usize);
@@ -105,9 +107,10 @@ impl Scheduler {
                 shutdown_flag_signal.store(true, Ordering::Relaxed);
             })
             .map_err(|e| {
-                errors::Error::Io(std::io::Error::other(
-                    format!("Failed to set Ctrl+C handler: {}", e),
-                ))
+                errors::Error::Io(std::io::Error::other(format!(
+                    "Failed to set Ctrl+C handler: {}",
+                    e
+                )))
             })?;
 
             // Main scheduling loop (runs in main thread)
@@ -142,7 +145,7 @@ impl Scheduler {
                     elapsed += check_interval;
                 }
             }
-            
+
             // Signal shutdown to workers
             drop(sender);
         } else {
@@ -177,8 +180,10 @@ impl Scheduler {
     // run_range does not keep track of lists, just run them once for the defined range
     pub fn run_range(&mut self, range: impl Iterator<Item = usize>) -> crate::Result<()> {
         // Create a channel for single-run mode
-        let (_sender, receiver): (crossbeam_channel::Sender<String>, crossbeam_channel::Receiver<String>) = 
-            bounded(1);
+        let (_sender, receiver): (
+            crossbeam_channel::Sender<String>,
+            crossbeam_channel::Receiver<String>,
+        ) = bounded(1);
 
         let mut worker = worker::Worker::new(
             0,
@@ -196,6 +201,6 @@ impl Scheduler {
             None => Err(errors::Error::Unknown),
         }?;
 
-        return Ok(())
+        return Ok(());
     }
 }
