@@ -104,6 +104,10 @@ fn test_read_from_local_nntp_server() {
         "./test_output/test.groups.synthetic/6.eml",
         "./test_output/test.groups.synthetic/7.eml",
         "./test_output/test.groups.synthetic/8.eml",
+        "./test_output/test.groups.synthetic/9.eml",
+        "./test_output/test.groups.synthetic/10.eml",
+        "./test_output/test.groups.synthetic/11.eml",
+        "./test_output/test.groups.synthetic/12.eml",
     ];
     found_files.sort();
     expected_files.sort();

@@ -1,4 +1,4 @@
-name: Lint Python
+name: "[template] Lint Python"
 
 on:
   workflow_call:

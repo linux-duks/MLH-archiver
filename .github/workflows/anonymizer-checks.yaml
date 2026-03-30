@@ -1,0 +1,25 @@
+name: "Anonymizer: Lint and Test"
+
+on:
+  push:
+    paths:
+    - 'anonymizer/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  anonymizer-tests:
+    uses: ./.github/workflows/py-tests.yaml
+    name: anonymizer-tests
+    with:
+      path: ./anonymizer
+      project-name: anonymizer
+
+  anonymizer-lint:
+    uses: ./.github/workflows/py-lint.yaml
+    with:
+      path: ./anonymizer
+

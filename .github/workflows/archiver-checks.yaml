@@ -1,0 +1,26 @@
+name: "Archiver: Test and Lint"
+
+on:
+  push:
+    paths:
+    - 'mlh-archiver/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  archiver-tests:
+    uses: ./.github/workflows/rust-tests.yaml
+    name: archiver-tests
+    with:
+      path: ./mlh-archiver
+      project-name: mlh-archiver
+
+  archiver-lint:
+    uses: ./.github/workflows/rust-lint.yaml
+    name: archiver-lint
+    with:
+      path: ./mlh-archiver
+      project-name: mlh-archiver
