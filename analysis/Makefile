@@ -1,5 +1,5 @@
 # Include shared container runtime detection
-include containers.mk
+include ../containers.mk
 
 .PHONY: run
 run:

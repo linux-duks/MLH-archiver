@@ -1,4 +1,4 @@
-name: "[template] Python Test"
+name: "[template] Rust Test"
 
 on:
   workflow_call:
@@ -14,39 +14,52 @@ permissions:
   contents: read
   pull-requests: write
 
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -Dwarnings
+
 jobs:
-  python-tests:
-    name: Python Tests
+  cargo-test:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version:
-          - "3.14"
 
     steps:
       - uses: actions/checkout@v5
-
-      - name: Install uv and set the Python version
-        uses: astral-sh/setup-uv@v7
         with:
-          python-version: ${{ matrix.python-version }}
+          submodules: true
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - run: cargo test
 
-      - name: Install NOX
-        run: uv tool install nox
+  cargo-coverage:
+    runs-on: ubuntu-latest
+    name: Rust Coverage
 
-      - name: Install the project
-        run: cd ${{ inputs.path }}  && uv sync --locked --all-extras --dev
-
-      - name: Run tests with coverage
-        run: cd ${{ inputs.path }} && uv tool run nox -s tests
-
-      - name: Upload coverage HTML
-        uses: actions/upload-artifact@v7
+    steps:
+      - uses: actions/checkout@v5
         with:
-          name: coverage-html-${{ inputs.project-name }}
-          path: ${{ inputs.path }}/htmlcov/
-          if-no-files-found: ignore
-          retention-days: 7
+          submodules: true
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: llvm-tools
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage summary
+        working-directory: ${{ inputs.path }}
+        run: |
+          # Generate coverage summary to file and GitHub summary
+          echo "## Rust Coverage Summary: ${{ inputs.project-name }}" > coverage-summary.md
+          echo "" >> coverage-summary.md
+          echo '```' >> coverage-summary.md
+          cargo llvm-cov --all-features --summary-only 2>&1 >> coverage-summary.md
+          echo '```' >> coverage-summary.md
+
+          # Also append to GitHub Actions summary
+          cat coverage-summary.md >> $GITHUB_STEP_SUMMARY
 
       - name: Upload coverage summary
         uses: actions/upload-artifact@v7
@@ -62,7 +75,7 @@ jobs:
             "/repos/${{ github.repository }}/commits/${{ github.sha }}/pulls" \
             --jq '.[0].number' \
             2>/dev/null || echo "")
-          
+
           if [ -n "$PR_NUMBER" ] && [ "$PR_NUMBER" != "null" ]; then
             echo "pr_number=$PR_NUMBER" >> $GITHUB_OUTPUT
           else
