@@ -10,17 +10,22 @@ pub mod worker;
 pub use errors::Result;
 
 pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
-    // Validate hostname before connecting
-    let hostname = app_config
-        .hostname
-        .as_ref()
-        .ok_or(crate::errors::ConfigError::MissingHostname)?;
+    // Get NNTP config (validates hostname is present)
+    let nntp_config = app_config.get_nntp_config();
+    nntp_config.validate()?;
 
-    let mut nntp_stream = worker::connect_to_nntp(format!("{}:{}", hostname, app_config.port))?;
+    // Connect to NNTP server to get list of groups
+    let mut nntp_stream = worker::connect_to_nntp(nntp_config.server_address())?;
 
     let list_options = nntp_stream.list()?;
+
+    // Clone groups list before dropping nntp_stream
+    let mut temp_config = config::AppConfig {
+        nntp: Some(nntp_config.clone()),
+        ..app_config.clone()
+    };
     let groups =
-        app_config.get_group_lists(list_options.iter().map(|an| an.clone().name).collect())?;
+        temp_config.get_group_lists(list_options.iter().map(|an| an.clone().name).collect())?;
 
     // close initial connection to nntp server
     let _ = nntp_stream.quit();
@@ -29,8 +34,7 @@ pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
     file_utils::check_or_create_folder(app_config.output_dir.clone())?;
 
     let mut w = scheduler::Scheduler::new(
-        app_config.hostname.clone().unwrap(),
-        app_config.port,
+        nntp_config,
         app_config.output_dir.clone(),
         app_config.nthreads,
         app_config.loop_groups,

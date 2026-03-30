@@ -7,9 +7,7 @@ use mlh_archiver::config;
 use mlh_archiver::start;
 
 fn main() -> Result<()> {
-    let env = Env::default()
-        .filter_or("RUST_LOG", "info")
-        .write_style_or("MY_LOG_STYLE", "always");
+    let env = Env::default().filter_or("RUST_LOG", "info");
 
     env_logger::init_from_env(env);
 
@@ -19,8 +17,6 @@ fn main() -> Result<()> {
             eprintln!("Error: {}", e);
             eprintln!();
             eprintln!("Configuration options:");
-            eprintln!("  - Command line: -H HOSTNAME or --hostname HOSTNAME");
-            eprintln!("  - Environment:  NNTP_HOSTNAME=...");
             eprintln!("  - Config file:  archiver_config.yaml (or similar)");
             eprintln!();
             eprintln!("Run with --help for more information.");

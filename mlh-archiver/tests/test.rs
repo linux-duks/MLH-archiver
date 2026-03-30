@@ -5,7 +5,7 @@ use testcontainers::{
     GenericBuildableImage, core::WaitFor, runners::SyncBuilder, runners::SyncRunner,
 };
 
-use mlh_archiver::config::AppConfig;
+use mlh_archiver::config::{AppConfig, NntpConfig};
 use mlh_archiver::start;
 use walkdir::WalkDir;
 
@@ -51,14 +51,15 @@ fn test_read_from_local_nntp_server() {
 
     println!("server container running on host port: {}", host_port);
     let mut app_config = AppConfig {
-        hostname: Some("localhost".to_owned()),
-        port: host_port,
         output_dir: output_dir.clone(),
         nthreads: 1,
-        group_lists: Some(vec!["ALL".to_owned()]),
-        // for the test, run all groups and then stop
         loop_groups: false,
-        article_range: None,
+        nntp: Some(NntpConfig {
+            hostname: "localhost".to_owned(),
+            port: host_port,
+            group_lists: Some(vec!["ALL".to_owned()]),
+            article_range: None,
+        }),
     };
 
     check_and_delete_folder(output_dir.clone()).unwrap();

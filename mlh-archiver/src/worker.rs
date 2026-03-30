@@ -1,3 +1,4 @@
+use crate::config::NntpConfig;
 use crate::errors;
 use crate::file_utils;
 use log::{Level, log_enabled};
@@ -28,7 +29,7 @@ pub fn connect_to_nntp(address: String) -> nntp::Result<NNTPStream> {
 
 pub struct Worker {
     id: u8,
-    hostname: String,
+    nntp_config: NntpConfig,
     nntp_stream: NNTPStream,
     base_output_path: String,
     needs_reconnection: bool,
@@ -38,17 +39,17 @@ pub struct Worker {
 impl Worker {
     pub fn new(
         id: u8,
-        hostname: String,
-        port: u16,
+        nntp_config: NntpConfig,
         base_output_path: String,
         receiver: crossbeam_channel::Receiver<String>,
     ) -> Worker {
-        let nntp_stream = connect_to_nntp(format!("{}:{}", hostname.clone(), port))
-            .expect("Worker should have connected to the server");
+        let address = nntp_config.server_address();
+        let nntp_stream =
+            connect_to_nntp(address).expect("Worker should have connected to the server");
 
         Worker {
             id,
-            hostname,
+            nntp_config,
             base_output_path,
             nntp_stream,
             needs_reconnection: false,
@@ -224,7 +225,6 @@ impl Worker {
                 return Err(e);
             }
         }
-        // Ok(())
     }
 
     pub fn handle_group_range(
@@ -340,11 +340,10 @@ impl Worker {
                 }
                 Err(e) => {
                     log::warn!(
-                        "W{}: Failed reading article '{}' from '{}' : {}",
+                        "W{}: Failed reading article '{}' from '{}'",
                         self.id,
                         mail_num,
-                        self.hostname,
-                        e
+                        self.nntp_config.server_address()
                     );
                     attempts += 1;
                     if attempts > max_retries {

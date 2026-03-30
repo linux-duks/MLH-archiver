@@ -1,5 +1,15 @@
-hostname: "localhost"
-port: 119
+# Example archiver configuration file
+# 
+# This configuration uses the nested format with source-specific blocks.
+# The `nntp:` block contains all NNTP-specific settings.
+# Global settings (nthreads, output_dir, loop_groups) are at the top level.
+
 nthreads: 3
 output_dir: "./output"
-group_lists: ["ALL"]
+loop_groups: true
+
+nntp:
+  hostname: "localhost"
+  port: 119
+  group_lists: ["ALL"]
+  # article_range: "1-100"  # Optional: fetch specific range from first list

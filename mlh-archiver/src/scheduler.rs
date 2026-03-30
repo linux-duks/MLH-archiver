@@ -1,3 +1,4 @@
+use crate::config::NntpConfig;
 use crate::errors;
 use crate::worker;
 use crossbeam_channel::bounded;
@@ -10,8 +11,7 @@ use std::time::Duration;
 const INTERVAL_BETWEEN_RESCANS: usize = 60 * 60; // 1h
 
 pub struct Scheduler {
-    hostname: String,
-    port: u16,
+    nntp_config: NntpConfig,
     base_output_path: String,
     nthreds: u8,
     loop_groups: bool,
@@ -20,8 +20,7 @@ pub struct Scheduler {
 
 impl Scheduler {
     pub fn new(
-        hostname: String,
-        port: u16,
+        nntp_config: NntpConfig,
         base_output_path: String,
         nthreds: u8,
         loop_groups: bool,
@@ -35,8 +34,7 @@ impl Scheduler {
         }
 
         Scheduler {
-            hostname,
-            port,
+            nntp_config,
             base_output_path,
             nthreds,
             loop_groups,
@@ -65,8 +63,7 @@ impl Scheduler {
 
             let mut worker = worker::Worker::new(
                 id,
-                self.hostname.clone(),
-                self.port,
+                self.nntp_config.clone(),
                 self.base_output_path.clone(),
                 receiver,
             );
@@ -187,8 +184,7 @@ impl Scheduler {
 
         let mut worker = worker::Worker::new(
             0,
-            self.hostname.clone(),
-            self.port,
+            self.nntp_config.clone(),
             self.base_output_path.clone(),
             receiver,
         );

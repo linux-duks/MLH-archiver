@@ -46,14 +46,16 @@ Each component has its own detailed documentation:
 2. Edit `archiver_config.yaml` with your NNTP server details:
 
    ```yaml
-   hostname: "nntp.example.com"
-   port: 119
    nthreads: 2
    output_dir: "./output"
-   loop-groups: true
-   group_lists:
-     - dev.example.me.lists.gfs2
-     - dev.example.me.lists.iommu
+   loop_groups: true
+
+   nntp:
+     hostname: "nntp.example.com"
+     port: 119
+     group_lists:
+       - dev.example.me.lists.gfs2
+       - dev.example.me.lists.iommu
    ```
 
 > [!WARNING]
@@ -266,6 +268,12 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 - Multi-threaded: Each worker thread handles one mailing list at a time
 - Respectful: Not designed to pull emails as fast as possible to avoid being detected as a malicious scraping bot
 - Continuous: Can keep local files up-to-date with new articles
+
+**Configuration:**
+
+The archiver uses a nested configuration format:
+- Global settings (`nthreads`, `output_dir`, `loop_groups`) at the top level
+- NNTP-specific settings (`hostname`, `port`, `group_lists`, `article_range`) under the `nntp:` block
 
 See the [architecture diagram](./docs/fluxogram.svg) for a visual representation.
 

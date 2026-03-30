@@ -9,6 +9,7 @@ The MLH Archiver connects to NNTP servers and downloads emails from specified ma
 ## Architecture
 
 Each worker thread handles one mailing list at a time, fetching one email at a time. This design ensures:
+
 - Respectful bandwidth usage
 - Ability to keep local files up-to-date with new articles
 - Parallel processing across multiple mailing lists
@@ -26,10 +27,12 @@ See the [architecture diagram](../docs/fluxogram.svg) for a visual representatio
 ## Prerequisites
 
 ### Native Build
+
 - Rust toolchain (cargo, rustc)
 - `libiconv` (for character encoding support)
 
 ### Container Build (Alternative)
+
 - Podman or Docker
 - No Rust installation required
 
@@ -78,66 +81,65 @@ Usage: mlh-archiver [OPTIONS]
 
 Options:
   -c, --config-file <CONFIG_FILE>      Path to config file [default: archiver_config*]
-  -H, --hostname <HOSTNAME>            NNTP server domain/IP
-  -p, --port <PORT>                    NNTP server port [default: 119]
-  -o, --output-dir <OUTPUT_DIR>        Output directory [default: ./output]
-  -n, --nthreads <NTHREADS>            Number of worker threads [default: 1]
-  -l, --loop-groups                    Keep running and check for new articles periodically
-      --group-lists <GROUP_LISTS>      Mailing lists to archive ("ALL" for all available)
-      --article-range <ARTICLE_RANGE>  Article range to fetch (e.g., "1-100" or "1,5,10-20")
   -h, --help                           Print help
 ```
 
+**Note:** All configuration is done via the config file.
+
 ### Environment Variables
 
-- `NNTP_HOSTNAME` - NNTP server hostname
-- `NNTP_PORT` - NNTP server port
 - `RUST_LOG` - Log level (e.g., `debug`, `info`, `warn`, `error`)
 
 ### Examples
 
 ```bash
-# Using environment variables
-NNTP_HOSTNAME="nntp.example.com" NNTP_PORT=119 cargo run
-
-# Using command line arguments
-cargo run -- -H nntp.example.com -p 119
-
 # Using a config file
 cargo run -- -c archiver_config.yaml
 
 # With debug logging
-RUST_LOG=debug cargo run -- -H nntp.example.com -p 119
+RUST_LOG=debug cargo run -- -c archiver_config.yaml
 ```
 
 ## Configuration
 
 The archiver looks for configuration files matching `archiver_config*.{json,yaml,toml}` in the current directory by default.
 
+Configuration is **nested**: global settings at the top level, NNTP-specific settings under the `nntp:` block.
+
 ### Example YAML Configuration
 
 ```yaml
 # archiver_config.yaml
-hostname: "nntp.example.com"
-port: 119
 nthreads: 2
 output_dir: "./output"
-loop-groups: true
-group_lists:
-  - dev.rcpassos.me.lists.gfs2
-  - dev.rcpassos.me.lists.iommu
+loop_groups: true
+
+nntp:
+  hostname: "nntp.example.com"
+  port: 119
+  group_lists:
+    - dev.rcpassos.me.lists.gfs2
+    - dev.rcpassos.me.lists.iommu
 ```
 
 ### Configuration Options
 
+#### Global Options
+
 | Option | Type | Description |
 |--------|------|-------------|
-| `hostname` | string | NNTP server hostname or IP |
+| `nthreads` | integer | Number of parallel worker threads (default: 1) |
+| `output_dir` | string | Directory to store archived emails (default: "./output") |
+| `loop_groups` | boolean | Continuously check for new articles (default: true) |
+
+#### NNTP Options (under `nntp:` block)
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `hostname` | string | **Required.** NNTP server hostname or IP |
 | `port` | integer | NNTP server port (default: 119) |
-| `nthreads` | integer | Number of parallel worker threads |
-| `output_dir` | string | Directory to store archived emails |
-| `loop-groups` | boolean | Continuously check for new articles |
-| `group_lists` | list | Mailing list names to archive |
+| `group_lists` | list | Mailing list names to archive (e.g., `["ALL"]` or specific lists) |
+| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 
 ## Output Format
 
@@ -200,18 +202,28 @@ mlh-archiver/
 ## Troubleshooting
 
 ### Connection Issues
-- Verify NNTP server hostname and port
+
+- Verify NNTP server hostname and port in your config file
 - Check firewall rules for NNTP traffic (typically port 119 or 563 for SSL)
 - Some NNTP servers require authentication (not currently supported)
 
+### Configuration Issues
+
+- Ensure `nntp.hostname` is set in your config file
+- The `nntp:` block is required
+- Check that YAML syntax is valid
+
 ### Build Issues
+
 - Ensure `libiconv` is installed for character encoding support
 - For container builds, verify Podman/Docker is running
 
 ### Logging
+
 Enable debug logging for troubleshooting:
+
 ```bash
-RUST_LOG=debug cargo run -- [your arguments]
+RUST_LOG=debug cargo run -- -c archiver_config.yaml
 ```
 
 ## License

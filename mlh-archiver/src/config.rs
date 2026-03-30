@@ -1,55 +1,125 @@
 use crate::{errors::ConfigError, file_utils, range_inputs};
-use clap::{Args, Parser, ValueHint};
+use clap::{Parser, ValueHint};
 use config::Config;
 use glob::glob;
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 
-// TODO: test use confique::Config;
-
-#[derive(Debug, Parser, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
-pub struct Opts {
-    // config file location override
-    #[arg(short, long, default_value = "archiver_config*", value_hint = ValueHint::FilePath)]
-    config_file: String,
-
-    #[clap(flatten)]
-    app_config: Option<AppConfig>,
-}
-
-#[derive(Debug, Args, Default, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
-pub struct AppConfig {
+/// NNTP-specific configuration
+///
+/// All NNTP-related settings are nested under this struct.
+/// Future source methods (IMAP, local, mbox) will have their own structs.
+#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
+pub struct NntpConfig {
     /// nntp server domain/ip
-    #[arg(short = 'H', long)]
-    pub hostname: Option<String>,
-    /// nntp serrver port
-    #[arg(short, long, default_value = "119")]
+    pub hostname: String,
+    /// nntp server port
+    #[serde(default = "default_port")]
     pub port: u16,
-    #[arg(short, long, default_value = "./output", value_hint = ValueHint::DirPath)]
-    /// where results will be stored
-    pub output_dir: String,
-    /// Number of worker threads connecting to different lists
-    #[arg(short, long, default_value = "1")]
-    pub nthreads: u8,
-    /// If true, the app will keep running forever. Otherwise, stop after reading all groups
-    #[arg(short, long, default_value = "true")]
-    pub loop_groups: bool,
-
     /// List of groups to be read. "ALL" will select all lists available.
     /// Empty value will prompt a selection in the TUI (and save selected values)
-    #[arg(long)]
     pub group_lists: Option<Vec<String>>,
-    ///  (optional). Read a specific range of articles from the first list provided. Comma separated values, or dash separated ranges, like low-high
-    #[arg(long)]
+    /// (optional). Read a specific range of articles from the first list provided.
+    /// Comma separated values, or dash separated ranges, like low-high
     pub article_range: Option<String>,
+}
+
+impl Default for NntpConfig {
+    fn default() -> Self {
+        Self {
+            hostname: String::new(),
+            port: default_port(),
+            group_lists: None,
+            article_range: None,
+        }
+    }
+}
+
+fn default_port() -> u16 {
+    119
+}
+
+impl NntpConfig {
+    /// Validate that hostname is provided
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.hostname.is_empty() {
+            return Err(ConfigError::MissingHostname);
+        }
+        Ok(())
+    }
+
+    /// Get the NNTP server address as a string
+    pub fn server_address(&self) -> String {
+        format!("{}:{}", self.hostname, self.port)
+    }
+}
+
+/// Main application configuration
+///
+/// Global settings (nthreads, output_dir, loop_groups) are at the top level.
+/// Source-specific settings are nested (e.g., nntp, imap, local, mbox).
+#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
+pub struct AppConfig {
+    /// Number of worker threads connecting to different lists
+    #[serde(default = "default_nthreads")]
+    pub nthreads: u8,
+
+    /// Output directory where results will be stored
+    #[serde(default = "default_output_dir")]
+    pub output_dir: String,
+
+    /// If true, the app will keep running forever. Otherwise, stop after reading all groups
+    #[serde(default = "default_loop_groups")]
+    pub loop_groups: bool,
+
+    /// NNTP-specific configuration
+    pub nntp: Option<NntpConfig>,
+}
+
+impl Default for AppConfig {
+    fn default() -> Self {
+        Self {
+            nthreads: default_nthreads(),
+            output_dir: default_output_dir(),
+            loop_groups: default_loop_groups(),
+            nntp: None,
+        }
+    }
+}
+
+fn default_nthreads() -> u8 {
+    1
+}
+
+fn default_output_dir() -> String {
+    "./output".to_string()
+}
+
+fn default_loop_groups() -> bool {
+    true
+}
+
+impl AppConfig {
+    /// Get NNTP config, creating default if not set
+    pub fn get_nntp_config(&self) -> NntpConfig {
+        self.nntp.clone().unwrap_or_default()
+    }
+
+    /// Get NNTP config, consuming self
+    pub fn into_nntp_config(self) -> NntpConfig {
+        self.nntp.unwrap_or_default()
+    }
+}
+
+#[derive(Debug, Parser, Default)]
+pub struct Opts {
+    /// config file location override
+    #[arg(short, long, default_value = "archiver_config*", value_hint = ValueHint::FilePath)]
+    pub config_file: String,
 }
 
 pub fn read_config() -> Result<AppConfig, ConfigError> {
     let opts = Opts::parse();
-
-    let base_config = opts.app_config.unwrap_or_default();
-
-    let defaults = Config::try_from(&base_config).unwrap();
 
     // Collect config files from glob pattern
     let config_files: Vec<_> = glob(&opts.config_file)
@@ -82,16 +152,7 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
     }
 
     // Build config with layered sources
-    let mut config_builder = Config::builder()
-        .set_default("port", 119)
-        .unwrap()
-        .add_source(defaults)
-        // env variable config (higher priority)
-        .add_source(
-            config::Environment::with_prefix("NNTP")
-                .try_parsing(true)
-                .separator("_"),
-        );
+    let mut config_builder = Config::builder();
 
     // Add each config file (highest priority)
     for config_file in config_files {
@@ -114,10 +175,15 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
         ))
     })?;
 
-    log::debug!("Deserialized config: hostname={:?}", app_config.hostname);
+    log::debug!(
+        "Deserialized config: hostname={:?}",
+        app_config.nntp.as_ref().map(|n| &n.hostname)
+    );
 
     // Validate hostname is provided
-    if app_config.hostname.is_none() {
+    if let Some(ref nntp) = app_config.nntp {
+        nntp.validate()?;
+    } else {
         return Err(ConfigError::MissingHostname);
     }
 
@@ -125,7 +191,7 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
 }
 
 impl AppConfig {
-    /// returns the lists ready to use
+    /// Returns the lists ready to use
     ///
     /// Takes lists from config. If none configured, prompt user for selection.
     /// If list was configured, check if selected lists are available in the server
@@ -134,8 +200,10 @@ impl AppConfig {
         &mut self,
         list_options: Vec<String>,
     ) -> Result<Vec<String>, ConfigError> {
+        let nntp = self.nntp.get_or_insert_with(NntpConfig::default);
+
         let mut answer: Vec<String>;
-        if self.group_lists.is_none() {
+        if nntp.group_lists.is_none() {
             log::info!("No group_lists defined");
 
             // list of options provides, with "ALL" as first
@@ -154,7 +222,7 @@ impl AppConfig {
 
             if answer.is_empty() {
                 log::info!("empty selection");
-                self.group_lists = None;
+                nntp.group_lists = None;
                 return Err(ConfigError::ListSelectionEmpty);
             } else {
                 // save selection to a file
@@ -168,7 +236,7 @@ impl AppConfig {
                 }?;
             }
         } else {
-            let mut group_lists = self.group_lists.clone().unwrap();
+            let mut group_lists = nntp.group_lists.clone().unwrap();
 
             // If "ALL" provided, load all lists
             if group_lists[0] == "ALL" {
@@ -203,10 +271,12 @@ impl AppConfig {
     }
 
     pub fn get_article_range(&self) -> Option<impl Iterator<Item = usize>> {
-        match &self.article_range {
+        let nntp = self.nntp.as_ref()?;
+
+        match &nntp.article_range {
             Some(range_text) => {
                 // range and multiple lists
-                if self.group_lists.as_ref().is_some_and(|x| x.len() > 1) {
+                if nntp.group_lists.as_ref().is_some_and(|x| x.len() > 1) {
                     log::warn!(
                         "article_range used with group_lists with more than one list. This is likely an error"
                     );
