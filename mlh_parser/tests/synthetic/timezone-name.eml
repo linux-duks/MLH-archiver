@@ -1,0 +1,14 @@
+From: Dedra Meero <dedra.meero@coruscant.isb>
+Subject: Eastern time zone test
+Date: Wed, 15 Jan 2025 08:30:00 EST
+Message-ID: <synthetic-011@coruscant.isb>
+Xref: localhost test.groups.synthetic:11
+Newsgroups: test.groups.synthetic
+Path: nntp.lore.kernel.org!not-for-mail
+
+This email uses timezone name instead of numeric offset.
+EST should be parsed as UTC-5, resulting in 13:30:00 UTC.
+
+--
+Dedra Meero
+ISB Supervisor

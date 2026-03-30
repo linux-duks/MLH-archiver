@@ -1,0 +1,17 @@
+From: Timm Karlo <timm.karlo@coruscant.isb>
+Subject: Date from the future
+Date: Mon, 01 Jan 2099 00:00:00 +0000
+Received: from mail.isb.local (mail.isb.local [10.0.0.100])
+	by server.ghorman.imperial.gov (Postfix) with ESMTP id B2C3D4E5F6G7
+	for <list@ghorman.imperial.gov>; Wed, 15 Jan 2025 10:00:00 +0000 (UTC)
+Message-ID: <synthetic-010@coruscant.isb>
+Xref: localhost test.groups.synthetic:10
+Newsgroups: test.groups.synthetic
+Path: nntp.lore.kernel.org!not-for-mail
+
+This email has a date in the far future.
+Parser should detect it as invalid and use Received header date.
+
+--
+Timm Karlo
+ISB Data Processing

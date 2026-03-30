@@ -23,8 +23,8 @@ groups:
   -
     name: test.groups.synthetic
     min_index: 1
-    max_index: 8
-    total: 8
+    max_index: 12
+    total: 12
     create_ts: 2025-01-01 0:00:00.00
     description: Synthetic test emails with variations for parser testing
 
@@ -288,3 +288,94 @@ messages:
 
       --
       Maarva Andor
+
+  # Email 9: Invalid RFC 2822 date format
+  -
+    group: test.groups.synthetic
+    id: synthetic-009-invalid-date@lists.example.org
+    index: 9
+    ts: 2025-01-15 10:00:00.00
+    head: |
+      From: B2EMO <b2emo@ferrix.droid>
+      Subject: Invalid date format test
+      Date: NotADateAtAll
+      Received: from mail.ferrix.local (mail.ferrix.local [192.168.1.50])
+      	by server.ghorman.imperial.gov (Postfix) with ESMTP id A1B2C3D4E5F6
+      	for <list@ghorman.imperial.gov>; Wed, 15 Jan 2025 10:00:00 +0000 (UTC)
+      Message-ID: <synthetic-009@ferrix.droid>
+      Xref: localhost test.groups.synthetic:9
+    body: |
+      This email has an invalid Date header.
+      Parser should fall back to Received header date.
+
+      --
+      B2EMO
+      Ferrix Resistance Communications
+
+  # Email 10: Future date
+  -
+    group: test.groups.synthetic
+    id: synthetic-010-future-date@lists.example.org
+    index: 10
+    ts: 2025-01-15 10:00:00.00
+    head: |
+      From: Timm Karlo <timm.karlo@coruscant.isb>
+      Subject: Date from the future
+      Date: Mon, 01 Jan 2099 00:00:00 +0000
+      Received: from mail.isb.local (mail.isb.local [10.0.0.100])
+      	by server.ghorman.imperial.gov (Postfix) with ESMTP id B2C3D4E5F6G7
+      	for <list@ghorman.imperial.gov>; Wed, 15 Jan 2025 10:00:00 +0000 (UTC)
+      Message-ID: <synthetic-010@coruscant.isb>
+      Xref: localhost test.groups.synthetic:10
+    body: |
+      This email has a date in the far future.
+      Parser should detect it as invalid and use Received header date.
+
+      --
+      Timm Karlo
+      ISB Data Processing
+
+  # Email 11: Timezone name instead of offset
+  -
+    group: test.groups.synthetic
+    id: synthetic-011-timezone-name@lists.example.org
+    index: 11
+    ts: 2025-01-15 13:30:00.00
+    head: |
+      From: Dedra Meero <dedra.meero@coruscant.isb>
+      Subject: Eastern time zone test
+      Date: Wed, 15 Jan 2025 08:30:00 EST
+      Message-ID: <synthetic-011@coruscant.isb>
+      Xref: localhost test.groups.synthetic:11
+    body: |
+      This email uses timezone name instead of numeric offset.
+      EST should be parsed as UTC-5, resulting in 13:30:00 UTC.
+
+      --
+      Dedra Meero
+      ISB Supervisor
+
+  # Email 12: Empty Date header
+  -
+    group: test.groups.synthetic
+    id: synthetic-012-empty-date@lists.example.org
+    index: 12
+    ts: 2025-01-15 10:00:00.00
+    head: |
+      From: Luthen Rael <luthen@coruscant.antiques>
+      Subject: Missing date header
+      Date:
+      Received: from mail.coruscant.local (mail.coruscant.antiques [192.168.50.10])
+      	by server.ghorman.imperial.gov (Postfix) with ESMTP id C3D4E5F6G7H8
+      	for <list@ghorman.imperial.gov>; Wed, 15 Jan 2025 10:00:00 +0000 (UTC)
+      X-Received: from backup.coruscant.antiques (backup.coruscant.antiques [192.168.50.11]);
+      	Wed, 15 Jan 2025 10:00:01 +0000
+      Message-ID: <synthetic-012@coruscant.antiques>
+      Xref: localhost test.groups.synthetic:12
+    body: |
+      This email has an empty Date header.
+      Parser should use Received header date.
+
+      --
+      Luthen Rael
+      Coruscant Antiques
