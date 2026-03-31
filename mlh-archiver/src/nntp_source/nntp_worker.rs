@@ -1,63 +1,34 @@
 use crate::config::NntpConfig;
 use crate::errors;
 use crate::file_utils;
-use log::{Level, log_enabled};
+use crate::nntp_source;
 use nntp::NNTPStream;
 use std::{fmt, path::Path, thread::sleep, time::Duration};
 
-pub fn connect_to_nntp(address: String) -> nntp::Result<NNTPStream> {
-    let mut nntp_stream = match NNTPStream::connect(address) {
-        Ok(stream) => stream,
-        Err(e) => {
-            return Err(e);
-        }
-    };
-
-    match nntp_stream.capabilities() {
-        Ok(lines) => {
-            if log_enabled!(Level::Debug) {
-                log::debug!(
-                    "server capabilities : {}",
-                    lines.join(", ").replace("\n", " ")
-                );
-            }
-        }
-        Err(e) => log::error!("Failed checking server capabilities: {}", e),
-    }
-    return Ok(nntp_stream);
-}
-
-pub struct Worker {
+pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
     nntp_stream: NNTPStream,
     base_output_path: String,
     needs_reconnection: bool,
-    receiver: crossbeam_channel::Receiver<String>,
 }
 
-impl Worker {
-    pub fn new(
-        id: u8,
-        nntp_config: NntpConfig,
-        base_output_path: String,
-        receiver: crossbeam_channel::Receiver<String>,
-    ) -> Worker {
+impl NNTPWorker {
+    pub fn new(id: u8, nntp_config: NntpConfig, base_output_path: String) -> NNTPWorker {
         let address = nntp_config.server_address();
-        let nntp_stream =
-            connect_to_nntp(address).expect("Worker should have connected to the server");
+        let nntp_stream = nntp_source::connect_to_nntp(address)
+            .expect("NNTPWorker should have connected to the server");
 
-        Worker {
+        NNTPWorker {
             id,
             nntp_config,
             base_output_path,
             nntp_stream,
             needs_reconnection: false,
-            receiver,
         }
     }
 
-    pub fn run(&mut self) -> crate::Result<()> {
+    pub fn run(&mut self, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // check if reconnection is needed before trying to connect
@@ -82,7 +53,7 @@ impl Worker {
             log::info!("W{}: Reading new group from channel", self.id);
             // recv() blocks until a message is available or channel is closed
             // When channel is closed AND empty, returns RecvError
-            let group_name = match self.receiver.recv() {
+            let group_name = match receiver.recv() {
                 Ok(name) => name,
                 Err(crossbeam_channel::RecvError) => {
                     log::info!("W{}: Channel closed and empty, worker exiting", self.id);
@@ -133,7 +104,7 @@ impl Worker {
         }
     }
 
-    pub fn handle_group(&mut self, group_name: String) -> nntp::Result<WorkerGroupResult> {
+    pub fn handle_group(&mut self, group_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
         let read_status: ReadStatus = match file_utils::read_yaml::<ReadStatus>(
             format!(
                 "{}/{}/__last_article_number",
@@ -201,7 +172,7 @@ impl Worker {
                         group.high as usize,
                     ) {
                         Ok(num_emails_read) => {
-                            return Ok(WorkerGroupResult::Ok(group_name, num_emails_read));
+                            return Ok(NNTPWorkerGroupResult::Ok(group_name, num_emails_read));
                         }
                         Err(e) => {
                             log::error!("W{}: Failed reading new mails: {e}", self.id);
@@ -214,7 +185,7 @@ impl Worker {
                         "W{}: Checking group : {group_name}. Local max ID: {last_article_number}",
                         self.id
                     );
-                    return Ok(WorkerGroupResult::NoNews(group_name));
+                    return Ok(NNTPWorkerGroupResult::NoNews(group_name));
                 }
             }
             Err(e) => {
@@ -364,23 +335,23 @@ impl Worker {
     }
 }
 
-pub enum WorkerGroupResult {
+pub enum NNTPWorkerGroupResult {
     Ok(String, usize),
     NoNews(String),
     // Failed(String),
 }
 
-impl fmt::Display for WorkerGroupResult {
+impl fmt::Display for NNTPWorkerGroupResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            WorkerGroupResult::Ok(group_name, num_emails) => {
+            NNTPWorkerGroupResult::Ok(group_name, num_emails) => {
                 write!(
                     f,
                     "Collected {num_emails} new e-mails from {:?}",
                     group_name
                 )
             }
-            WorkerGroupResult::NoNews(group_name) => {
+            NNTPWorkerGroupResult::NoNews(group_name) => {
                 write!(f, "No New e-mails from {:?}", group_name)
             }
         }

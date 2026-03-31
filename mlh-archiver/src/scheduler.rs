@@ -1,6 +1,6 @@
 use crate::config::NntpConfig;
 use crate::errors;
-use crate::worker;
+use crate::nntp_source::nntp_worker;
 use crossbeam_channel::bounded;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -61,17 +61,16 @@ impl Scheduler {
 
             let receiver = receiver.clone();
 
-            let mut worker = worker::Worker::new(
+            let mut worker = nntp_worker::NNTPWorker::new(
                 id,
                 self.nntp_config.clone(),
                 self.base_output_path.clone(),
-                receiver,
             );
 
             // Spawn worker thread
             let handle = thread::spawn(move || {
                 loop {
-                    match worker.run() {
+                    match worker.run(receiver.clone()) {
                         Ok(_) => {
                             log::info!("Worker {id} finished");
                             break;
@@ -176,17 +175,10 @@ impl Scheduler {
 
     // run_range does not keep track of lists, just run them once for the defined range
     pub fn run_range(&mut self, range: impl Iterator<Item = usize>) -> crate::Result<()> {
-        // Create a channel for single-run mode
-        let (_sender, receiver): (
-            crossbeam_channel::Sender<String>,
-            crossbeam_channel::Receiver<String>,
-        ) = bounded(1);
-
-        let mut worker = worker::Worker::new(
+        let mut worker = nntp_worker::NNTPWorker::new(
             0,
             self.nntp_config.clone(),
             self.base_output_path.clone(),
-            receiver,
         );
 
         match self.tasklist.first() {
