@@ -6,6 +6,8 @@ use nntp::NNTPStream;
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::path::Path;
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, atomic::AtomicBool};
 use std::thread::sleep;
 use std::time::Duration;
 
@@ -15,10 +17,16 @@ pub struct NNTPWorker {
     nntp_stream: RefCell<NNTPStream>,
     base_output_path: String,
     needs_reconnection: Cell<bool>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl NNTPWorker {
-    pub fn new(id: u8, nntp_config: NntpConfig, base_output_path: String) -> NNTPWorker {
+    pub fn new(
+        id: u8,
+        nntp_config: NntpConfig,
+        base_output_path: String,
+        shutdown_flag: Arc<AtomicBool>,
+    ) -> NNTPWorker {
         let address = nntp_config.server_address();
         let nntp_stream = nntp_source::connect_to_nntp(address)
             .expect("NNTPWorker should have connected to the server");
@@ -29,6 +37,7 @@ impl NNTPWorker {
             base_output_path,
             nntp_stream: RefCell::new(nntp_stream),
             needs_reconnection: Cell::new(false),
+            shutdown_flag,
         }
     }
 }
@@ -37,11 +46,27 @@ impl Worker for NNTPWorker {
     fn run(self: Box<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
+            // Check shutdown flag at start of each iteration
+            if self.shutdown_flag.load(Ordering::Relaxed) {
+                log::info!("W{}: Shutdown requested, exiting...", self.id);
+                return Ok(());
+            }
+
             // check if reconnection is needed before trying to connect
             if self.needs_reconnection.get() {
                 log::debug!("W{}: will attempt a reconnection soon", self.id);
-                // wait a minute before trying to reconnect
-                std::thread::sleep(Duration::from_secs(60));
+                // wait a minute before trying to reconnect, checking shutdown flag
+                let reconnect_wait = Duration::from_secs(60);
+                let check_interval = Duration::from_secs(1);
+                let mut elapsed = Duration::ZERO;
+                while elapsed < reconnect_wait {
+                    if self.shutdown_flag.load(Ordering::Relaxed) {
+                        log::info!("W{}: Shutdown requested during reconnection wait", self.id);
+                        return Ok(());
+                    }
+                    std::thread::sleep(check_interval);
+                    elapsed += check_interval;
+                }
 
                 log::info!("W{}: will attempt a reconnection", self.id);
                 match self.nntp_stream.borrow_mut().re_connect() {
@@ -78,8 +103,18 @@ impl Worker for NNTPWorker {
                             self.id,
                             &err
                         );
-                        // if connection error was returned, sleep a bit
-                        std::thread::sleep(Duration::from_secs(10));
+                        // if connection error was returned, sleep a bit, checking shutdown
+                        let sleep_duration = Duration::from_secs(10);
+                        let check_interval = Duration::from_secs(1);
+                        let mut elapsed = Duration::ZERO;
+                        while elapsed < sleep_duration {
+                            if self.shutdown_flag.load(Ordering::Relaxed) {
+                                log::info!("W{}: Shutdown requested during error wait", self.id);
+                                return Ok(());
+                            }
+                            std::thread::sleep(check_interval);
+                            elapsed += check_interval;
+                        }
                     } else {
                         log::error!(
                             "W{}: failed while processing {group_name} with error {}",
@@ -225,6 +260,15 @@ impl NNTPWorker {
         // take the last_article_number or the "low"" result for the group
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {
+            // Check shutdown flag during email fetching
+            if self.shutdown_flag.load(Ordering::Relaxed) {
+                log::info!(
+                    "W{}: Shutdown requested while reading {group_name} at {current_mail}/{high}",
+                    self.id
+                );
+                return Ok(num_emails_read);
+            }
+
             match self.get_raw_article_by_number_retryable(current_mail as isize, 3) {
                 Ok(raw_article) => {
                     file_utils::write_lines_file(

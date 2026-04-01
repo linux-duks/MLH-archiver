@@ -7,18 +7,22 @@ pub mod nntp_source;
 pub mod range_inputs;
 pub mod scheduler;
 pub mod worker;
-pub mod worker_manager;
 
 pub use errors::Result;
 
 use config::RunModes;
-use worker_manager::WorkerManager;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use worker::WorkerManager;
 
-pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
+pub fn start(
+    app_config: &mut config::AppConfig,
+    shutdown_flag: Arc<AtomicBool>,
+) -> crate::errors::Result<()> {
     let run_modes = app_config.get_run_modes();
 
     // Create worker manager to own all workers
-    let mut worker_manager = WorkerManager::new();
+    let mut worker = WorkerManager::new();
 
     // Create workers for each run mode
     for mode in run_modes {
@@ -32,7 +36,7 @@ pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
                 log::info!("made a selection of {} {:#?}", groups.len(), groups);
 
                 // Create workers for this run mode
-                worker_manager.create_workers(mode.clone(), groups, app_config);
+                worker.create_workers(mode.clone(), groups, app_config, shutdown_flag.clone());
             }
             RunModes::LocalMbox => {
                 unimplemented!()
@@ -47,7 +51,7 @@ pub fn start(app_config: &mut config::AppConfig) -> crate::errors::Result<()> {
         app_config.output_dir.clone(),
         app_config.nthreads,
         app_config.loop_groups,
-        worker_manager.get_groups(),
+        worker.get_groups(),
     );
 
     match app_config.get_article_range() {

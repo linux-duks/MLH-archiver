@@ -1,5 +1,6 @@
 use std::io;
 use std::path::Path;
+use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 use testcontainers::{
     GenericBuildableImage, core::WaitFor, runners::SyncBuilder, runners::SyncRunner,
@@ -67,9 +68,12 @@ fn test_read_from_local_nntp_server() {
 
     println!("Starting worker");
 
+    // Create shutdown flag for the test
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
     let child_handle = thread::spawn(move || {
         println!("Child thread started.");
-        let result = start(&mut app_config);
+        let result = start(&mut app_config, shutdown_flag);
         assert!(result.is_ok());
 
         println!("Child thread stopped.");
