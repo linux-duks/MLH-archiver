@@ -4,9 +4,13 @@ include ../containers.mk
 # Define the name of your binary
 BINARY_NAME = mlh-archiver
 
-# Define the source path of the compiled binary
-TARGET_PATH = ./target/release/$(BINARY_NAME)
+# CURDIR is the directory where make is running (after any -C changes)
+# When called with "make -C mlh-archiver", CURDIR = mlh-archiver/
+# TARGET_PATH is the absolute path to the binary
+TARGET_PATH := $(CURDIR)/target/release/$(BINARY_NAME)
 
+# Repository root is parent of current directory
+REPO_ROOT := $(abspath $(CURDIR)/..)
 
 # Define the Docker image to use for building
 RUST_DOCKER_IMAGE = docker.io/rust:1.94-slim
@@ -33,25 +37,25 @@ build:
 
 .PHONY: run
 run:
-	@if [ ! -f ../$(TARGET_PATH) ]; then \
-		echo "==> Binary './$(BINARY_NAME).out' not found. Building first..."; \
+	@if [ ! -f $(TARGET_PATH) ]; then \
+		echo "==> Binary not found. Building first..."; \
 		$(MAKE) build; \
 	fi
-	@echo "==> Running application..."
-	@cd .. && ./$(TARGET_PATH)
+	@echo "==> Running application from repository root..."
+	@cd $(REPO_ROOT) && $(TARGET_PATH)
 
 
 .PHONY: debug
 debug:
 	@if command -v cargo >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
-		cd .. && DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
+		cd $(REPO_ROOT) && DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
 	else \
 		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
 			--network=host \
-			-v ../:/usr/src/app:z \
+			-v $(REPO_ROOT):/usr/src/app:z \
 			-w /usr/src/app \
 			$(RUST_DOCKER_IMAGE) \
 			DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
