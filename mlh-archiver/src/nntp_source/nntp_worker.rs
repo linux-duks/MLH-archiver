@@ -3,19 +3,18 @@ use crate::file_utils;
 use crate::nntp_source::{self, nntp_config::NntpConfig};
 use crate::worker::Worker;
 use nntp::NNTPStream;
+use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
 use std::time::Duration;
 
 pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
-    nntp_stream: Mutex<NNTPStream>,
+    nntp_stream: RefCell<NNTPStream>,
     base_output_path: String,
-    needs_reconnection: AtomicBool,
+    needs_reconnection: Cell<bool>,
 }
 
 impl NNTPWorker {
@@ -28,25 +27,25 @@ impl NNTPWorker {
             id,
             nntp_config,
             base_output_path,
-            nntp_stream: Mutex::new(nntp_stream),
-            needs_reconnection: AtomicBool::new(false),
+            nntp_stream: RefCell::new(nntp_stream),
+            needs_reconnection: Cell::new(false),
         }
     }
 }
 
 impl Worker for NNTPWorker {
-    fn run(self: Arc<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
+    fn run(self: Box<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // check if reconnection is needed before trying to connect
-            if self.needs_reconnection.load(Ordering::Relaxed) {
+            if self.needs_reconnection.get() {
                 log::debug!("W{}: will attempt a reconnection soon", self.id);
                 // wait a minute before trying to reconnect
                 std::thread::sleep(Duration::from_secs(60));
 
                 log::info!("W{}: will attempt a reconnection", self.id);
-                match self.nntp_stream.lock().unwrap().re_connect() {
-                    Ok(_) => self.needs_reconnection.store(false, Ordering::Relaxed),
+                match self.nntp_stream.borrow_mut().re_connect() {
+                    Ok(_) => self.needs_reconnection.set(false),
                     Err(e) => {
                         log::error!(
                             "W{}: attempted reconnection and failed with error {e}",
@@ -90,9 +89,9 @@ impl Worker for NNTPWorker {
                     }
 
                     // when an error happens, force a reconnection
-                    self.needs_reconnection.store(true, Ordering::Relaxed);
+                    self.needs_reconnection.set(true);
                     // attempt to close connection
-                    match self.nntp_stream.lock().unwrap().quit() {
+                    match self.nntp_stream.borrow_mut().quit() {
                         Ok(_) => {
                             log::debug!("W{}: Connection closed successfully", self.id);
                         }
@@ -162,48 +161,41 @@ impl NNTPWorker {
             self.id
         );
 
-        match self.nntp_stream.lock().unwrap().group(&group_name) {
-            Ok(group) => {
-                log::info!(
-                    "W{}: Remote max for {} is {}, local is {}",
-                    self.id,
-                    group_name,
-                    group.high,
-                    last_article_number
-                );
+        // Get group info - borrow is dropped at end of this scope block
+        let should_read_info = {
+            let group = self.nntp_stream.borrow_mut().group(&group_name)?;
+            log::info!(
+                "W{}: Remote max for {} is {}, local is {}",
+                self.id,
+                group_name,
+                group.high,
+                last_article_number
+            );
+            if last_article_number < group.high as usize {
+                Some((group.low as usize, group.high as usize))
+            } else {
+                None
+            }
+        };
 
-                if last_article_number < group.high as usize {
-                    log::info!("W{}: Reading emails for group : {group_name}.", self.id);
-                    // this call may return an IO error,
-                    match self.read_new_mails(
-                        group_name.clone(),
-                        last_article_number.max(group.low as usize),
-                        group.high as usize,
-                    ) {
-                        Ok(num_emails_read) => {
-                            return Ok(NNTPWorkerGroupResult::Ok(group_name, num_emails_read));
-                        }
-                        Err(e) => {
-                            log::error!("W{}: Failed reading new mails: {e}", self.id);
-                            // TODO: return failure instead of error ?
-                            return Err(e);
-                        }
-                    };
-                } else {
-                    log::info!(
-                        "W{}: Checking group : {group_name}. Local max ID: {last_article_number}",
-                        self.id
-                    );
-                    return Ok(NNTPWorkerGroupResult::NoNews(group_name));
+        if let Some((low, high)) = should_read_info {
+            log::info!("W{}: Reading emails for group : {group_name}.", self.id);
+            // Borrow is already dropped, safe to call read_new_mails
+            match self.read_new_mails(group_name.clone(), last_article_number.max(low), high) {
+                Ok(num_emails_read) => {
+                    return Ok(NNTPWorkerGroupResult::Ok(group_name, num_emails_read));
+                }
+                Err(e) => {
+                    log::error!("W{}: Failed reading new mails: {e}", self.id);
+                    return Err(e);
                 }
             }
-            Err(e) => {
-                log::error!(
-                    "W{}: failure connecting to {group_name}, error: {e}",
-                    self.id
-                );
-                return Err(e);
-            }
+        } else {
+            log::info!(
+                "W{}: Checking group : {group_name}. Local max ID: {last_article_number}",
+                self.id
+            );
+            return Ok(NNTPWorkerGroupResult::NoNews(group_name));
         }
     }
 
@@ -214,34 +206,22 @@ impl NNTPWorker {
     ) -> nntp::Result<()> {
         log::info!("W{}: Checking group : {group_name}", self.id);
 
-        match self.nntp_stream.lock().unwrap().group(&group_name) {
-            Ok(group) => {
-                log::info!(
-                    "W{}: Will start collecting mails from range for group {group}",
-                    self.id
-                );
-                for article_number in range {
-                    self.read_new_mails(group_name.clone(), article_number, article_number)?;
-                }
-            }
-            Err(e) => {
-                log::error!(
-                    "W{}: failure connecting to {group_name}, error: {e}",
-                    self.id
-                );
-                return Err(e);
-            }
+        // Verify group exists - borrow dropped immediately after
+        self.nntp_stream.borrow_mut().group(&group_name)?;
+
+        log::info!(
+            "W{}: Will start collecting mails from range for group {group_name}",
+            self.id
+        );
+        // Borrow is dropped, safe to call read_new_mails
+        for article_number in range {
+            self.read_new_mails(group_name.clone(), article_number, article_number)?;
         }
         Ok(())
     }
 
     // read_new_mails checks for mails in an inclusive range between low and high
-    fn read_new_mails(
-        &self,
-        group_name: String,
-        low: usize,
-        high: usize,
-    ) -> nntp::Result<usize> {
+    fn read_new_mails(&self, group_name: String, low: usize, high: usize) -> nntp::Result<usize> {
         // take the last_article_number or the "low"" result for the group
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {
@@ -314,7 +294,11 @@ impl NNTPWorker {
         let mut attempts = 0;
         let retry_delay_ms = 600;
         loop {
-            match self.nntp_stream.lock().unwrap().raw_article_by_number(mail_num) {
+            match self
+                .nntp_stream
+                .borrow_mut()
+                .raw_article_by_number(mail_num)
+            {
                 Ok(raw_article) => {
                     return Ok(raw_article);
                 }
