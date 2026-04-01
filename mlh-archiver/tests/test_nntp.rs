@@ -5,7 +5,8 @@ use testcontainers::{
     GenericBuildableImage, core::WaitFor, runners::SyncBuilder, runners::SyncRunner,
 };
 
-use mlh_archiver::config::{AppConfig, NntpConfig};
+use mlh_archiver::config::AppConfig;
+use mlh_archiver::nntp_source::nntp_config::NntpConfig;
 use mlh_archiver::start;
 use walkdir::WalkDir;
 

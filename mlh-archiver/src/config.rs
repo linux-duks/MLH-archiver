@@ -1,3 +1,4 @@
+use crate::nntp_source::nntp_config;
 use crate::{errors::ConfigError, file_utils, range_inputs};
 use clap::{Parser, ValueHint};
 use config::Config;
@@ -5,59 +6,11 @@ use glob::glob;
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 
-/// NNTP-specific configuration
-///
-/// All NNTP-related settings are nested under this struct.
-/// Future source methods (IMAP, local, mbox) will have their own structs.
-#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
-pub struct NntpConfig {
-    /// nntp server domain/ip
-    pub hostname: String,
-    /// nntp server port
-    #[serde(default = "default_port")]
-    pub port: u16,
-    /// List of groups to be read. "ALL" will select all lists available.
-    /// Empty value will prompt a selection in the TUI (and save selected values)
-    pub group_lists: Option<Vec<String>>,
-    /// (optional). Read a specific range of articles from the first list provided.
-    /// Comma separated values, or dash separated ranges, like low-high
-    pub article_range: Option<String>,
-}
-
-impl Default for NntpConfig {
-    fn default() -> Self {
-        Self {
-            hostname: String::new(),
-            port: default_port(),
-            group_lists: None,
-            article_range: None,
-        }
-    }
-}
-
-fn default_port() -> u16 {
-    119
-}
-
-impl NntpConfig {
-    /// Validate that hostname is provided
-    pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.hostname.is_empty() {
-            return Err(ConfigError::MissingHostname);
-        }
-        Ok(())
-    }
-
-    /// Get the NNTP server address as a string
-    pub fn server_address(&self) -> String {
-        format!("{}:{}", self.hostname, self.port)
-    }
-}
-
 /// Main application configuration
 ///
 /// Global settings (nthreads, output_dir, loop_groups) are at the top level.
-/// Source-specific settings are nested (e.g., nntp, imap, local, mbox).
+/// Source-specific settings are nested, and private (e.g., nntp, imap, local, mbox).
+/// Their values should be accessed using the RunModes ENUM
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct AppConfig {
     /// Number of worker threads connecting to different lists
@@ -73,7 +26,32 @@ pub struct AppConfig {
     pub loop_groups: bool,
 
     /// NNTP-specific configuration
-    pub nntp: Option<NntpConfig>,
+    pub nntp: Option<nntp_config::NntpConfig>,
+}
+
+impl AppConfig {
+    // Other sources should be implemented here too
+    pub fn get_run_modes(&self) -> Vec<RunModes> {
+        let mut run_modes: Vec<RunModes> = vec![];
+        if let Some(nntp) = &self.nntp {
+            run_modes.push(RunModes::NNTP(nntp.clone()));
+        }
+        return run_modes;
+    }
+
+    // Other sources should be implemented here too
+    pub fn get_list_selection(&self, run_mode: RunModes) -> Option<Vec<String>> {
+        match run_mode {
+            RunModes::NNTP(config) => return config.group_lists,
+            RunModes::LocalMbox => unimplemented!(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunModes {
+    NNTP(nntp_config::NntpConfig),
+    LocalMbox,
 }
 
 impl Default for AppConfig {
@@ -97,18 +75,6 @@ fn default_output_dir() -> String {
 
 fn default_loop_groups() -> bool {
     true
-}
-
-impl AppConfig {
-    /// Get NNTP config, creating default if not set
-    pub fn get_nntp_config(&self) -> NntpConfig {
-        self.nntp.clone().unwrap_or_default()
-    }
-
-    /// Get NNTP config, consuming self
-    pub fn into_nntp_config(self) -> NntpConfig {
-        self.nntp.unwrap_or_default()
-    }
 }
 
 #[derive(Debug, Parser, Default)]
@@ -199,71 +165,78 @@ impl AppConfig {
     pub fn get_group_lists(
         &mut self,
         list_options: Vec<String>,
+        run_mode: RunModes,
     ) -> Result<Vec<String>, ConfigError> {
-        let nntp = self.nntp.get_or_insert_with(NntpConfig::default);
+        // TODO: needs generic form
+        let mut nntp = self.nntp.clone().unwrap();
 
         let mut answer: Vec<String>;
-        if nntp.group_lists.is_none() {
-            log::info!("No group_lists defined");
+        let group_lists = self.get_list_selection(run_mode);
+        match group_lists {
+            None => {
+                log::info!("No group_lists defined");
 
-            // list of options provides, with "ALL" as first
-            let mut select_options = vec!["ALL".to_string()];
-            select_options.extend(list_options.clone());
+                // list of options provides, with "ALL" as first
+                let mut select_options = vec!["ALL".to_string()];
+                select_options.extend(list_options.clone());
 
-            answer = MultiSelect::new("No groups selected. Select them now:", select_options)
-                .prompt()
-                .unwrap_or_else(|_| std::process::exit(0));
+                answer = MultiSelect::new("No groups selected. Select them now:", select_options)
+                    .prompt()
+                    .unwrap_or_else(|_| std::process::exit(0));
 
-            if answer[0] == "ALL" {
-                log::info!("All lists selected");
-                log::debug!("Lists selected: {:#?}", list_options);
-                answer = list_options;
-            }
-
-            if answer.is_empty() {
-                log::info!("empty selection");
-                nntp.group_lists = None;
-                return Err(ConfigError::ListSelectionEmpty);
-            } else {
-                // save selection to a file
-                let mut selected_lists = HashMap::new();
-                selected_lists.insert("group_lists", answer.clone());
-
-                match file_utils::write_yaml("archiver_config_selected_lists.yml", &selected_lists)
-                {
-                    Ok(_) => Ok(()),
-                    Err(e) => Err(ConfigError::Io(e)),
-                }?;
-            }
-        } else {
-            let mut group_lists = nntp.group_lists.clone().unwrap();
-
-            // If "ALL" provided, load all lists
-            if group_lists[0] == "ALL" {
-                log::info!("Configured to fetch all lists");
-                log::debug!("Lists selected: {:#?}", list_options);
-                answer = list_options;
-            } else {
-                // or check if lists provided are valid
-                group_lists.dedup();
-                let item_set: HashSet<_> = list_options.iter().collect();
-                group_lists.retain(|item| item_set.contains(item));
-                let (valid, invalid): (Vec<_>, Vec<_>) = group_lists
-                    .into_iter()
-                    .partition(|item| item_set.contains(item));
-
-                if valid.is_empty() {
-                    return Err(ConfigError::AllListsUnavailable);
+                if answer[0] == "ALL" {
+                    log::info!("All lists selected");
+                    log::debug!("Lists selected: {:#?}", list_options);
+                    answer = list_options;
                 }
-                if !invalid.is_empty() {
-                    log::warn!(
-                        "Some lists are unavailable: {}",
-                        ConfigError::ConfiguredListsNotAvailable {
-                            unavailable_lists: invalid
-                        }
-                    );
+
+                if answer.is_empty() {
+                    log::info!("empty selection");
+                    nntp.group_lists = None;
+                    return Err(ConfigError::ListSelectionEmpty);
+                } else {
+                    // save selection to a file
+                    let mut selected_lists = HashMap::new();
+                    selected_lists.insert("group_lists", answer.clone());
+
+                    match file_utils::write_yaml(
+                        "archiver_config_selected_lists.yml",
+                        &selected_lists,
+                    ) {
+                        Ok(_) => Ok(()),
+                        Err(e) => Err(ConfigError::Io(e)),
+                    }?;
                 }
-                answer = valid;
+            }
+            Some(_) => {
+                let mut user_selection = group_lists.expect("is none was validated");
+                // If "ALL" provided, load all lists
+                if user_selection[0] == "ALL" {
+                    log::info!("Configured to fetch all lists");
+                    log::debug!("Lists selected: {:#?}", list_options);
+                    answer = list_options;
+                } else {
+                    // or check if lists provided are valid
+                    user_selection.dedup();
+                    let item_set: HashSet<_> = list_options.iter().collect();
+                    user_selection.retain(|item| item_set.contains(item));
+                    let (valid, invalid): (Vec<_>, Vec<_>) = user_selection
+                        .into_iter()
+                        .partition(|item| item_set.contains(item));
+
+                    if valid.is_empty() {
+                        return Err(ConfigError::AllListsUnavailable);
+                    }
+                    if !invalid.is_empty() {
+                        log::warn!(
+                            "Some lists are unavailable: {}",
+                            ConfigError::ConfiguredListsNotAvailable {
+                                unavailable_lists: invalid
+                            }
+                        );
+                    }
+                    answer = valid;
+                }
             }
         }
 

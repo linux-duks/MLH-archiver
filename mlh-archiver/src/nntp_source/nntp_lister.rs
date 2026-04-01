@@ -1,12 +1,7 @@
-use crate::config;
-use crate::nntp_source;
+use crate::nntp_source::{self, nntp_config::NntpConfig};
 
-pub(crate) fn retrieve_lists(
-    app_config: &mut config::AppConfig,
-) -> crate::errors::Result<Vec<String>> {
+pub(crate) fn retrieve_lists(nntp_config: NntpConfig) -> crate::errors::Result<Vec<String>> {
     // Get NNTP config (validates hostname is present)
-    let nntp_config = app_config.get_nntp_config();
-
     nntp_config.validate()?;
 
     // Connect to NNTP server to get list of groups

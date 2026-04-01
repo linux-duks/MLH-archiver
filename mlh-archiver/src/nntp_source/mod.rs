@@ -1,5 +1,6 @@
 pub mod nntp_lister;
 pub mod nntp_worker;
+pub mod nntp_config;
 
 use log::{Level, log_enabled};
 use nntp::NNTPStream;

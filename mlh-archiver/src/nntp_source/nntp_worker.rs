@@ -1,16 +1,21 @@
-use crate::config::NntpConfig;
 use crate::errors;
 use crate::file_utils;
-use crate::nntp_source;
+use crate::nntp_source::{self, nntp_config::NntpConfig};
+use crate::worker::Worker;
 use nntp::NNTPStream;
-use std::{fmt, path::Path, thread::sleep, time::Duration};
+use std::fmt;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::sleep;
+use std::time::Duration;
 
 pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
-    nntp_stream: NNTPStream,
+    nntp_stream: Mutex<NNTPStream>,
     base_output_path: String,
-    needs_reconnection: bool,
+    needs_reconnection: AtomicBool,
 }
 
 impl NNTPWorker {
@@ -23,23 +28,25 @@ impl NNTPWorker {
             id,
             nntp_config,
             base_output_path,
-            nntp_stream,
-            needs_reconnection: false,
+            nntp_stream: Mutex::new(nntp_stream),
+            needs_reconnection: AtomicBool::new(false),
         }
     }
+}
 
-    pub fn run(&mut self, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
+impl Worker for NNTPWorker {
+    fn run(self: Arc<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // check if reconnection is needed before trying to connect
-            if self.needs_reconnection {
+            if self.needs_reconnection.load(Ordering::Relaxed) {
                 log::debug!("W{}: will attempt a reconnection soon", self.id);
                 // wait a minute before trying to reconnect
                 std::thread::sleep(Duration::from_secs(60));
 
                 log::info!("W{}: will attempt a reconnection", self.id);
-                match self.nntp_stream.re_connect() {
-                    Ok(_) => self.needs_reconnection = false,
+                match self.nntp_stream.lock().unwrap().re_connect() {
+                    Ok(_) => self.needs_reconnection.store(false, Ordering::Relaxed),
                     Err(e) => {
                         log::error!(
                             "W{}: attempted reconnection and failed with error {e}",
@@ -83,9 +90,9 @@ impl NNTPWorker {
                     }
 
                     // when an error happens, force a reconnection
-                    self.needs_reconnection = true;
+                    self.needs_reconnection.store(true, Ordering::Relaxed);
                     // attempt to close connection
-                    match self.nntp_stream.quit() {
+                    match self.nntp_stream.lock().unwrap().quit() {
                         Ok(_) => {
                             log::debug!("W{}: Connection closed successfully", self.id);
                         }
@@ -103,8 +110,10 @@ impl NNTPWorker {
             std::thread::sleep(Duration::from_secs(1));
         }
     }
+}
 
-    pub fn handle_group(&mut self, group_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
+impl NNTPWorker {
+    pub fn handle_group(&self, group_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
         let read_status: ReadStatus = match file_utils::read_yaml::<ReadStatus>(
             format!(
                 "{}/{}/__last_article_number",
@@ -153,7 +162,7 @@ impl NNTPWorker {
             self.id
         );
 
-        match self.nntp_stream.group(&group_name) {
+        match self.nntp_stream.lock().unwrap().group(&group_name) {
             Ok(group) => {
                 log::info!(
                     "W{}: Remote max for {} is {}, local is {}",
@@ -199,13 +208,13 @@ impl NNTPWorker {
     }
 
     pub fn handle_group_range(
-        &mut self,
+        &self,
         group_name: String,
         range: impl Iterator<Item = usize>,
     ) -> nntp::Result<()> {
         log::info!("W{}: Checking group : {group_name}", self.id);
 
-        match self.nntp_stream.group(&group_name) {
+        match self.nntp_stream.lock().unwrap().group(&group_name) {
             Ok(group) => {
                 log::info!(
                     "W{}: Will start collecting mails from range for group {group}",
@@ -228,7 +237,7 @@ impl NNTPWorker {
 
     // read_new_mails checks for mails in an inclusive range between low and high
     fn read_new_mails(
-        &mut self,
+        &self,
         group_name: String,
         low: usize,
         high: usize,
@@ -298,14 +307,14 @@ impl NNTPWorker {
     }
 
     fn get_raw_article_by_number_retryable(
-        &mut self,
+        &self,
         mail_num: isize,
         max_retries: usize,
     ) -> nntp::Result<Vec<String>> {
         let mut attempts = 0;
         let retry_delay_ms = 600;
         loop {
-            match self.nntp_stream.raw_article_by_number(mail_num) {
+            match self.nntp_stream.lock().unwrap().raw_article_by_number(mail_num) {
                 Ok(raw_article) => {
                     return Ok(raw_article);
                 }
