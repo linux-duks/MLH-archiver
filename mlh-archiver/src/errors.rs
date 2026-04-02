@@ -1,9 +1,43 @@
+//! Error types for the MLH Archiver.
+//!
+//! This module defines the error hierarchy used throughout the application.
+//! All errors implement `std::error::Error` and can be converted using `?`.
+
 use std::io::{self};
 use std::result;
 use thiserror::Error;
 
+/// Result type alias using the application's error type.
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use mlh_archiver::Result;
+///
+/// fn my_function() -> Result<()> {
+///     // ...
+///     Ok(())
+/// }
+/// ```
 pub type Result<T> = result::Result<T, Error>;
 
+/// Application-level error type.
+///
+/// This enum wraps all possible errors that can occur during archiving:
+/// - I/O errors (file operations)
+/// - NNTP errors (network/protocol)
+/// - Configuration errors
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use mlh_archiver::errors::{Error, Result};
+///
+/// fn example() -> Result<()> {
+///     std::fs::read_to_string("file.txt")?;  // Auto-converts io::Error
+///     Ok(())
+/// }
+/// ```
 #[derive(Error, Debug)]
 pub enum Error {
     #[error("unknown error")]
@@ -19,6 +53,19 @@ pub enum Error {
     Config(#[from] ConfigError),
 }
 
+/// Configuration-related errors.
+///
+/// These errors occur during configuration loading, validation, or
+/// list selection.
+///
+/// # Variants
+///
+/// * `MissingHostname` - NNTP hostname not configured
+/// * `ListSelectionEmpty` - User selected no mailing lists
+/// * `RunModeInvalid` - Invalid run mode configuration
+/// * `ConfiguredListsNotAvailable` - Configured lists don't exist on server
+/// * `AllListsUnavailable` - None of the configured lists are available
+/// * `Io(...)` - I/O error during config file operations
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error(

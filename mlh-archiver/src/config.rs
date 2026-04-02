@@ -10,7 +10,20 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Global settings (nthreads, output_dir, loop_groups) are at the top level.
 /// Source-specific settings are nested, and private (e.g., nntp, imap, local, mbox).
-/// Their values should be accessed using the RunMode ENUM
+/// Their values should be accessed using the [`RunMode`] ENUM.
+///
+/// # Example
+///
+/// ```yaml
+/// nthreads: 2
+/// output_dir: "./output"
+/// loop_groups: true
+///
+/// nntp:
+///   hostname: "nntp.example.com"
+///   port: 119
+///   group_lists: ["list1", "list2"]
+/// ```
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct AppConfig {
     /// Number of worker threads connecting to different lists
@@ -29,12 +42,31 @@ pub struct AppConfig {
     pub nntp: Option<nntp_config::NntpConfig>,
 }
 
+/// Represents a source type that can be processed by the archiver.
+///
+/// Each variant corresponds to a different email source implementation.
+/// New sources should add a variant here and implement the corresponding
+/// configuration and worker logic.
+///
+/// # Variants
+///
+/// * `NNTP` - Network News Transfer Protocol source
+/// * `LocalMbox` - Local mbox file source (not yet implemented)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
     NNTP,
     LocalMbox,
 }
 
+/// Configuration for a specific [`RunMode`].
+///
+/// This enum wraps the source-specific configuration structs.
+/// Use [`AppConfig::get_run_mode_config()`] to retrieve the config for a given mode.
+///
+/// # Variants
+///
+/// * `NNTP(nntp_config::NntpConfig)` - NNTP server configuration
+/// * `LocalMbox` - Local mbox configuration (not yet implemented)
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunModeConfig {
     NNTP(nntp_config::NntpConfig),
@@ -43,7 +75,27 @@ pub enum RunModeConfig {
 
 /// Here are implemented the functions for config related to the RunMode and its configs
 impl AppConfig {
-    /// get_run_mode_config
+    /// Retrieves the configuration for a specific run mode.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_mode` - The run mode to get configuration for
+    ///
+    /// # Returns
+    ///
+    /// * `Some(RunModeConfig)` if the configuration exists for the given mode
+    /// * `None` if the configuration is not set (e.g., `nntp` field is `None`)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use mlh_archiver::config::{AppConfig, RunMode};
+    ///
+    /// let config = AppConfig::default();
+    /// if let Some(mode_config) = config.get_run_mode_config(RunMode::NNTP) {
+    ///     // Access NNTP configuration
+    /// }
+    /// ```
     pub fn get_run_mode_config(&self, run_mode: RunMode) -> Option<RunModeConfig> {
         match run_mode {
             RunMode::NNTP => Some(RunModeConfig::NNTP(self.nntp.clone()?)),
@@ -51,13 +103,45 @@ impl AppConfig {
         }
     }
 
-    /// get_range_selection retrieves the emails range selection for each run_mode
+    /// Retrieves the article range selection text for a specific run mode.
+    ///
+    /// The range text is a string like `"1,5,10-15"` that specifies which
+    /// articles to fetch. It should be parsed by [`crate::range_inputs::parse_sequence()`]
+    /// into a lazy iterator.
+    ///
+    /// # Arguments
+    ///
+    /// * `run_mode` - The run mode to get range selection for
+    ///
+    /// # Returns
+    ///
+    /// * `Some(String)` containing the range text if configured
+    /// * `None` if no range is configured or run mode has no config
     pub fn get_range_selection_text(&self, run_mode: RunMode) -> Option<String> {
         match self.get_run_mode_config(run_mode)? {
             RunModeConfig::NNTP(nntp_config) => nntp_config.article_range,
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }
+
+    /// Returns a list of active run modes based on configuration.
+    ///
+    /// Checks which source configurations are present (e.g., `nntp.is_some()`)
+    /// and returns the corresponding run modes.
+    ///
+    /// # Returns
+    ///
+    /// A vector of [`RunMode`] variants that have configuration.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use mlh_archiver::config::AppConfig;
+    ///
+    /// let config = AppConfig::default();
+    /// let modes = config.get_run_modes();
+    /// // modes will be empty since nntp is None by default
+    /// ```
     pub fn get_run_modes(&self) -> Vec<RunMode> {
         let mut run_modes: Vec<RunMode> = vec![];
         if self.nntp.is_some() {
@@ -105,6 +189,9 @@ fn default_loop_groups() -> bool {
     true
 }
 
+/// Command-line options for the archiver.
+///
+/// Parsed using `clap` from command-line arguments.
 #[derive(Debug, Parser, Default)]
 pub struct Opts {
     /// config file location override
@@ -112,6 +199,30 @@ pub struct Opts {
     pub config_file: String,
 }
 
+/// Reads and validates configuration from files.
+///
+/// Searches for configuration files matching the glob pattern `archiver_config*`
+/// (or custom pattern via `--config-file`). Supports JSON, YAML, and TOML formats.
+///
+/// Configuration is layered:
+/// 1. Default values
+/// 2. Config files found by glob pattern (later files override earlier)
+///
+/// # Returns
+///
+/// * `Ok(AppConfig)` if configuration is valid
+/// * `Err(ConfigError)` if:
+///   - Glob pattern is invalid
+///   - Config files cannot be read
+///   - Deserialization fails
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use mlh_archiver::config::read_config;
+///
+/// let config = read_config().expect("Failed to read config");
+/// ```
 pub fn read_config() -> Result<AppConfig, ConfigError> {
     let opts = Opts::parse();
 
@@ -180,11 +291,32 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
 }
 
 impl AppConfig {
-    /// Returns the lists ready to use
+    /// Retrieves and validates the list of mailing groups to archive.
     ///
-    /// Takes lists from config. If none configured, prompt user for selection.
-    /// If list was configured, check if selected lists are available in the server
-    /// Return only available lists
+    /// This method handles three scenarios:
+    /// 1. **No configuration**: Prompts user via TUI to select lists interactively
+    /// 2. **"ALL" configured**: Returns all available lists from the server
+    /// 3. **Specific lists configured**: Validates against available lists and returns
+    ///    only those that exist on the server
+    ///
+    /// If lists are selected interactively, saves the selection to
+    /// `archiver_config_selected_lists.yml` for future runs.
+    ///
+    /// # Arguments
+    ///
+    /// * `list_options` - List of available group names from the server
+    /// * `run_mode` - The run mode to get list selection for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(Vec<String>)` - Validated list of group names to archive
+    /// * `Err(ConfigError::ListSelectionEmpty)` - User selected no lists
+    /// * `Err(ConfigError::AllListsUnavailable)` - Configured lists don't exist on server
+    /// * `Err(ConfigError::ConfiguredListsNotAvailable)` - Some configured lists invalid
+    ///
+    /// # Side Effects
+    ///
+    /// Writes selection to `archiver_config_selected_lists.yml` if user selects interactively.
     pub fn get_group_lists(
         &mut self,
         list_options: Vec<String>,

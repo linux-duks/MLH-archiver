@@ -1,5 +1,6 @@
 use crate::nntp_source::{self, nntp_config::NntpConfig};
 
+/// retrieve_lists connects to the nntp endpoint, and returns the name of every list available
 pub(crate) fn retrieve_lists(nntp_config: NntpConfig) -> crate::errors::Result<Vec<String>> {
     // Get NNTP config (validates hostname is present)
     nntp_config.validate()?;

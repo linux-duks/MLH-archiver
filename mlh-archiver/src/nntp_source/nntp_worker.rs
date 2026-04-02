@@ -11,6 +11,32 @@ use std::sync::{Arc, atomic::AtomicBool};
 use std::thread::sleep;
 use std::time::Duration;
 
+/// NNTP worker that fetches emails from an NNTP server.
+///
+/// This worker implements the [`Worker`] trait for NNTP sources.
+/// It maintains a persistent connection to an NNTP server and fetches emails
+/// for specified mailing lists.
+///
+/// # Fields
+///
+/// * `id` - Unique worker identifier for logging
+/// * `nntp_config` - NNTP server configuration
+/// * `nntp_stream` - NNTP connection wrapped in `RefCell` for interior mutability
+/// * `base_output_path` - Root directory for storing fetched emails
+/// * `needs_reconnection` - Flag indicating if reconnection is needed after error
+/// * `shutdown_flag` - Shared atomic flag for graceful shutdown
+///
+/// # Thread Safety
+///
+/// The worker uses `RefCell` for the connection because each worker runs in
+/// its own thread with exclusive access. The `shutdown_flag` is shared via
+/// `Arc<AtomicBool>` for lock-free signaling.
+///
+/// # Progress Tracking
+///
+/// Progress is tracked via YAML files:
+/// - `__last_article_number` - Last successfully fetched article ID
+/// - `__errors` - Log of unavailable articles
 pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
@@ -21,6 +47,35 @@ pub struct NNTPWorker {
 }
 
 impl NNTPWorker {
+    /// Creates a new NNTP worker and establishes connection to the server.
+    ///
+    /// # Arguments
+    ///
+    /// * `id` - Unique worker identifier for logging
+    /// * `nntp_config` - NNTP server configuration (hostname, port, etc.)
+    /// * `base_output_path` - Root directory for storing fetched emails
+    /// * `shutdown_flag` - Shared atomic flag for graceful shutdown
+    ///
+    /// # Panics
+    ///
+    /// Panics if connection to the NNTP server fails. The caller should
+    /// ensure the server is available before creating workers.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use std::sync::{Arc, atomic::AtomicBool};
+    /// use mlh_archiver::nntp_source::{nntp_config::NntpConfig, nntp_worker::NNTPWorker};
+    ///
+    /// let config = NntpConfig {
+    ///     hostname: "nntp.example.com".to_string(),
+    ///     port: 119,
+    ///     group_lists: None,
+    ///     article_range: None,
+    /// };
+    /// let shutdown_flag = Arc::new(AtomicBool::new(false));
+    /// let worker = NNTPWorker::new(0, config, "./output".to_string(), shutdown_flag);
+    /// ```
     pub fn new(
         id: u8,
         nntp_config: NntpConfig,
@@ -84,7 +139,7 @@ impl Worker for NNTPWorker {
             log::info!("W{}: Reading new group from channel", self.id);
             // recv() blocks until a message is available or channel is closed
             // When channel is closed AND empty, returns RecvError
-            let group_name = match receiver.recv() {
+            let list_name = match receiver.recv() {
                 Ok(name) => name,
                 Err(crossbeam_channel::RecvError) => {
                     log::info!("W{}: Channel closed and empty, worker exiting", self.id);
@@ -92,14 +147,14 @@ impl Worker for NNTPWorker {
                 }
             };
 
-            match self.handle_group(group_name.clone()) {
+            match self.handle_group(list_name.clone()) {
                 Ok(return_status) => {
                     log::info!("W{}: completed a task with: {return_status}", self.id);
                 }
                 Err(err) => {
                     if nntp::errors::check_network_error(&err) {
                         log::warn!(
-                            "W{}: failed with a network error while reading {group_name}. Error {}",
+                            "W{}: failed with a network error while reading {list_name}. Error {}",
                             self.id,
                             &err
                         );
@@ -117,7 +172,7 @@ impl Worker for NNTPWorker {
                         }
                     } else {
                         log::error!(
-                            "W{}: failed while processing {group_name} with error {}",
+                            "W{}: failed while processing {list_name} with error {}",
                             self.id,
                             &err
                         );
@@ -147,30 +202,53 @@ impl Worker for NNTPWorker {
 
     fn read_email_by_index(
         &self,
-        group_name: String,
+        list_name: String,
         email_index: usize,
     ) -> crate::Result<()> {
-        log::info!("W{}: Checking group : {group_name}", self.id);
+        log::info!("W{}: Checking group : {list_name}", self.id);
 
         // Verify group exists - borrow dropped immediately after
-        self.nntp_stream.borrow_mut().group(&group_name)?;
+        self.nntp_stream.borrow_mut().group(&list_name)?;
 
         log::info!(
-            "W{}: Will start collecting mails from range for group {group_name}",
+            "W{}: Will start collecting mails from range for group {list_name}",
             self.id
         );
         // Borrow is dropped, safe to call read_new_mails
-        self.read_new_mails(group_name.clone(), email_index, email_index)?;
+        self.read_new_mails(list_name.clone(), email_index, email_index)?;
         Ok(())
     }
 }
 
 impl NNTPWorker {
-    pub fn handle_group(&self, group_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
+    /// Processes a mailing list and fetches all new emails.
+    ///
+    /// This method:
+    /// 1. Reads the last fetched article ID from `__last_article_number`
+    /// 2. Queries the NNTP server for the current high water mark
+    /// 3. Fetches all articles between last ID and high water mark
+    /// 4. Updates progress after each successful fetch
+    ///
+    /// # Arguments
+    ///
+    /// * `list_name` - Name of the mailing list to process
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(NNTPWorkerGroupResult::Ok)` - Successfully fetched emails
+    /// * `Ok(NNTPWorkerGroupResult::NoNews)` - No new emails available
+    /// * `Err(...)` - Connection or protocol error
+    ///
+    /// # Side Effects
+    ///
+    /// - Creates/updates `__last_article_number` YAML file
+    /// - Writes fetched emails as `.eml` files
+    /// - Logs unavailable articles to `__errors` file
+    pub fn handle_group(&self, list_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
         let read_status: ReadStatus = match file_utils::read_yaml::<ReadStatus>(
             format!(
                 "{}/{}/__last_article_number",
-                self.base_output_path, group_name
+                self.base_output_path, list_name
             )
             .as_str(),
         ) {
@@ -181,13 +259,13 @@ impl NNTPWorker {
                 let last_article_number = file_utils::try_read_number(Path::new(
                     format!(
                         "{}/{}/__last_article_number",
-                        self.base_output_path, group_name
+                        self.base_output_path, list_name
                     )
                     .as_str(),
                 ))
                 .unwrap_or(0);
                 if last_article_number == 0 {
-                    log::info!("W{}: Reading list {group_name} from mail 0", self.id);
+                    log::info!("W{}: Reading list {list_name} from mail 0", self.id);
                 }
 
                 let read_status = ReadStatus {
@@ -198,7 +276,7 @@ impl NNTPWorker {
                 file_utils::write_yaml(
                     format!(
                         "{}/{}/__last_article_number",
-                        self.base_output_path, group_name
+                        self.base_output_path, list_name
                     )
                     .as_str(),
                     &read_status,
@@ -211,17 +289,17 @@ impl NNTPWorker {
         let last_article_number = read_status.last_email;
 
         log::info!(
-            "W{}: Checking group : {group_name}. Local max ID: {last_article_number}",
+            "W{}: Checking group : {list_name}. Local max ID: {last_article_number}",
             self.id
         );
 
         // Get group info - borrow is dropped at end of this scope block
         let should_read_info = {
-            let group = self.nntp_stream.borrow_mut().group(&group_name)?;
+            let group = self.nntp_stream.borrow_mut().group(&list_name)?;
             log::info!(
                 "W{}: Remote max for {} is {}, local is {}",
                 self.id,
-                group_name,
+                list_name,
                 group.high,
                 last_article_number
             );
@@ -233,11 +311,11 @@ impl NNTPWorker {
         };
 
         if let Some((low, high)) = should_read_info {
-            log::info!("W{}: Reading emails for group : {group_name}.", self.id);
+            log::info!("W{}: Reading emails for group : {list_name}.", self.id);
             // Borrow is already dropped, safe to call read_new_mails
-            match self.read_new_mails(group_name.clone(), last_article_number.max(low), high) {
+            match self.read_new_mails(list_name.clone(), last_article_number.max(low), high) {
                 Ok(num_emails_read) => {
-                    return Ok(NNTPWorkerGroupResult::Ok(group_name, num_emails_read));
+                    return Ok(NNTPWorkerGroupResult::Ok(list_name, num_emails_read));
                 }
                 Err(e) => {
                     log::error!("W{}: Failed reading new mails: {e}", self.id);
@@ -246,22 +324,45 @@ impl NNTPWorker {
             }
         } else {
             log::info!(
-                "W{}: Checking group : {group_name}. Local max ID: {last_article_number}",
+                "W{}: Checking group : {list_name}. Local max ID: {last_article_number}",
                 self.id
             );
-            return Ok(NNTPWorkerGroupResult::NoNews(group_name));
+            return Ok(NNTPWorkerGroupResult::NoNews(list_name));
         }
     }
 
-    // read_new_mails checks for mails in an inclusive range between low and high
-    fn read_new_mails(&self, group_name: String, low: usize, high: usize) -> nntp::Result<usize> {
+    /// Fetches emails from a mailing list within an article ID range.
+    ///
+    /// This is the core email fetching method. It:
+    /// 1. Iterates through article IDs from `low` to `high`
+    /// 2. Checks shutdown flag before each fetch
+    /// 3. Retrieves raw article content with retry logic
+    /// 4. Writes emails to `{output_dir}/{list_name}/{id}.eml`
+    /// 5. Updates `__last_article_number` after each success
+    ///
+    /// # Arguments
+    ///
+    /// * `list_name` - Name of the mailing list
+    /// * `low` - Starting article ID (inclusive)
+    /// * `high` - Ending article ID (inclusive)
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(usize)` - Number of emails successfully fetched
+    /// * `Err(...)` - Connection or protocol error
+    ///
+    /// # Shutdown Behavior
+    ///
+    /// If shutdown is requested during fetching, returns the count of
+    /// emails fetched so far without error.
+    fn read_new_mails(&self, list_name: String, low: usize, high: usize) -> nntp::Result<usize> {
         // take the last_article_number or the "low"" result for the group
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {
             // Check shutdown flag during email fetching
             if self.shutdown_flag.load(Ordering::Relaxed) {
                 log::info!(
-                    "W{}: Shutdown requested while reading {group_name} at {current_mail}/{high}",
+                    "W{}: Shutdown requested while reading {list_name} at {current_mail}/{high}",
                     self.id
                 );
                 return Ok(num_emails_read);
@@ -273,7 +374,7 @@ impl NNTPWorker {
                         Path::new(
                             format!(
                                 "{}/{}/{}.eml",
-                                self.base_output_path, group_name, current_mail
+                                self.base_output_path, list_name, current_mail
                             )
                             .as_str(),
                         ),
@@ -286,7 +387,7 @@ impl NNTPWorker {
                     file_utils::write_yaml(
                         format!(
                             "{}/{}/__last_article_number",
-                            self.base_output_path, group_name
+                            self.base_output_path, list_name
                         )
                         .as_str(),
                         &ReadStatus {
@@ -299,7 +400,7 @@ impl NNTPWorker {
                         nntp::NNTPError::ArticleUnavailable => {
                             file_utils::append_line_to_file(
                                 Path::new(
-                                    format!("{}/{}/__errors", self.base_output_path, group_name)
+                                    format!("{}/{}/__errors", self.base_output_path, list_name)
                                         .as_str(),
                                 ),
                                 format!("{current_mail},{e}").as_str(),
@@ -318,7 +419,7 @@ impl NNTPWorker {
             }
 
             log::info!(
-                "W{}: {group_name} {}/{} ({:.2}%)",
+                "W{}: {list_name} {}/{} ({:.2}%)",
                 self.id,
                 current_mail,
                 high,
@@ -370,6 +471,15 @@ impl NNTPWorker {
     }
 }
 
+/// Result of processing a mailing list.
+///
+/// Returned by [`NNTPWorker::handle_group()`] to indicate the outcome
+/// of list processing.
+///
+/// # Variants
+///
+/// * `Ok(String, usize)` - Successfully fetched emails. Contains list name and count.
+/// * `NoNews(String)` - No new emails available. Contains list name.
 pub enum NNTPWorkerGroupResult {
     Ok(String, usize),
     NoNews(String),
@@ -379,15 +489,15 @@ pub enum NNTPWorkerGroupResult {
 impl fmt::Display for NNTPWorkerGroupResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
-            NNTPWorkerGroupResult::Ok(group_name, num_emails) => {
+            NNTPWorkerGroupResult::Ok(list_name, num_emails) => {
                 write!(
                     f,
                     "Collected {num_emails} new e-mails from {:?}",
-                    group_name
+                    list_name
                 )
             }
-            NNTPWorkerGroupResult::NoNews(group_name) => {
-                write!(f, "No New e-mails from {:?}", group_name)
+            NNTPWorkerGroupResult::NoNews(list_name) => {
+                write!(f, "No New e-mails from {:?}", list_name)
             }
         }
     }

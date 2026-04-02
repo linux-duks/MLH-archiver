@@ -1,3 +1,11 @@
+//! File I/O utilities for the MLH Archiver.
+//!
+//! This module provides helper functions for:
+//! - Writing email content to files
+//! - Appending to error log files
+//! - Reading/writing YAML configuration files
+//! - Creating directories as needed
+
 use serde::de::DeserializeOwned;
 use serde::ser::{self};
 use std::{
@@ -6,6 +14,24 @@ use std::{
     path::Path,
 };
 
+/// Writes lines of text to a file, creating parent directories as needed.
+///
+/// This function is used to store fetched emails as `.eml` files.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the output file
+/// * `lines` - Vector of strings to write (without newlines)
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
+///
+/// # Side Effects
+///
+/// - Creates parent directories if they don't exist
+/// - Truncates existing file
 pub fn write_lines_file(file_path: &Path, lines: Vec<String>) -> io::Result<()> {
     // Create or open (truncate) a file for writing
     // check if parent folder need to be created first
@@ -26,6 +52,19 @@ pub fn write_lines_file(file_path: &Path, lines: Vec<String>) -> io::Result<()> 
     Ok(())
 }
 
+/// Appends a single line to a file, creating parent directories as needed.
+///
+/// This function is used to log unavailable articles to `__errors` files.
+///
+/// # Arguments
+///
+/// * `file_path` - Path to the output file
+/// * `line` - Line to append (newline added automatically)
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
 pub fn append_line_to_file(file_path: &Path, line: &str) -> io::Result<()> {
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {
@@ -49,13 +88,19 @@ pub fn append_line_to_file(file_path: &Path, line: &str) -> io::Result<()> {
     Ok(())
 }
 
-/// tries to read a number from a file.
+/// Attempts to read a number from a file.
+///
+/// Reads the file content and parses the first valid number found.
+/// Used to read `__last_article_number` files for progress tracking.
 ///
 /// # Arguments
-/// * `path` - A reference to the path of the file to read.
+///
+/// * `path` - Path to the file to read
+///
 /// # Returns
 ///
-/// * `Result<usize, Box<dyn Error>>` - The parsed number on success, or a boxed error on failure.
+/// * `Ok(usize)` - The parsed number
+/// * `Err(io::Error)` - File not found, unreadable, or no valid number
 pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
     // Attempt to read the file's content into a string.
     let content = fs::read_to_string(path)?;
@@ -74,6 +119,25 @@ pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
     Err(io::Error::other("failed reading  last status"))
 }
 
+/// Writes a serializable value to a YAML file.
+///
+/// Used for persisting progress tracking data (`__last_article_number`)
+/// and user list selections.
+///
+/// # Arguments
+///
+/// * `file_name` - Path to the output file
+/// * `value` - Value to serialize (must implement `serde::Serialize`)
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
+///
+/// # Side Effects
+///
+/// - Creates parent directories if needed
+/// - Appends to file (does not truncate)
 pub fn write_yaml<T>(file_name: &str, value: &T) -> io::Result<()>
 where
     T: ?Sized + ser::Serialize,
@@ -94,6 +158,18 @@ where
     Ok(())
 }
 
+/// Reads and deserializes a value from a YAML file.
+///
+/// Used for reading progress tracking data (`__last_article_number`).
+///
+/// # Arguments
+///
+/// * `file_name` - Path to the YAML file
+///
+/// # Returns
+///
+/// * `Ok(T)` - Deserialized value
+/// * `Err(io::Error)` - File not found, unreadable, or invalid YAML
 pub fn read_yaml<T>(file_name: &str) -> io::Result<T>
 where
     T: DeserializeOwned,
@@ -104,6 +180,24 @@ where
     return Ok(res);
 }
 
+/// Ensures a folder exists, creating it if necessary.
+///
+/// This function is idempotent - calling it multiple times with the
+/// same path is safe and has no side effects after the first call.
+///
+/// # Arguments
+///
+/// * `folder_path` - Path to the folder to create/check
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
+///
+/// # Side Effects
+///
+/// - Creates folder and all parent directories if they don't exist
+/// - Logs debug/warn messages about folder existence
 pub fn check_or_create_folder(folder_path: String) -> io::Result<()> {
     let p = Path::new(&folder_path);
     if p.exists() {

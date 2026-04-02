@@ -131,6 +131,7 @@ This sets up:
 | `devbox run debug-anonymizer` | Run anonymizer in debug mode |
 | `devbox run debug-analysis` | Run analysis in debug mode |
 | `devbox run peek <path>` | Quick inspection of Parquet files |
+| `devbox run doc` | Generate and open Rust API docs |
 
 #### Option 2: Manual Installation
 
@@ -166,6 +167,12 @@ This repository includes a [`.devcontainer`](.devcontainer/) configuration for V
 3. The dev container will build automatically
 
 ---
+
+### Implementing New Sources
+
+To add a new email source (e.g., ListArchiveX, IMAP, local mbox), see the
+[Development Guide](mlh-archiver/README.md#development-implementing-a-new-source)
+in the Archiver documentation.
 
 ### Makefile Commands
 
@@ -265,9 +272,17 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 
 **Design Principles:**
 
-- Multi-threaded: Each worker thread handles one mailing list at a time
-- Respectful: Not designed to pull emails as fast as possible to avoid being detected as a malicious scraping bot
-- Continuous: Can keep local files up-to-date with new articles
+- **Multi-threaded**: Each worker thread handles one mailing list at a time
+- **Respectful**: Not designed to pull emails as fast as possible to avoid being detected as a malicious scraping bot
+- **Continuous**: Can keep local files up-to-date with new articles
+- **Graceful shutdown**: Clean exit on Ctrl+C with progress preservation
+
+**Architecture:**
+
+- Workers are created and owned by `WorkerManager`, then moved to individual threads
+- Tasks (mailing list names) are distributed via crossbeam channels
+- Multiple workers per group enable load balancing (one worker receives each task)
+- Shutdown is coordinated via shared `Arc<AtomicBool>` flag
 
 **Configuration:**
 
@@ -297,12 +312,13 @@ The anonymizer applies SHA1 hashing to personally identifiable information (PII)
 
 ## Additional Resources
 
-- [Archiver Detailed Documentation](mlh-archiver/README.md)
+- [Archiver Detailed Documentation](mlh-archiver/README.md) - Includes development guide for new sources
 - [Parser Detailed Documentation](mlh_parser/README.md)
 - [Anonymizer Detailed Documentation](anonymizer/README.md)
 - [Analysis Detailed Documentation](analysis/README.md)
 - [Example Configuration](example_archiver_config.yaml)
 - [Architecture Diagram](./docs/fluxogram.svg)
+- [Rust API Documentation](mlh-archiver/target/doc/mlh_archiver/) - Generated via `cargo doc`
 
 ## License
 

@@ -59,6 +59,9 @@
 			],
 			"peek": [
 				"uv run scripts/peek_files.py \"$@\""
+			],
+			"doc": [
+				"make doc"
 			]
 		}
 	}

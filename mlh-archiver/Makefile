@@ -69,6 +69,11 @@ test:
 	@echo "==> Running archiver tests..."
 	@cargo test
 
+.PHONY: doc
+doc:
+	@echo "==> Generating Rust API documentation..."
+	@cargo doc --document-private-items --open
+
 .PHONY: clean
 clean:
 	@echo "==> Cleaning up archiver build artifacts..."

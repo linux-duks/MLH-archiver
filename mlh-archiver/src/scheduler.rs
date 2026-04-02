@@ -11,6 +11,35 @@ const INTERVAL_BETWEEN_RESCANS: usize = 60 * 60; // 1h
 /// Channel capacity per worker group
 const CHANNEL_CAPACITY: usize = 10;
 
+/// Orchestrates worker threads and task distribution.
+///
+/// The scheduler is responsible for:
+/// - Creating channels for worker communication
+/// - Spawning worker threads (one per worker)
+/// - Spawning producer threads (one per worker group)
+/// - Waiting for all threads to complete
+///
+/// # Architecture
+///
+/// For each worker group:
+/// 1. Creates a bounded channel (sender/receiver)
+/// 2. Spawns workers, each with a clone of the receiver
+/// 3. Spawns a producer with the sender
+/// 4. Producer sends tasks; workers compete to receive them
+///
+/// # Thread Lifecycle
+///
+/// - **Worker threads**: Run until channel closes or shutdown requested
+/// - **Producer threads**: Send all tasks, then drop sender to signal completion
+/// - **Main thread**: Waits for all threads via `join()`
+///
+/// # Shutdown
+///
+/// Workers check the shared shutdown flag (passed at creation time).
+/// When Ctrl+C is pressed:
+/// 1. Signal handler sets the flag
+/// 2. Workers detect flag and exit gracefully
+/// 3. Producer threads detect closed channels and exit
 pub struct Scheduler<'a> {
     app_config: &'a AppConfig,
     loop_groups: bool,
@@ -18,6 +47,23 @@ pub struct Scheduler<'a> {
 }
 
 impl<'a> Scheduler<'a> {
+    /// Creates a new scheduler instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_config` - Application configuration (used for range selection)
+    /// * `worker_groups` - Mutable reference to worker groups from [`WorkerManager`](crate::worker::WorkerManager)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use mlh_archiver::{config, scheduler::Scheduler, worker::WorkerManager};
+    ///
+    /// let app_config = config::read_config().unwrap();
+    /// let mut manager = WorkerManager::new();
+    /// // ... create workers ...
+    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups());
+    /// ```
     pub fn new(
         app_config: &'a AppConfig,
         worker_groups: &'a mut Vec<WorkerGroup>,
@@ -29,6 +75,34 @@ impl<'a> Scheduler<'a> {
         }
     }
 
+    /// Runs the scheduler, processing all worker groups.
+    ///
+    /// This is the main execution method. It:
+    /// 1. Drains all worker groups from the manager
+    /// 2. For each group:
+    ///    - Creates a channel for task distribution
+    ///    - Spawns worker threads
+    ///    - Spawns a producer thread
+    /// 3. Waits for all threads to complete
+    ///
+    /// # Execution Modes
+    ///
+    /// ## Range Mode
+    ///
+    /// If `article_range` is configured:
+    /// - Workers use `read_email_by_index()` to fetch specific articles
+    /// - Producer parses range text and sends (list, index) pairs
+    ///
+    /// ## Normal Mode
+    ///
+    /// If no range is configured:
+    /// - Workers use `consumme_list()` to fetch all new articles
+    /// - Producer sends list names; workers determine what's new
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` on successful completion
+    /// * `Err(...)` if any thread panics during join
     pub fn run(&mut self) -> crate::Result<()> {
         // Collect thread handles
         let mut handles = Vec::new();
@@ -97,7 +171,19 @@ impl<'a> Scheduler<'a> {
         Ok(())
     }
 
-    /// Wrapper to spawn a thread with the `run` worker trait
+    /// Spawns worker threads for normal (non-range) mode.
+    ///
+    /// Each worker receives a clone of the channel receiver and runs
+    /// [`Worker::consumme_list()`] until the channel closes.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - Vector of workers to spawn (moved to threads)
+    /// * `receiver` - Channel receiver (cloned for each worker)
+    ///
+    /// # Returns
+    ///
+    /// Vector of thread join handles.
     fn spawn_workers_to_consumme_list(
         &self,
         workers: Vec<Box<dyn Worker>>,
@@ -127,7 +213,21 @@ impl<'a> Scheduler<'a> {
         return worker_handles;
     }
 
-    /// Wrapper to spawn a thread with the `run` worker trait
+    /// Spawns worker threads for range mode.
+    ///
+    /// Each worker receives a clone of the channel receiver and runs
+    /// a loop that calls [`Worker::read_email_by_index()`] for each task.
+    ///
+    /// Tasks are formatted as `"list_name_##index"` and parsed by workers.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - Vector of workers to spawn (moved to threads)
+    /// * `receiver` - Channel receiver (cloned for each worker)
+    ///
+    /// # Returns
+    ///
+    /// Vector of thread join handles.
     fn spawn_worker_to_read_email_by_index(
         &self,
         workers: Vec<Box<dyn Worker>>,
@@ -150,12 +250,12 @@ impl<'a> Scheduler<'a> {
                     };
 
                     // Worker runs until channel is closed or shutdown requested
-                    let (group_name, index) = task
+                    let (list_name, index) = task
                         .split_once("_##")
                         .expect("This task message should not fail");
 
                     match worker.read_email_by_index(
-                        group_name.to_string(),
+                        list_name.to_string(),
                         index
                             .parse::<usize>()
                             .expect("Task index shoud parse into a usize"),
@@ -177,7 +277,23 @@ impl<'a> Scheduler<'a> {
         return worker_handles;
     }
 
-    /// Spawn a producer thread that sends tasks to workers via channel
+    /// Spawns a producer thread for normal (non-range) mode.
+    ///
+    /// The producer:
+    /// 1. Sends all task (list names) to workers via channel
+    /// 2. If `loop_groups` is true, sleeps and repeats indefinitely
+    /// 3. If `loop_groups` is false, drops sender and exits
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - Channel sender (moved to thread)
+    /// * `tasks` - List of mailing list names to send
+    /// * `loop_groups` - If true, repeat sending tasks after sleep interval
+    ///
+    /// # Thread Safety
+    ///
+    /// The sender is dropped when the thread exits, signaling workers
+    /// that no more tasks will arrive.
     fn spawn_producer_for_consume_list(
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
@@ -211,6 +327,27 @@ impl<'a> Scheduler<'a> {
         })
     }
 
+    /// Spawns a producer thread for range mode.
+    ///
+    /// The producer:
+    /// 1. For each task (list name), parses the range text into an iterator
+    /// 2. Sends formatted tasks `"list_name_##index"` for each article index
+    /// 3. Drops sender when complete
+    ///
+    /// # Memory Efficiency
+    ///
+    /// The range text is parsed fresh for each task (mailing list).
+    /// This avoids storing large vectors in memory for big ranges.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - Channel sender (moved to thread)
+    /// * `tasks` - List of mailing list names to process
+    /// * `range_text` - Range specification string (e.g., `"1,5,10-15"`)
+    ///
+    /// # Error Handling
+    ///
+    /// If range parsing fails, logs an error and drops the sender.
     fn spawn_producer_for_read_email_by_index(
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
