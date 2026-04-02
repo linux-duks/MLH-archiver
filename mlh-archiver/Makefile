@@ -54,11 +54,13 @@ debug:
 		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
+			-e DEBUG=true \
+			-e RUST_LOG=debug \
 			--network=host \
 			-v $(REPO_ROOT):/usr/src/app:z \
 			-w /usr/src/app \
 			$(RUST_DOCKER_IMAGE) \
-			DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
+			cargo run --bin $(BINARY_NAME); \
 	fi
 
 
@@ -66,6 +68,11 @@ debug:
 test:
 	@echo "==> Running archiver tests..."
 	@cargo test
+
+.PHONY: doc
+doc:
+	@echo "==> Generating Rust API documentation..."
+	@cargo doc --document-private-items --open
 
 .PHONY: clean
 clean:

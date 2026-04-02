@@ -1,202 +1,383 @@
-use crate::config::NntpConfig;
-use crate::errors;
-use crate::worker;
+use crate::config::AppConfig;
+use crate::range_inputs::parse_sequence;
+use crate::worker::{Worker, WorkerGroup};
 use crossbeam_channel::bounded;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 // intervals in seconds
 const INTERVAL_BETWEEN_RESCANS: usize = 60 * 60; // 1h
 
-pub struct Scheduler {
-    nntp_config: NntpConfig,
-    base_output_path: String,
-    nthreds: u8,
+/// Channel capacity per worker group
+const CHANNEL_CAPACITY: usize = 10;
+
+/// Orchestrates worker threads and task distribution.
+///
+/// The scheduler is responsible for:
+/// - Creating channels for worker communication
+/// - Spawning worker threads (one per worker)
+/// - Spawning producer threads (one per worker group)
+/// - Waiting for all threads to complete
+///
+/// # Architecture
+///
+/// For each worker group:
+/// 1. Creates a bounded channel (sender/receiver)
+/// 2. Spawns workers, each with a clone of the receiver
+/// 3. Spawns a producer with the sender
+/// 4. Producer sends tasks; workers compete to receive them
+///
+/// # Thread Lifecycle
+///
+/// - **Worker threads**: Run until channel closes or shutdown requested
+/// - **Producer threads**: Send all tasks, then drop sender to signal completion
+/// - **Main thread**: Waits for all threads via `join()`
+///
+/// # Shutdown
+///
+/// Workers check the shared shutdown flag (passed at creation time).
+/// When Ctrl+C is pressed:
+/// 1. Signal handler sets the flag
+/// 2. Workers detect flag and exit gracefully
+/// 3. Producer threads detect closed channels and exit
+pub struct Scheduler<'a> {
+    app_config: &'a AppConfig,
     loop_groups: bool,
-    tasklist: Arc<Vec<String>>,
+    worker_groups: &'a mut Vec<WorkerGroup>,
 }
 
-impl Scheduler {
+impl<'a> Scheduler<'a> {
+    /// Creates a new scheduler instance.
+    ///
+    /// # Arguments
+    ///
+    /// * `app_config` - Application configuration (used for range selection)
+    /// * `worker_groups` - Mutable reference to worker groups from [`WorkerManager`](crate::worker::WorkerManager)
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use mlh_archiver::{config, scheduler::Scheduler, worker::WorkerManager};
+    ///
+    /// let app_config = config::read_config().unwrap();
+    /// let mut manager = WorkerManager::new();
+    /// // ... create workers ...
+    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups());
+    /// ```
     pub fn new(
-        nntp_config: NntpConfig,
-        base_output_path: String,
-        nthreds: u8,
-        loop_groups: bool,
-        groups: Vec<String>,
-    ) -> Scheduler {
-        let mut tasklist: Vec<String> = Vec::with_capacity(groups.len());
-
-        // Schedule all groups for check to the next second
-        for group in groups {
-            tasklist.push(group.clone());
-        }
-
+        app_config: &'a AppConfig,
+        worker_groups: &'a mut Vec<WorkerGroup>,
+    ) -> Scheduler<'a> {
         Scheduler {
-            nntp_config,
-            base_output_path,
-            nthreds,
-            loop_groups,
-            tasklist: Arc::new(tasklist),
+            app_config,
+            loop_groups: app_config.loop_groups,
+            worker_groups,
         }
     }
 
+    /// Runs the scheduler, processing all worker groups.
+    ///
+    /// This is the main execution method. It:
+    /// 1. Drains all worker groups from the manager
+    /// 2. For each group:
+    ///    - Creates a channel for task distribution
+    ///    - Spawns worker threads
+    ///    - Spawns a producer thread
+    /// 3. Waits for all threads to complete
+    ///
+    /// # Execution Modes
+    ///
+    /// ## Range Mode
+    ///
+    /// If `article_range` is configured:
+    /// - Workers use `read_email_by_index()` to fetch specific articles
+    /// - Producer parses range text and sends (list, index) pairs
+    ///
+    /// ## Normal Mode
+    ///
+    /// If no range is configured:
+    /// - Workers use `consumme_list()` to fetch all new articles
+    /// - Producer sends list names; workers determine what's new
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` on successful completion
+    /// * `Err(...)` if any thread panics during join
     pub fn run(&mut self) -> crate::Result<()> {
-        // Create channel - sender stays with main thread, receivers go to workers
-        let (sender, receiver): (
-            crossbeam_channel::Sender<String>,
-            crossbeam_channel::Receiver<String>,
-        ) = bounded(self.nthreds as usize);
-
         // Collect thread handles
-        let mut handles = Vec::with_capacity(self.nthreds as usize);
+        let mut handles = Vec::new();
 
-        // Clone data needed for workers
-        let tasklist = Arc::clone(&self.tasklist);
+        // Process each worker group - collect tasks first to avoid borrow issues
+        let groups: Vec<WorkerGroup> = self.worker_groups.drain(..).collect();
 
-        // Start worker threads - each gets a clone of the receiver
-        for id in 0..self.nthreds {
-            log::debug!("Starting worker thread {id}");
+        for group in groups {
+            let WorkerGroup {
+                tasks,
+                workers,
+                run_mode,
+            } = group;
 
-            let receiver = receiver.clone();
+            // Create channel - sender goes to producer thread, receivers cloned to workers
+            let (sender, receiver): (
+                crossbeam_channel::Sender<String>,
+                crossbeam_channel::Receiver<String>,
+            ) = bounded(CHANNEL_CAPACITY);
 
-            let mut worker = worker::Worker::new(
-                id,
-                self.nntp_config.clone(),
-                self.base_output_path.clone(),
-                receiver,
-            );
-
-            // Spawn worker thread
-            let handle = thread::spawn(move || {
-                loop {
-                    match worker.run() {
-                        Ok(_) => {
-                            log::info!("Worker {id} finished");
-                            break;
-                        }
-                        Err(err) => {
-                            log::warn!("Worker {id} returned an error: {err}");
-                            std::thread::sleep(Duration::from_secs(1));
-                        }
-                    }
+            if let Some(range_text) = self.app_config.get_range_selection_text(run_mode) {
+                // RUN in range mode
+                if tasks.len() > 1 {
+                    log::warn!(
+                        "Multiple lists selected in Range Mode. This is likely a mistake..."
+                    );
+                    thread::sleep(Duration::from_secs(2));
                 }
-            });
+                let worker_handles = self.spawn_worker_to_read_email_by_index(workers, receiver);
 
-            handles.push(handle);
+                handles.extend(worker_handles);
 
-            // Space out thread creation (to prevent multiple connections opening at once)
-            std::thread::sleep(Duration::from_secs(2));
+                // Spawn producer thread that sends tasks
+                let producer_handle =
+                    Self::spawn_producer_for_read_email_by_index(sender, tasks, range_text);
+                handles.push(producer_handle);
+
+                // read_email_by_index
+            } else {
+                // Spawn worker threads - each worker is moved to its own thread
+                // receiver is moved to the function, and dropped on return
+                // When all workers drop their receivers, recv() will return RecvError
+                let worker_handles = self.spawn_workers_to_consumme_list(workers, receiver);
+                // Collect worker handles
+                handles.extend(worker_handles);
+
+                // Spawn producer thread that sends tasks
+                let producer_handle =
+                    Self::spawn_producer_for_consume_list(sender, tasks, self.loop_groups);
+                handles.push(producer_handle);
+            }
         }
 
-        // Drop the original receiver - now only worker receivers exist
-        // When all workers drop their receivers, recv() will return RecvError
-        drop(receiver);
+        log::info!("Waiting for {} threads to finish...", handles.len());
 
-        // Setup signal handler for Ctrl+C (only needed for loop_groups mode)
-        if self.loop_groups {
-            let shutdown_flag = Arc::new(AtomicBool::new(false));
-            let shutdown_flag_signal = Arc::clone(&shutdown_flag);
-
-            ctrlc::set_handler(move || {
-                log::info!("Received shutdown signal (Ctrl+C), stopping workers...");
-                shutdown_flag_signal.store(true, Ordering::Relaxed);
-            })
-            .map_err(|e| {
-                errors::Error::Io(std::io::Error::other(format!(
-                    "Failed to set Ctrl+C handler: {}",
-                    e
-                )))
-            })?;
-
-            // Main scheduling loop (runs in main thread)
-            loop {
-                // Check if shutdown was requested
-                if shutdown_flag.load(Ordering::Relaxed) {
-                    log::info!("Shutdown requested, stopping task dispatch...");
-                    break;
-                }
-
-                // Send tasks to workers
-                for group_name in tasklist.iter() {
-                    if shutdown_flag.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    // Send may fail if all receivers are closed
-                    if sender.send(group_name.clone()).is_err() {
-                        log::warn!("Failed to send task, workers may have stopped");
-                        break;
-                    }
-                }
-
-                // Sleep between checks, but wake up periodically to check shutdown flag
-                let sleep_interval = Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64);
-                let check_interval = Duration::from_secs(5);
-                let mut elapsed = Duration::ZERO;
-                while elapsed < sleep_interval {
-                    if shutdown_flag.load(Ordering::Relaxed) {
-                        break;
-                    }
-                    std::thread::sleep(check_interval);
-                    elapsed += check_interval;
-                }
-            }
-
-            // Signal shutdown to workers
-            drop(sender);
-        } else {
-            // Non-looping mode: send all tasks once, then drop sender
-            log::info!("Sending {} tasks to workers...", tasklist.len());
-            for group_name in tasklist.iter() {
-                if sender.send(group_name.clone()).is_err() {
-                    log::warn!("Failed to send task, workers may have stopped");
-                    break;
-                }
-            }
-            log::info!("All tasks sent. Waiting for workers to complete...");
-            // Drop sender to signal workers to exit after draining channel
-            drop(sender);
-        }
-
-        log::info!("Waiting for {} worker threads to finish...", handles.len());
-
-        // Wait for all worker threads to finish
+        // Wait for all threads to finish
         for (i, handle) in handles.into_iter().enumerate() {
-            log::debug!("Joining worker thread {i}...");
+            log::debug!("Joining thread {i}...");
             if let Err(e) = handle.join() {
-                log::error!("Failed to join worker thread {i}: {:?}", e);
+                log::error!("Failed to join thread {i}: {:?}", e);
             }
         }
 
-        log::info!("All worker threads stopped");
+        log::info!("All threads stopped");
 
         Ok(())
     }
 
-    // run_range does not keep track of lists, just run them once for the defined range
-    pub fn run_range(&mut self, range: impl Iterator<Item = usize>) -> crate::Result<()> {
-        // Create a channel for single-run mode
-        let (_sender, receiver): (
-            crossbeam_channel::Sender<String>,
-            crossbeam_channel::Receiver<String>,
-        ) = bounded(1);
+    /// Spawns worker threads for normal (non-range) mode.
+    ///
+    /// Each worker receives a clone of the channel receiver and runs
+    /// [`Worker::consumme_list()`] until the channel closes.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - Vector of workers to spawn (moved to threads)
+    /// * `receiver` - Channel receiver (cloned for each worker)
+    ///
+    /// # Returns
+    ///
+    /// Vector of thread join handles.
+    fn spawn_workers_to_consumme_list(
+        &self,
+        workers: Vec<Box<dyn Worker>>,
+        receiver: crossbeam_channel::Receiver<String>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut worker_handles = Vec::with_capacity(workers.len());
+        for worker in workers {
+            let receiver_chan = receiver.clone();
 
-        let mut worker = worker::Worker::new(
-            0,
-            self.nntp_config.clone(),
-            self.base_output_path.clone(),
-            receiver,
-        );
+            // Spawn worker thread - worker is moved here
+            let handle = thread::spawn(move || {
+                // Worker runs until channel is closed or shutdown requested
+                match worker.consumme_list(receiver_chan) {
+                    Ok(_) => {
+                        log::debug!("Worker thread finished");
+                    }
+                    Err(err) => {
+                        log::error!("Worker thread finished with error: {err}");
+                    }
+                }
+            });
+            worker_handles.push(handle);
 
-        match self.tasklist.first() {
-            Some(group_name) => {
-                worker.handle_group_range(group_name.clone(), range)?;
-                Ok(())
+            // Space out thread creation (to prevent multiple connections opening at once)
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        return worker_handles;
+    }
+
+    /// Spawns worker threads for range mode.
+    ///
+    /// Each worker receives a clone of the channel receiver and runs
+    /// a loop that calls [`Worker::read_email_by_index()`] for each task.
+    ///
+    /// Tasks are formatted as `"list_name_##index"` and parsed by workers.
+    ///
+    /// # Arguments
+    ///
+    /// * `workers` - Vector of workers to spawn (moved to threads)
+    /// * `receiver` - Channel receiver (cloned for each worker)
+    ///
+    /// # Returns
+    ///
+    /// Vector of thread join handles.
+    fn spawn_worker_to_read_email_by_index(
+        &self,
+        workers: Vec<Box<dyn Worker>>,
+        receiver: crossbeam_channel::Receiver<String>,
+    ) -> Vec<JoinHandle<()>> {
+        let mut worker_handles: Vec<JoinHandle<()>> = Vec::with_capacity(workers.len());
+
+        for worker in workers {
+            let receiver_chan = receiver.clone();
+
+            // Spawn worker thread - worker is moved here
+            let handle = thread::spawn(move || {
+                loop {
+                    let task = match receiver_chan.recv() {
+                        Ok(name) => name,
+                        Err(crossbeam_channel::RecvError) => {
+                            // log::info!("W{}: Channel closed and empty, worker exiting", self.id);
+                            return;
+                        }
+                    };
+
+                    // Worker runs until channel is closed or shutdown requested
+                    let (list_name, index) = task
+                        .split_once("_##")
+                        .expect("This task message should not fail");
+
+                    match worker.read_email_by_index(
+                        list_name.to_string(),
+                        index
+                            .parse::<usize>()
+                            .expect("Task index shoud parse into a usize"),
+                    ) {
+                        Ok(_) => {
+                            log::debug!("Worker thread finished");
+                        }
+                        Err(err) => {
+                            log::error!("Worker thread finished with error: {err}");
+                        }
+                    }
+                }
+            });
+            worker_handles.push(handle);
+
+            // Space out thread creation (to prevent multiple connections opening at once)
+            std::thread::sleep(Duration::from_secs(2));
+        }
+        return worker_handles;
+    }
+
+    /// Spawns a producer thread for normal (non-range) mode.
+    ///
+    /// The producer:
+    /// 1. Sends all task (list names) to workers via channel
+    /// 2. If `loop_groups` is true, sleeps and repeats indefinitely
+    /// 3. If `loop_groups` is false, drops sender and exits
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - Channel sender (moved to thread)
+    /// * `tasks` - List of mailing list names to send
+    /// * `loop_groups` - If true, repeat sending tasks after sleep interval
+    ///
+    /// # Thread Safety
+    ///
+    /// The sender is dropped when the thread exits, signaling workers
+    /// that no more tasks will arrive.
+    fn spawn_producer_for_consume_list(
+        sender: crossbeam_channel::Sender<String>,
+        tasks: Vec<String>,
+        loop_groups: bool,
+    ) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            // if in Looping mode: send tasks, then sleep and repeat
+            // otherwise, send and drop the sender
+            loop {
+                // Send all tasks
+                for task in &tasks {
+                    if sender.send(task.clone()).is_err() {
+                        log::warn!("Failed to send task, workers may have stopped");
+                        drop(sender);
+                        return;
+                    }
+                }
+
+                // If not in looping mode, close sender and exit
+                if !loop_groups {
+                    log::info!("All tasks sent. Waiting for workers to complete...");
+                    drop(sender);
+                    return;
+                }
+
+                log::debug!("All tasks sent, waiting for rescan interval...");
+
+                // Sleep between rescans
+                std::thread::sleep(Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64));
             }
-            None => Err(errors::Error::Unknown),
-        }?;
+        })
+    }
 
-        return Ok(());
+    /// Spawns a producer thread for range mode.
+    ///
+    /// The producer:
+    /// 1. For each task (list name), parses the range text into an iterator
+    /// 2. Sends formatted tasks `"list_name_##index"` for each article index
+    /// 3. Drops sender when complete
+    ///
+    /// # Memory Efficiency
+    ///
+    /// The range text is parsed fresh for each task (mailing list).
+    /// This avoids storing large vectors in memory for big ranges.
+    ///
+    /// # Arguments
+    ///
+    /// * `sender` - Channel sender (moved to thread)
+    /// * `tasks` - List of mailing list names to process
+    /// * `range_text` - Range specification string (e.g., `"1,5,10-15"`)
+    ///
+    /// # Error Handling
+    ///
+    /// If range parsing fails, logs an error and drops the sender.
+    fn spawn_producer_for_read_email_by_index(
+        sender: crossbeam_channel::Sender<String>,
+        tasks: Vec<String>,
+        range_text: String,
+    ) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            for task in &tasks {
+                // Parse range text for each task (memory efficient, lazy evaluation)
+                let range = match parse_sequence(&range_text) {
+                    Ok(iter) => iter,
+                    Err(e) => {
+                        log::error!("Failed to parse range '{}': {}", range_text, e);
+                        drop(sender);
+                        return;
+                    }
+                };
+
+                for index in range {
+                    if sender.send(format!("{}_##{}", task, index)).is_err() {
+                        log::warn!("Failed to send task, workers may have stopped");
+                        drop(sender);
+                        return;
+                    }
+                }
+            }
+
+            // If not in looping mode, close sender and exit
+            log::info!("All tasks sent. Waiting for workers to complete...");
+            drop(sender);
+            return;
+        })
     }
 }

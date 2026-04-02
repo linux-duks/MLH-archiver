@@ -1,6 +1,10 @@
 #![allow(clippy::needless_return)]
 
 use env_logger::Env;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use mlh_archiver::Result;
 use mlh_archiver::config;
@@ -24,5 +28,15 @@ fn main() -> Result<()> {
         }
     };
 
-    start(&mut app_config)
+    // Setup signal handler for Ctrl+C
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let shutdown_flag_signal = Arc::clone(&shutdown_flag);
+
+    ctrlc::set_handler(move || {
+        log::info!("Received shutdown signal (Ctrl+C), stopping workers...");
+        shutdown_flag_signal.store(true, Ordering::Relaxed);
+    })
+    .map_err(|e| std::io::Error::other(format!("Failed to set Ctrl+C handler: {}", e)))?;
+
+    start(&mut app_config, shutdown_flag)
 }
