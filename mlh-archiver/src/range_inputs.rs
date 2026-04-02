@@ -51,7 +51,7 @@ pub fn parse_sequence(s: &str) -> Result<impl Iterator<Item = usize> + use<>, Se
     let final_iterator =
         validated_parts
             .into_iter()
-            .flat_map(|part| -> Box<dyn Iterator<Item = usize>> {
+            .flat_map(|part| -> Box<dyn Iterator<Item = usize> + Send> {
                 match part {
                     SequencePart::Single(n) => Box::new(std::iter::once(n)),
                     SequencePart::Range(range) => Box::new(range),

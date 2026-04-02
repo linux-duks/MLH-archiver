@@ -43,7 +43,7 @@ impl NNTPWorker {
 }
 
 impl Worker for NNTPWorker {
-    fn run(self: Box<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
+    fn consumme_list(self: Box<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // Check shutdown flag at start of each iteration
@@ -144,6 +144,25 @@ impl Worker for NNTPWorker {
             std::thread::sleep(Duration::from_secs(1));
         }
     }
+
+    fn read_email_by_index(
+        &self,
+        group_name: String,
+        email_index: usize,
+    ) -> crate::Result<()> {
+        log::info!("W{}: Checking group : {group_name}", self.id);
+
+        // Verify group exists - borrow dropped immediately after
+        self.nntp_stream.borrow_mut().group(&group_name)?;
+
+        log::info!(
+            "W{}: Will start collecting mails from range for group {group_name}",
+            self.id
+        );
+        // Borrow is dropped, safe to call read_new_mails
+        self.read_new_mails(group_name.clone(), email_index, email_index)?;
+        Ok(())
+    }
 }
 
 impl NNTPWorker {
@@ -232,27 +251,6 @@ impl NNTPWorker {
             );
             return Ok(NNTPWorkerGroupResult::NoNews(group_name));
         }
-    }
-
-    pub fn handle_group_range(
-        &self,
-        group_name: String,
-        range: impl Iterator<Item = usize>,
-    ) -> nntp::Result<()> {
-        log::info!("W{}: Checking group : {group_name}", self.id);
-
-        // Verify group exists - borrow dropped immediately after
-        self.nntp_stream.borrow_mut().group(&group_name)?;
-
-        log::info!(
-            "W{}: Will start collecting mails from range for group {group_name}",
-            self.id
-        );
-        // Borrow is dropped, safe to call read_new_mails
-        for article_number in range {
-            self.read_new_mails(group_name.clone(), article_number, article_number)?;
-        }
-        Ok(())
     }
 
     // read_new_mails checks for mails in an inclusive range between low and high

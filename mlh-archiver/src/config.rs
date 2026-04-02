@@ -1,5 +1,5 @@
 use crate::nntp_source::nntp_config;
-use crate::{errors::ConfigError, file_utils, range_inputs};
+use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
 use glob::glob;
@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 ///
 /// Global settings (nthreads, output_dir, loop_groups) are at the top level.
 /// Source-specific settings are nested, and private (e.g., nntp, imap, local, mbox).
-/// Their values should be accessed using the RunModes ENUM
+/// Their values should be accessed using the RunMode ENUM
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct AppConfig {
     /// Number of worker threads connecting to different lists
@@ -29,29 +29,57 @@ pub struct AppConfig {
     pub nntp: Option<nntp_config::NntpConfig>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunMode {
+    NNTP,
+    LocalMbox,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RunModeConfig {
+    NNTP(nntp_config::NntpConfig),
+    LocalMbox,
+}
+
+/// Here are implemented the functions for config related to the RunMode and its configs
 impl AppConfig {
-    // Other sources should be implemented here too
-    pub fn get_run_modes(&self) -> Vec<RunModes> {
-        let mut run_modes: Vec<RunModes> = vec![];
-        if let Some(nntp) = &self.nntp {
-            run_modes.push(RunModes::NNTP(nntp.clone()));
+    /// get_run_mode_config
+    pub fn get_run_mode_config(&self, run_mode: RunMode) -> Option<RunModeConfig> {
+        match run_mode {
+            RunMode::NNTP => Some(RunModeConfig::NNTP(self.nntp.clone()?)),
+            RunMode::LocalMbox => Some(RunModeConfig::LocalMbox),
+        }
+    }
+
+    /// get_range_selection retrieves the emails range selection for each run_mode
+    pub fn get_range_selection_text(&self, run_mode: RunMode) -> Option<String> {
+        match self.get_run_mode_config(run_mode)? {
+            RunModeConfig::NNTP(nntp_config) => nntp_config.article_range,
+            RunModeConfig::LocalMbox => unimplemented!(),
+        }
+    }
+    pub fn get_run_modes(&self) -> Vec<RunMode> {
+        let mut run_modes: Vec<RunMode> = vec![];
+        if self.nntp.is_some() {
+            run_modes.push(RunMode::NNTP);
         }
         return run_modes;
     }
 
-    // Other sources should be implemented here too
-    pub fn get_list_selection(&self, run_mode: RunModes) -> Option<Vec<String>> {
+    /// Other sources should be implemented here too
+    fn get_list_selection(&self, run_mode: RunMode) -> Option<Vec<String>> {
         match run_mode {
-            RunModes::NNTP(config) => return config.group_lists,
-            RunModes::LocalMbox => unimplemented!(),
+            RunMode::NNTP => {
+                match &self.nntp {
+                    Some(nntp_config) => {
+                        return nntp_config.group_lists.clone();
+                    }
+                    None => return None,
+                };
+            }
+            RunMode::LocalMbox => unimplemented!(),
         }
     }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RunModes {
-    NNTP(nntp_config::NntpConfig),
-    LocalMbox,
 }
 
 impl Default for AppConfig {
@@ -146,12 +174,7 @@ pub fn read_config() -> Result<AppConfig, ConfigError> {
         app_config.nntp.as_ref().map(|n| &n.hostname)
     );
 
-    // Validate hostname is provided
-    if let Some(ref nntp) = app_config.nntp {
-        nntp.validate()?;
-    } else {
-        return Err(ConfigError::MissingHostname);
-    }
+    // return Err(ConfigError::MissingHostname);
 
     Ok(app_config)
 }
@@ -165,11 +188,8 @@ impl AppConfig {
     pub fn get_group_lists(
         &mut self,
         list_options: Vec<String>,
-        run_mode: RunModes,
+        run_mode: RunMode,
     ) -> Result<Vec<String>, ConfigError> {
-        // TODO: needs generic form
-        let mut nntp = self.nntp.clone().unwrap();
-
         let mut answer: Vec<String>;
         let group_lists = self.get_list_selection(run_mode);
         match group_lists {
@@ -192,7 +212,9 @@ impl AppConfig {
 
                 if answer.is_empty() {
                     log::info!("empty selection");
-                    nntp.group_lists = None;
+                    // group_lists = None;
+                    // update the config with the selection
+                    // self.set_list_selection(run_mode, group_lists);
                     return Err(ConfigError::ListSelectionEmpty);
                 } else {
                     // save selection to a file
@@ -241,30 +263,5 @@ impl AppConfig {
         }
 
         Ok(answer)
-    }
-
-    pub fn get_article_range(&self) -> Option<impl Iterator<Item = usize>> {
-        let nntp = self.nntp.as_ref()?;
-
-        match &nntp.article_range {
-            Some(range_text) => {
-                // range and multiple lists
-                if nntp.group_lists.as_ref().is_some_and(|x| x.len() > 1) {
-                    log::warn!(
-                        "article_range used with group_lists with more than one list. This is likely an error"
-                    );
-                }
-                return match range_inputs::parse_sequence(range_text) {
-                    Ok(range) => Some(range),
-                    Err(e) => {
-                        log::error!("Invalid article_range input: {e}");
-                        None
-                    }
-                };
-            }
-            None => {
-                return None;
-            }
-        }
     }
 }

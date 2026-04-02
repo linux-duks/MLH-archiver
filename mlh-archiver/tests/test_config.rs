@@ -1,4 +1,4 @@
-use mlh_archiver::config::{AppConfig, RunModes};
+use mlh_archiver::config::{AppConfig, RunMode};
 use mlh_archiver::errors::ConfigError;
 use mlh_archiver::nntp_source::nntp_config::NntpConfig;
 
@@ -191,7 +191,7 @@ fn test_get_group_lists_all_keyword() {
 
     let result = config.get_group_lists(
         available_lists.clone(),
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), available_lists);
@@ -219,7 +219,7 @@ fn test_get_group_lists_specific_lists() {
 
     let result = config.get_group_lists(
         available_lists,
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(result.is_ok());
     let lists = result.unwrap();
@@ -246,7 +246,7 @@ fn test_get_group_lists_filters_invalid() {
 
     let result = config.get_group_lists(
         available_lists,
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(result.is_ok());
     let lists = result.unwrap();
@@ -272,7 +272,7 @@ fn test_get_group_lists_all_invalid() {
 
     let result = config.get_group_lists(
         available_lists,
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(result.is_err());
     assert!(matches!(
@@ -303,7 +303,7 @@ fn test_get_group_lists_deduplicates() {
 
     let result = config.get_group_lists(
         available_lists,
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(result.is_ok());
     let lists = result.unwrap();
@@ -328,7 +328,7 @@ fn test_get_article_range_none() {
         }),
     };
 
-    let result = config.get_article_range();
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_none());
 }
 
@@ -346,9 +346,9 @@ fn test_get_article_range_single_number() {
         }),
     };
 
-    let result = config.get_article_range();
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_some());
-    let range: Vec<usize> = result.unwrap().collect();
+    let range: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&result.unwrap()).unwrap().collect();
     assert_eq!(range, vec![100]);
 }
 
@@ -366,9 +366,9 @@ fn test_get_article_range_multiple_numbers() {
         }),
     };
 
-    let result = config.get_article_range();
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_some());
-    let range: Vec<usize> = result.unwrap().collect();
+    let range: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&result.unwrap()).unwrap().collect();
     assert_eq!(range, vec![1, 5, 10]);
 }
 
@@ -386,9 +386,9 @@ fn test_get_article_range_dash_range() {
         }),
     };
 
-    let result = config.get_article_range();
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_some());
-    let range: Vec<usize> = result.unwrap().collect();
+    let range: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&result.unwrap()).unwrap().collect();
     assert_eq!(range, vec![1, 2, 3, 4, 5]);
 }
 
@@ -406,9 +406,9 @@ fn test_get_article_range_mixed() {
         }),
     };
 
-    let result = config.get_article_range();
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_some());
-    let range: Vec<usize> = result.unwrap().collect();
+    let range: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&result.unwrap()).unwrap().collect();
     assert_eq!(range, vec![1, 3, 4, 5, 10]);
 }
 
@@ -426,8 +426,14 @@ fn test_get_article_range_invalid() {
         }),
     };
 
-    let result = config.get_article_range();
-    assert!(result.is_none());
+    // get_range_selection_text returns the raw string
+    let result = config.get_range_selection_text(RunMode::NNTP);
+    assert!(result.is_some());
+    assert_eq!(result.unwrap(), "invalid");
+    
+    // But parsing it fails
+    let parsed = mlh_archiver::range_inputs::parse_sequence("invalid");
+    assert!(parsed.is_err());
 }
 
 #[test]
@@ -439,7 +445,8 @@ fn test_get_article_range_no_nntp() {
         nntp: None,
     };
 
-    let result = config.get_article_range();
+    // When nntp is None, get_range_selection_text returns None
+    let result = config.get_range_selection_text(RunMode::NNTP);
     assert!(result.is_none());
 }
 
@@ -469,9 +476,9 @@ nntp:
     assert!(config.nntp.is_some());
 
     // Verify article range parsing
-    let range = config.get_article_range();
+    let range = config.get_range_selection_text(RunMode::NNTP);
     assert!(range.is_some());
-    let range_vec: Vec<usize> = range.unwrap().collect();
+    let range_vec: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&range.unwrap()).unwrap().collect();
     assert_eq!(range_vec, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
 
     // Verify group lists
@@ -482,7 +489,7 @@ nntp:
     ];
     let groups = config.get_group_lists(
         available_lists,
-        RunModes::NNTP(config.nntp.clone().unwrap()),
+        RunMode::NNTP,
     );
     assert!(groups.is_ok());
     assert_eq!(groups.unwrap().len(), 2);
