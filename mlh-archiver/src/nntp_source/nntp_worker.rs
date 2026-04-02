@@ -98,7 +98,10 @@ impl NNTPWorker {
 }
 
 impl Worker for NNTPWorker {
-    fn consumme_list(self: Box<Self>, receiver: crossbeam_channel::Receiver<String>) -> crate::Result<()> {
+    fn consumme_list(
+        self: Box<Self>,
+        receiver: crossbeam_channel::Receiver<String>,
+    ) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // Check shutdown flag at start of each iteration
@@ -200,11 +203,7 @@ impl Worker for NNTPWorker {
         }
     }
 
-    fn read_email_by_index(
-        &self,
-        list_name: String,
-        email_index: usize,
-    ) -> crate::Result<()> {
+    fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         log::info!("W{}: Checking group : {list_name}", self.id);
 
         // Verify group exists - borrow dropped immediately after
@@ -490,11 +489,7 @@ impl fmt::Display for NNTPWorkerGroupResult {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self {
             NNTPWorkerGroupResult::Ok(list_name, num_emails) => {
-                write!(
-                    f,
-                    "Collected {num_emails} new e-mails from {:?}",
-                    list_name
-                )
+                write!(f, "Collected {num_emails} new e-mails from {:?}", list_name)
             }
             NNTPWorkerGroupResult::NoNews(list_name) => {
                 write!(f, "No New e-mails from {:?}", list_name)
