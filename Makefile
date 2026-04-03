@@ -12,7 +12,7 @@ run: run-archiver parse anonymize analysis
 # ------------------------------------------------------------------------------
 
 .PHONY: build-archiver
- build-archiver:
+build-archiver:
 	$(MAKE) -C mlh_archiver build
 
 .PHONY: run-archiver
@@ -41,6 +41,9 @@ analysis:
 
 .PHONY: rebuild
 rebuild: rebuild-parser rebuild-anonymizer rebuild-analysis build-archiver
+
+.PHONY: rebuild-archiver
+rebuild-archiver: build-archiver
 
 .PHONY: rebuild-parser
 rebuild-parser:
