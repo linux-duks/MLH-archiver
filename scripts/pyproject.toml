@@ -7,9 +7,9 @@ dependencies = [
     "polars>=1.39",
 ]
 
+# this is still unefective in uv
 [project.scripts]
-peek-files = "peek_files:main"
-generate-coverage-summary = "generate_coverage_summary:main"
+peek-files = "src/peek_files:main"
 
 [dependency-groups]
 dev = [

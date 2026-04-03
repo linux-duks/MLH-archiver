@@ -2,6 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
 	"packages": [
 		"python@3.14",
+		"gnumake@latest",
 		"uv@latest",
 		"git@latest",
 		"rustup@latest"
@@ -58,7 +59,10 @@
 				"make debug-analysis"
 			],
 			"peek": [
-				"uv run scripts/peek_files.py \"$@\""
+				"uv run --project scripts scripts/peek_files.py \"$@\""
+			],
+			"check_nntp": [
+				"cargo run --release --bin check_nntp -- \"$@\""
 			],
 			"doc": [
 				"make doc"

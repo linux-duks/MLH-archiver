@@ -1,0 +1,12 @@
+[package]
+name = "check_nntp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.6", features = ["derive"] }
+env_logger = { version = "0.11", features = ["kv"] }
+inquire = { version = "0.9", default-features = false, features = ["termion"] }
+log = { version = "0.4", features = ["kv", "std"] }
+
+mlh_archiver = { path = "../../mlh_archiver" }
