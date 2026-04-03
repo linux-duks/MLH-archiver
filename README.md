@@ -37,6 +37,25 @@ Each component has its own detailed documentation:
 
 ### Step 1: Configure the Archiver
 
+1. Clone recursively
+
+One of the dependencies is a git submodule. To build correclty
+
+   ```bash
+   git clone --recurse-submodules git@github.com:linux-duks/MLH-archiver.git
+   ```
+
+   Or if you dont have your ssh keys configured in GitHub,
+
+   ```bash
+   git clone https://github.com/linux-duks/MLH-archiver.git
+   cd MLH-archiver
+   git config --global url."https://github.com/".insteadOf "git@github.com:"
+   git submodule update --init --recursive
+   # and to revert the config:
+   git config --global --remove-section url."https://github.com/"
+   ```
+
 1. Copy the example configuration file:
 
    ```bash
@@ -200,6 +219,7 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 | `make debug-analysis` | Run analysis in debug mode |
 
 **Archiver Test Coverage:**
+
 - Unit tests: Range parsing, configuration loading, error types
 - Integration tests: Full download, range selection (`"5"`, `"1-3"`, `"1,5,10"`, `"1,3-5,10"`)
 
@@ -291,12 +311,14 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 **Configuration:**
 
 The archiver uses a nested configuration format:
+
 - Global settings (`nthreads`, `output_dir`, `loop_groups`) at the top level
 - NNTP-specific settings (`hostname`, `port`, `group_lists`, `article_range`) under the `nntp:` block
 
 **Article Range Selection:**
 
 The `article_range` option allows fetching specific articles instead of all new emails:
+
 - Single numbers: `"100"`
 - Ranges: `"1-50"`
 - Comma-separated: `"1,5,10"`
