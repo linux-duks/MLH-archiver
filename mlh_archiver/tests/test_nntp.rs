@@ -63,7 +63,7 @@ fn test_read_from_local_nntp_server() {
         nntp: Some(NntpConfig {
             hostname: "localhost".to_owned(),
             port: host_port,
-            group_lists: Some(vec!["ALL".to_owned()]),
+            group_lists: Some(vec!["*".to_owned()]),
             article_range: None,
         }),
     };
@@ -156,7 +156,7 @@ fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> 
         nntp: Some(NntpConfig {
             hostname: "localhost".to_owned(),
             port: host_port,
-            group_lists: Some(vec!["ALL".to_owned()]),
+            group_lists: Some(vec!["*".to_owned()]),
             article_range,
         }),
     };

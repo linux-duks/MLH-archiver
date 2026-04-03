@@ -169,7 +169,7 @@ nntp:
 |--------|------|-------------|
 | `hostname` | string | **Required.** NNTP server hostname or IP |
 | `port` | integer | NNTP server port (default: 119) |
-| `group_lists` | list | Mailing list names to archive (e.g., `["ALL"]` or specific lists) |
+| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 
 ## Article Range Selection

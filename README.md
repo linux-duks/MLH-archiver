@@ -77,6 +77,21 @@ One of the dependencies is a git submodule. To build correclty
        - dev.example.me.lists.iommu
    ```
 
+   **Glob patterns** are also supported in `group_lists`. Use `*` or `?` to match multiple lists:
+
+   ```yaml
+   nntp:
+     hostname: "nntp.example.com"
+     port: 119
+     group_lists:
+       # Match all lists starting with "dev.example."
+       - "dev.example.*"
+       # Match any list containing ".synth"
+       - "*.synth*"
+       # Mix exact names and patterns
+       - specific.list.name
+   ```
+
 > [!WARNING]
 > **Do not set `nthreads` above 4 if you don't control the server you are fetching from.**
 > Be respectful to public infrastructure. This tool is designed to avoid being seen as an abusive scraping bot.

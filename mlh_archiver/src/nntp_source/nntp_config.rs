@@ -11,7 +11,7 @@ pub struct NntpConfig {
     /// nntp server port
     #[serde(default = "default_port")]
     pub port: u16,
-    /// List of groups to be read. "ALL" will select all lists available.
+    /// List of groups to be read. "*" will select all lists available.
     /// Empty value will prompt a selection in the TUI (and save selected values)
     pub group_lists: Option<Vec<String>>,
     /// (optional). Read a specific range of articles from the first list provided.

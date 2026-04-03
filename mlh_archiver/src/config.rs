@@ -3,6 +3,7 @@ use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
 use glob::glob;
+use globset::{Glob, GlobMatcher};
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
 
@@ -166,6 +167,84 @@ impl AppConfig {
     }
 }
 
+/// Returns true if the pattern contains glob characters (`*` or `?`).
+///
+/// Patterns containing these characters are treated as glob patterns
+/// and matched against available list names.
+pub fn is_glob_pattern(pattern: &str) -> bool {
+    pattern.contains('*') || pattern.contains('?')
+}
+
+/// Compiles a glob pattern string into a matcher.
+///
+/// # Arguments
+///
+/// * `pattern` - Glob pattern string (e.g., `"test.groups.*"`)
+///
+/// # Returns
+///
+/// * `Ok(GlobMatcher)` if the pattern is valid
+/// * `Err(...)` if the pattern cannot be compiled
+fn compile_glob(pattern: &str) -> Result<GlobMatcher, ConfigError> {
+    let glob = Glob::new(pattern).map_err(|e| {
+        ConfigError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("Invalid glob pattern '{}': {}", pattern, e),
+        ))
+    })?;
+    Ok(glob.compile_matcher())
+}
+
+/// Expands a list of patterns (some may be globs) against available lists.
+///
+/// For each pattern:
+/// - If it contains `*` or `?`, it's treated as a glob and matched against all available lists
+/// - Otherwise, it's treated as an exact match
+///
+/// Returns a deduplicated, ordered list of matched list names.
+/// Also returns a list of patterns that matched nothing (for warning purposes).
+pub fn expand_glob_patterns(
+    patterns: &[String],
+    available_lists: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let mut matched: Vec<String> = Vec::new();
+    let mut unmatched_patterns: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+
+    for pattern in patterns {
+        if is_glob_pattern(pattern) {
+            // Treat as glob pattern
+            match compile_glob(pattern) {
+                Ok(matcher) => {
+                    let mut pattern_matched_any = false;
+                    for list_name in available_lists {
+                        if matcher.is_match(list_name) && seen.insert(list_name.clone()) {
+                            matched.push(list_name.clone());
+                            pattern_matched_any = true;
+                        }
+                    }
+                    if !pattern_matched_any {
+                        unmatched_patterns.push(pattern.clone());
+                    }
+                }
+                Err(e) => {
+                    log::warn!("Failed to compile glob pattern '{}': {}", pattern, e);
+                    unmatched_patterns.push(pattern.clone());
+                }
+            }
+        } else {
+            // Exact match
+            if available_lists.contains(pattern) && seen.insert(pattern.clone()) {
+                matched.push(pattern.clone());
+            } else {
+                unmatched_patterns.push(pattern.clone());
+            }
+        }
+    }
+
+    (matched, unmatched_patterns)
+}
+
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
@@ -295,12 +374,21 @@ impl AppConfig {
     ///
     /// This method handles three scenarios:
     /// 1. **No configuration**: Prompts user via TUI to select lists interactively
-    /// 2. **"ALL" configured**: Returns all available lists from the server
-    /// 3. **Specific lists configured**: Validates against available lists and returns
-    ///    only those that exist on the server
+    /// 2. **"*" configured**: Returns all available lists from the server
+    /// 3. **Specific lists or glob patterns configured**: Expands glob patterns
+    ///    against available lists and returns matched lists
     ///
     /// If lists are selected interactively, saves the selection to
     /// `archiver_config_selected_lists.yml` for future runs.
+    ///
+    /// # Glob Pattern Support
+    ///
+    /// Patterns containing `*` or `?` are treated as glob patterns:
+    ///
+    /// - `"*"` — matches all available lists
+    /// - `"test.groups.*"` — matches all lists starting with `test.groups.`
+    /// - `"*.synth*"` — matches lists containing `.synth` anywhere
+    /// - `"list1"` — exact match (no glob characters)
     ///
     /// # Arguments
     ///
@@ -328,15 +416,15 @@ impl AppConfig {
             None => {
                 log::info!("No group_lists defined");
 
-                // list of options provides, with "ALL" as first
-                let mut select_options = vec!["ALL".to_string()];
+                // list of options provides, with "*" as first
+                let mut select_options = vec!["*".to_string()];
                 select_options.extend(list_options.clone());
 
                 answer = MultiSelect::new("No groups selected. Select them now:", select_options)
                     .prompt()
                     .unwrap_or_else(|_| std::process::exit(0));
 
-                if answer[0] == "ALL" {
+                if answer[0] == "*" {
                     log::info!("All lists selected");
                     log::debug!("Lists selected: {:#?}", list_options);
                     answer = list_options;
@@ -364,32 +452,28 @@ impl AppConfig {
             }
             Some(_) => {
                 let mut user_selection = group_lists.expect("is none was validated");
-                // If "ALL" provided, load all lists
-                if user_selection[0] == "ALL" {
+                // If "*" provided, load all lists
+                if user_selection.len() == 1 && user_selection[0] == "*" {
                     log::info!("Configured to fetch all lists");
                     log::debug!("Lists selected: {:#?}", list_options);
                     answer = list_options;
                 } else {
-                    // or check if lists provided are valid
+                    // Expand glob patterns against available lists
                     user_selection.dedup();
-                    let item_set: HashSet<_> = list_options.iter().collect();
-                    user_selection.retain(|item| item_set.contains(item));
-                    let (valid, invalid): (Vec<_>, Vec<_>) = user_selection
-                        .into_iter()
-                        .partition(|item| item_set.contains(item));
+                    let (matched, unmatched) = expand_glob_patterns(&user_selection, &list_options);
 
-                    if valid.is_empty() {
+                    if matched.is_empty() {
                         return Err(ConfigError::AllListsUnavailable);
                     }
-                    if !invalid.is_empty() {
+                    if !unmatched.is_empty() {
                         log::warn!(
                             "Some lists are unavailable: {}",
                             ConfigError::ConfiguredListsNotAvailable {
-                                unavailable_lists: invalid
+                                unavailable_lists: unmatched
                             }
                         );
                     }
-                    answer = valid;
+                    answer = matched;
                 }
             }
         }

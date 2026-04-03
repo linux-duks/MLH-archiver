@@ -170,7 +170,7 @@ fn test_app_config_get_nntp_config_without_nntp() {
 // =============================================================================
 
 #[test]
-fn test_get_group_lists_all_keyword() {
+fn test_get_group_lists_star_glob() {
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -178,7 +178,7 @@ fn test_get_group_lists_all_keyword() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: 119,
-            group_lists: Some(vec!["ALL".to_string()]),
+            group_lists: Some(vec!["*".to_string()]),
             article_range: None,
         }),
     };
@@ -247,6 +247,7 @@ fn test_get_group_lists_filters_invalid() {
 
 #[test]
 fn test_get_group_lists_all_invalid() {
+    // Configuring only invalid (non-existent) list names should return an error
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -507,4 +508,208 @@ fn test_config_validation_workflow() {
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), ConfigError::MissingHostname));
     }
+}
+
+// =============================================================================
+// Glob Pattern Matching Tests
+// =============================================================================
+
+/// Helper to create a config with specific group_lists
+fn config_with_group_lists(lists: Vec<String>) -> AppConfig {
+    AppConfig {
+        nthreads: 1,
+        output_dir: "./output".to_string(),
+        loop_groups: true,
+        nntp: Some(NntpConfig {
+            hostname: "nntp.example.com".to_string(),
+            port: 119,
+            group_lists: Some(lists),
+            article_range: None,
+        }),
+    }
+}
+
+/// Available lists matching the test fixtures (db.yml)
+fn test_fixture_lists() -> Vec<String> {
+    vec![
+        "test.groups.foo".to_string(),
+        "test.groups.bar".to_string(),
+        "test.groups.empty".to_string(),
+        "test.groups.synthetic".to_string(),
+    ]
+}
+
+#[test]
+fn test_get_group_lists_glob_star_suffix() {
+    // test.groups.* should match all 4 test groups
+    let mut config = config_with_group_lists(vec!["test.groups.*".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 4);
+    assert!(lists.contains(&"test.groups.foo".to_string()));
+    assert!(lists.contains(&"test.groups.bar".to_string()));
+    assert!(lists.contains(&"test.groups.empty".to_string()));
+    assert!(lists.contains(&"test.groups.synthetic".to_string()));
+}
+
+#[test]
+fn test_get_group_lists_glob_partial_match() {
+    // *.synth* should match only test.groups.synthetic
+    let mut config = config_with_group_lists(vec!["*.synth*".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 1);
+    assert_eq!(lists[0], "test.groups.synthetic");
+}
+
+#[test]
+fn test_get_group_lists_glob_no_match() {
+    // nonexistent.* should match nothing → error
+    let mut config = config_with_group_lists(vec!["nonexistent.*".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_err());
+    assert!(matches!(
+        result.unwrap_err(),
+        ConfigError::AllListsUnavailable
+    ));
+}
+
+#[test]
+fn test_get_group_lists_glob_mixed_patterns() {
+    // Mix of exact name and glob: test.groups.foo + *.synth*
+    let mut config =
+        config_with_group_lists(vec!["test.groups.foo".to_string(), "*.synth*".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 2);
+    assert!(lists.contains(&"test.groups.foo".to_string()));
+    assert!(lists.contains(&"test.groups.synthetic".to_string()));
+}
+
+#[test]
+fn test_get_group_lists_glob_question_mark() {
+    // test.groups.fo? should match test.groups.foo (single char wildcard)
+    // but NOT test.groups.foobar (if it existed)
+    let mut config = config_with_group_lists(vec!["test.groups.fo?".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 1);
+    assert_eq!(lists[0], "test.groups.foo");
+}
+
+#[test]
+fn test_get_group_lists_glob_deduplication() {
+    // test.groups.* matches all, test.groups.foo is already included → no dupes
+    let mut config = config_with_group_lists(vec![
+        "test.groups.*".to_string(),
+        "test.groups.foo".to_string(),
+    ]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 4); // Should be 4, not 5
+}
+
+#[test]
+fn test_get_group_lists_glob_partial_warning() {
+    // Valid glob + invalid pattern → should succeed but warn about invalid one
+    let mut config = config_with_group_lists(vec![
+        "test.groups.foo".to_string(),
+        "nonexistent.list".to_string(),
+    ]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    assert_eq!(lists.len(), 1);
+    assert_eq!(lists[0], "test.groups.foo");
+}
+
+#[test]
+fn test_get_group_lists_glob_multiple_globs() {
+    // Multiple glob patterns: test.groups.* + *.empty (overlapping, tests dedup)
+    let mut config =
+        config_with_group_lists(vec!["test.groups.*".to_string(), "*.empty".to_string()]);
+    let available = test_fixture_lists();
+
+    let result = config.get_group_lists(available, RunMode::NNTP);
+    assert!(result.is_ok());
+    let lists = result.unwrap();
+    // test.groups.* matches all 4, *.empty matches empty (already included) → 4 total
+    assert_eq!(lists.len(), 4);
+    assert!(lists.contains(&"test.groups.foo".to_string()));
+    assert!(lists.contains(&"test.groups.bar".to_string()));
+    assert!(lists.contains(&"test.groups.empty".to_string()));
+    assert!(lists.contains(&"test.groups.synthetic".to_string()));
+}
+
+#[test]
+fn test_is_glob_pattern_detection() {
+    use mlh_archiver::config::is_glob_pattern;
+
+    // Star should be detected as glob
+    assert!(is_glob_pattern("test.*"));
+    assert!(is_glob_pattern("*"));
+    assert!(is_glob_pattern("test.*.list"));
+
+    // Question mark should be detected as glob
+    assert!(is_glob_pattern("test.?"));
+    assert!(is_glob_pattern("?"));
+
+    // No glob characters should not be detected
+    assert!(!is_glob_pattern("test.groups.foo"));
+    assert!(!is_glob_pattern(""));
+    assert!(!is_glob_pattern("test.groups.foo.bar"));
+}
+
+#[test]
+fn test_expand_glob_patterns_unit() {
+    use mlh_archiver::config::expand_glob_patterns;
+
+    let available = vec![
+        "test.groups.foo".to_string(),
+        "test.groups.bar".to_string(),
+        "test.groups.synthetic".to_string(),
+    ];
+
+    // Star suffix
+    let (matched, unmatched) = expand_glob_patterns(&["test.groups.*".to_string()], &available);
+    assert_eq!(matched.len(), 3);
+    assert!(unmatched.is_empty());
+
+    // Partial glob
+    let (matched, unmatched) = expand_glob_patterns(&["*.synth*".to_string()], &available);
+    assert_eq!(matched.len(), 1);
+    assert_eq!(matched[0], "test.groups.synthetic");
+
+    // Mixed: exact + glob
+    let (matched, unmatched) = expand_glob_patterns(
+        &["test.groups.foo".to_string(), "*.synth*".to_string()],
+        &available,
+    );
+    assert_eq!(matched.len(), 2);
+    assert!(unmatched.is_empty());
+
+    // Unmatched pattern
+    let (matched, unmatched) = expand_glob_patterns(&["nonexistent.*".to_string()], &available);
+    assert!(matched.is_empty());
+    assert_eq!(unmatched.len(), 1);
+    assert_eq!(unmatched[0], "nonexistent.*");
 }
