@@ -19,14 +19,14 @@ This project consists of four main components:
 
 | Component | Description | Language |
 |-----------|-------------|----------|
-| **[MLH Archiver](mlh-archiver/)** | Downloads emails from NNTP servers and stores them as raw RFC 822 files | Rust |
+| **[MLH Archiver](mlh_archiver/)** | Downloads emails from NNTP servers and stores them as raw RFC 822 files | Rust |
 | **[MLH Parser](mlh_parser/)** | Parses raw emails into structured Parquet datasets with Hive partitioning | Python |
 | **[MLH Anonymizer](anonymizer/)** | Pseudo-anonymizes personal identification using SHA1 digests | Python |
 | **[MLH Analysis](analysis/)** | Example analysis scripts for exploring mailing list data | Python |
 
 Each component has its own detailed documentation:
 
-- [Archiver Documentation](mlh-archiver/README.md)
+- [Archiver Documentation](mlh_archiver/README.md)
 - [Parser Documentation](mlh_parser/README.md)
 - [Anonymizer Documentation](anonymizer/README.md)
 - [Analysis Documentation](analysis/README.md)
@@ -171,7 +171,7 @@ This repository includes a [`.devcontainer`](.devcontainer/) configuration for V
 ### Implementing New Sources
 
 To add a new email source (e.g., ListArchiveX, IMAP, local mbox), see the
-[Development Guide](mlh-archiver/README.md#development-implementing-a-new-source)
+[Development Guide](mlh_archiver/README.md#development-implementing-a-new-source)
 in the Archiver documentation.
 
 ### Makefile Commands
@@ -198,6 +198,10 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 | `make debug-parser` | Run parser in debug mode |
 | `make debug-anonymizer` | Run anonymizer in debug mode |
 | `make debug-analysis` | Run analysis in debug mode |
+
+**Archiver Test Coverage:**
+- Unit tests: Range parsing, configuration loading, error types
+- Integration tests: Full download, range selection (`"5"`, `"1-3"`, `"1,5,10"`, `"1,3-5,10"`)
 
 **Prerequisites:**
 
@@ -268,7 +272,7 @@ devbox run peek-files ./output/
 
 ### Archiver Implementation
 
-The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`](mlh-archiver/rust-nntp/)).
+The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`](mlh_archiver/rust-nntp/)).
 
 **Design Principles:**
 
@@ -290,7 +294,15 @@ The archiver uses a nested configuration format:
 - Global settings (`nthreads`, `output_dir`, `loop_groups`) at the top level
 - NNTP-specific settings (`hostname`, `port`, `group_lists`, `article_range`) under the `nntp:` block
 
-See the [architecture diagram](./docs/fluxogram.svg) for a visual representation.
+**Article Range Selection:**
+
+The `article_range` option allows fetching specific articles instead of all new emails:
+- Single numbers: `"100"`
+- Ranges: `"1-50"`
+- Comma-separated: `"1,5,10"`
+- Mixed: `"1,3-5,10-15"`
+
+See the [Archiver Documentation](mlh_archiver/README.md) for details.
 
 ### Parser Implementation
 
@@ -312,13 +324,13 @@ The anonymizer applies SHA1 hashing to personally identifiable information (PII)
 
 ## Additional Resources
 
-- [Archiver Detailed Documentation](mlh-archiver/README.md) - Includes development guide for new sources
+- [Archiver Detailed Documentation](mlh_archiver/README.md) - Includes development guide for new sources
 - [Parser Detailed Documentation](mlh_parser/README.md)
 - [Anonymizer Detailed Documentation](anonymizer/README.md)
 - [Analysis Detailed Documentation](analysis/README.md)
 - [Example Configuration](example_archiver_config.yaml)
 - [Architecture Diagram](./docs/fluxogram.svg)
-- [Rust API Documentation](mlh-archiver/target/doc/mlh_archiver/) - Generated via `cargo doc`
+- [Rust API Documentation](mlh_archiver/target/doc/mlh_archiver/) - Generated via `cargo doc`
 
 ## License
 

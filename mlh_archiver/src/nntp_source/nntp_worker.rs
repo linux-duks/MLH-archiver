@@ -1,6 +1,7 @@
 use crate::errors;
 use crate::file_utils;
-use crate::nntp_source::{self, nntp_config::NntpConfig};
+use crate::nntp_source::nntp_config::NntpConfig;
+use crate::nntp_source::nntp_utils::connect_to_nntp_server;
 use crate::worker::Worker;
 use nntp::NNTPStream;
 use std::cell::{Cell, RefCell};
@@ -82,8 +83,7 @@ impl NNTPWorker {
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
     ) -> NNTPWorker {
-        let address = nntp_config.server_address();
-        let nntp_stream = nntp_source::connect_to_nntp(address)
+        let nntp_stream = connect_to_nntp_server(&nntp_config.hostname, nntp_config.port)
             .expect("NNTPWorker should have connected to the server");
 
         NNTPWorker {

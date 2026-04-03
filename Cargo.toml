@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["mlh-archiver"]
+members = ["mlh_archiver"]
 
 [profile.release]
 lto = "fat"

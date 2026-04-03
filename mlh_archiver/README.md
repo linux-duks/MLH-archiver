@@ -101,14 +101,14 @@ podman run --rm -it -u $(id -u):$(id -g) \
   cargo build --release
 ```
 
-The compiled binary will be at `target/release/mlh-archiver`.
+The compiled binary will be at `target/release/mlh_archiver`.
 
 ## Usage
 
 ### Command Line Arguments
 
 ```bash
-Usage: mlh-archiver [OPTIONS]
+Usage: mlh_archiver [OPTIONS]
 
 Options:
   -c, --config-file <CONFIG_FILE>      Path to config file [default: archiver_config*]
@@ -268,7 +268,7 @@ Documentation is output to `target/doc/mlh_archiver/` and automatically opened i
 ## Project Structure
 
 ```
-mlh-archiver/
+mlh_archiver/
 ├── src/
 │   ├── main.rs              # Application entry point, Ctrl+C handler
 │   ├── lib.rs               # Core start() function, worker initialization

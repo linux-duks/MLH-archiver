@@ -13,16 +13,16 @@ run: run-archiver parse anonymize analysis
 
 .PHONY: build-archiver
  build-archiver:
-	$(MAKE) -C mlh-archiver build
+	$(MAKE) -C mlh_archiver build
 
 .PHONY: run-archiver
 run-archiver:
-	$(MAKE) -C mlh-archiver run
+	$(MAKE) -C mlh_archiver run
 
 
 .PHONY: debug-archiver
 debug-archiver:
-	$(MAKE) -C mlh-archiver debug
+	$(MAKE) -C mlh_archiver debug
 
 .PHONY: parse
 parse:
@@ -75,7 +75,7 @@ test: test-archiver test-parser test-anonymizer
 
 .PHONY: test-archiver
 test-archiver:
-	$(MAKE) -C mlh-archiver test
+	$(MAKE) -C mlh_archiver test
 
 .PHONY: test-parser
 test-parser:
@@ -96,5 +96,5 @@ clean:
 	$(MAKE) -C anonymizer clean
 	$(MAKE) -C analysis clean
 	$(MAKE) -C scripts clean
-	$(MAKE) -C mlh-archiver clean
+	$(MAKE) -C mlh_archiver clean
 

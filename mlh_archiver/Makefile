@@ -2,15 +2,15 @@
 include ../containers.mk
 
 # Define the name of your binary
-BINARY_NAME = mlh-archiver
+BINARY_NAME = mlh_archiver
 
 # CURDIR is the directory where make is running (after any -C changes)
-# When called with "make -C mlh-archiver", CURDIR = mlh-archiver/
-# TARGET_PATH is the absolute path to the binary
-TARGET_PATH := $(CURDIR)/target/release/$(BINARY_NAME)
-
 # Repository root is parent of current directory
 REPO_ROOT := $(abspath $(CURDIR)/..)
+# When called with "make -C mlh_archiver", CURDIR = mlh_archiver/
+# TARGET_PATH is the absolute path to the binary
+TARGET_PATH := $(REPO_ROOT)/target/release/$(BINARY_NAME)
+
 
 # Define the Docker image to use for building
 RUST_DOCKER_IMAGE = docker.io/rust:1.94-slim
@@ -21,7 +21,7 @@ RUST_DOCKER_IMAGE = docker.io/rust:1.94-slim
 # ------------------------------------------------------------------------------
 .PHONY: build
 build:
-	@if command -v cargo >/dev/null 2>&1; then \
+	@if command -v cargox >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
 		cargo build --release; \
 	else \
