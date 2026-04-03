@@ -29,7 +29,7 @@ build:
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
 			--network=host \
-			-v ./:/usr/src/app:z \
+			-v ../:/usr/src/app:z \
 			-w /usr/src/app \
 			$(RUST_DOCKER_IMAGE) \
 			cargo build --release; \
