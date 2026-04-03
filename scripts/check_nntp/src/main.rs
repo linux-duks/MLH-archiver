@@ -27,11 +27,11 @@ use std::env;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// NNTP server hostname
+    /// NNTP server hostname (accepts "hostname" or "hostname:port")
     #[arg(short = 'H', long = "hostname")]
     hostname: Option<String>,
 
-    /// NNTP server port
+    /// NNTP server port (overridden if port is specified in --hostname)
     #[arg(short = 'p', long = "port", default_value = "119")]
     port: u16,
 
@@ -54,13 +54,16 @@ fn main() -> mlh_archiver::Result<()> {
     println!("📬 check_nntp - NNTP Mailing List Browser");
     println!("=========================================\n");
 
-    // Get hostname from CLI, env, or prompt
-    let hostname = args
-        .hostname
-        .or_else(|| env::var("NNTP_HOSTNAME").ok())
-        .unwrap_or_else(|| prompt_for_hostname());
-
-    let port = args.port;
+    // Get hostname and port from CLI, env, or prompt
+    // Priority: CLI args > env vars > interactive prompt
+    // The prompt accepts "hostname:port" format
+    let (hostname, port) = if let Some(host_input) = args.hostname {
+        parse_host_port(&host_input, args.port)
+    } else if let Ok(env_input) = env::var("NNTP_HOSTNAME") {
+        parse_host_port(&env_input, args.port)
+    } else {
+        prompt_for_server(args.port)
+    };
 
     log::info!("Connecting to NNTP server: {}:{}", hostname, port);
 
@@ -234,13 +237,37 @@ fn main() -> mlh_archiver::Result<()> {
     Ok(())
 }
 
-/// Prompt user for NNTP hostname
-fn prompt_for_hostname() -> String {
-    Text::new("Enter NNTP server hostname:")
+/// Parses a "hostname:port" string, returning (hostname, port).
+/// If no port is specified in the input, returns the default port.
+///
+/// # Supported formats
+///
+/// - `"hostname"` → `(hostname, default_port)`
+/// - `"hostname:port"` → `(hostname, port)`
+/// - `"192.168.1.1:5119"` → `("192.168.1.1", 5119)`
+fn parse_host_port(input: &str, default_port: u16) -> (String, u16) {
+    let input = input.trim();
+
+    // Try to split on the last colon to handle hostname:port
+    if let Some((host, port_str)) = input.rsplit_once(':') {
+        if let Ok(port) = port_str.parse::<u16>() {
+            return (host.to_string(), port);
+        }
+    }
+
+    // No valid port found, return input as hostname with default port
+    (input.to_string(), default_port)
+}
+
+/// Prompt user for NNTP server address (hostname or hostname:port)
+fn prompt_for_server(default_port: u16) -> (String, u16) {
+    let input = Text::new("Enter NNTP server (hostname or hostname:port):")
         .with_default("nntp.example.com")
-        .with_help_message("e.g., nntp.example.com")
+        .with_help_message("e.g., nntp.example.com or nntp.example.com:5119")
         .prompt()
-        .unwrap_or_else(|_| std::process::exit(0))
+        .unwrap_or_else(|_| std::process::exit(0));
+
+    parse_host_port(&input, default_port)
 }
 
 /// Truncate string to max length with ellipsis
@@ -299,4 +326,58 @@ nntp:
 "#,
         hostname, port, lists_yaml
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_hostname_only() {
+        let (host, port) = parse_host_port("nntp.example.com", 119);
+        assert_eq!(host, "nntp.example.com");
+        assert_eq!(port, 119);
+    }
+
+    #[test]
+    fn test_parse_hostname_with_port() {
+        let (host, port) = parse_host_port("nntp.example.com:5119", 119);
+        assert_eq!(host, "nntp.example.com");
+        assert_eq!(port, 5119);
+    }
+
+    #[test]
+    fn test_parse_ip_with_port() {
+        let (host, port) = parse_host_port("192.168.1.1:5119", 119);
+        assert_eq!(host, "192.168.1.1");
+        assert_eq!(port, 5119);
+    }
+
+    #[test]
+    fn test_parse_ip_without_port() {
+        let (host, port) = parse_host_port("192.168.1.1", 119);
+        assert_eq!(host, "192.168.1.1");
+        assert_eq!(port, 119);
+    }
+
+    #[test]
+    fn test_parse_trims_whitespace() {
+        let (host, port) = parse_host_port("  nntp.example.com:5119  ", 119);
+        assert_eq!(host, "nntp.example.com");
+        assert_eq!(port, 5119);
+    }
+
+    #[test]
+    fn test_parse_invalid_port_falls_back() {
+        let (host, port) = parse_host_port("nntp.example.com:abc", 119);
+        assert_eq!(host, "nntp.example.com:abc");
+        assert_eq!(port, 119);
+    }
+
+    #[test]
+    fn test_parse_port_out_of_range_falls_back() {
+        let (host, port) = parse_host_port("nntp.example.com:70000", 119);
+        assert_eq!(host, "nntp.example.com:70000");
+        assert_eq!(port, 119);
+    }
 }
