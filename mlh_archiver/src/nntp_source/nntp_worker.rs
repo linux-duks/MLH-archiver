@@ -71,8 +71,7 @@ impl NNTPWorker {
     /// let config = NntpConfig {
     ///     hostname: "nntp.example.com".to_string(),
     ///     port: 119,
-    ///     group_lists: None,
-    ///     article_range: None,
+    ///     ..NntpConfig::default()
     /// };
     /// let shutdown_flag = Arc::new(AtomicBool::new(false));
     /// let worker = NNTPWorker::new(0, config, "./output".to_string(), shutdown_flag);
@@ -83,8 +82,13 @@ impl NNTPWorker {
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
     ) -> NNTPWorker {
-        let nntp_stream = connect_to_nntp_server(&nntp_config.hostname, nntp_config.port)
-            .expect("NNTPWorker should have connected to the server");
+        let nntp_stream = connect_to_nntp_server(
+            &nntp_config.hostname,
+            nntp_config.port,
+            nntp_config.username.clone(),
+            nntp_config.password.clone(),
+        )
+        .expect("NNTPWorker should have connected to the server");
 
         NNTPWorker {
             id,

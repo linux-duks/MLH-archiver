@@ -83,6 +83,42 @@ nntp:
     assert_eq!(config.nntp.as_ref().unwrap().port, 119);
 }
 
+#[test]
+fn test_app_config_deserialize_with_auth() {
+    let yaml = r#"
+nntp:
+  hostname: "nntp.example.com"
+  port: 563
+  username: "myuser"
+  password: "mypass"
+  group_lists: ["list1"]
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    assert!(config.nntp.is_some());
+    let nntp = config.nntp.unwrap();
+    assert_eq!(nntp.hostname, "nntp.example.com");
+    assert_eq!(nntp.port, 563);
+    assert_eq!(nntp.username, Some("myuser".to_string()));
+    assert_eq!(nntp.password, Some("mypass".to_string()));
+    assert_eq!(
+        nntp.group_lists,
+        Some(vec!["list1".to_string()])
+    );
+}
+
+#[test]
+fn test_app_config_deserialize_auth_defaults_to_none() {
+    let yaml = r#"
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    assert!(config.nntp.is_some());
+    let nntp = config.nntp.unwrap();
+    assert!(nntp.username.is_none());
+    assert!(nntp.password.is_none());
+}
+
 // =============================================================================
 // NntpConfig Tests
 // =============================================================================
@@ -91,9 +127,7 @@ nntp:
 fn test_nntp_config_validate_success() {
     let config = NntpConfig {
         hostname: "nntp.example.com".to_string(),
-        port: 119,
-        group_lists: None,
-        article_range: None,
+        ..NntpConfig::default()
     };
     assert!(config.validate().is_ok());
 }
@@ -102,9 +136,7 @@ fn test_nntp_config_validate_success() {
 fn test_nntp_config_validate_missing_hostname() {
     let config = NntpConfig {
         hostname: String::new(),
-        port: 119,
-        group_lists: None,
-        article_range: None,
+        ..NntpConfig::default()
     };
     let result = config.validate();
     assert!(result.is_err());
@@ -115,9 +147,7 @@ fn test_nntp_config_validate_missing_hostname() {
 fn test_nntp_config_server_address_default_port() {
     let config = NntpConfig {
         hostname: "nntp.example.com".to_string(),
-        port: 119,
-        group_lists: None,
-        article_range: None,
+        ..NntpConfig::default()
     };
     assert_eq!(config.server_address(), "nntp.example.com:119");
 }
@@ -127,10 +157,28 @@ fn test_nntp_config_server_address_custom_port() {
     let config = NntpConfig {
         hostname: "nntp.example.com".to_string(),
         port: 563,
-        group_lists: None,
-        article_range: None,
+        ..NntpConfig::default()
     };
     assert_eq!(config.server_address(), "nntp.example.com:563");
+}
+
+#[test]
+fn test_nntp_config_with_credentials() {
+    let config = NntpConfig {
+        hostname: "nntp.example.com".to_string(),
+        username: Some("user".to_string()),
+        password: Some("pass".to_string()),
+        ..NntpConfig::default()
+    };
+    assert_eq!(config.username, Some("user".to_string()));
+    assert_eq!(config.password, Some("pass".to_string()));
+}
+
+#[test]
+fn test_nntp_config_defaults_no_credentials() {
+    let config = NntpConfig::default();
+    assert!(config.username.is_none());
+    assert!(config.password.is_none());
 }
 
 // =============================================================================
@@ -145,9 +193,7 @@ fn test_app_config_get_nntp_config_with_nntp() {
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            port: 119,
-            group_lists: None,
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
     let nntp = config.nntp.unwrap();
@@ -179,7 +225,7 @@ fn test_get_group_lists_star_glob() {
             hostname: "nntp.example.com".to_string(),
             port: 119,
             group_lists: Some(vec!["*".to_string()]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -204,7 +250,7 @@ fn test_get_group_lists_specific_lists() {
             hostname: "nntp.example.com".to_string(),
             port: 119,
             group_lists: Some(vec!["list1".to_string(), "list2".to_string()]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -232,7 +278,7 @@ fn test_get_group_lists_filters_invalid() {
             hostname: "nntp.example.com".to_string(),
             port: 119,
             group_lists: Some(vec!["valid_list".to_string(), "invalid_list".to_string()]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -256,7 +302,7 @@ fn test_get_group_lists_all_invalid() {
             hostname: "nntp.example.com".to_string(),
             port: 119,
             group_lists: Some(vec!["invalid1".to_string(), "invalid2".to_string()]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -284,7 +330,7 @@ fn test_get_group_lists_deduplicates() {
                 "list1".to_string(),
                 "list2".to_string(),
             ]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -309,8 +355,7 @@ fn test_get_article_range_none() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: 119,
-            group_lists: None,
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -329,6 +374,7 @@ fn test_get_article_range_single_number() {
             port: 119,
             group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("100".to_string()),
+            ..NntpConfig::default()
         }),
     };
 
@@ -351,6 +397,7 @@ fn test_get_article_range_multiple_numbers() {
             port: 119,
             group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1,5,10".to_string()),
+            ..NntpConfig::default()
         }),
     };
 
@@ -373,6 +420,7 @@ fn test_get_article_range_dash_range() {
             port: 119,
             group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1-5".to_string()),
+            ..NntpConfig::default()
         }),
     };
 
@@ -395,6 +443,7 @@ fn test_get_article_range_mixed() {
             port: 119,
             group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1,3-5,10".to_string()),
+            ..NntpConfig::default()
         }),
     };
 
@@ -417,6 +466,7 @@ fn test_get_article_range_invalid() {
             port: 119,
             group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("invalid".to_string()),
+            ..NntpConfig::default()
         }),
     };
 
@@ -497,9 +547,7 @@ fn test_config_validation_workflow() {
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: String::new(),
-            port: 119,
-            group_lists: None,
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -524,7 +572,7 @@ fn config_with_group_lists(lists: Vec<String>) -> AppConfig {
             hostname: "nntp.example.com".to_string(),
             port: 119,
             group_lists: Some(lists),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     }
 }
@@ -695,7 +743,7 @@ fn test_expand_glob_patterns_unit() {
     assert!(unmatched.is_empty());
 
     // Partial glob
-    let (matched, unmatched) = expand_glob_patterns(&["*.synth*".to_string()], &available);
+    let (matched, _) = expand_glob_patterns(&["*.synth*".to_string()], &available);
     assert_eq!(matched.len(), 1);
     assert_eq!(matched[0], "test.groups.synthetic");
 

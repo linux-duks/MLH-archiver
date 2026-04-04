@@ -6,7 +6,12 @@ pub fn retrieve_lists(nntp_config: NntpConfig) -> crate::errors::Result<Vec<Stri
     nntp_config.validate()?;
 
     // Connect to NNTP server to get list of groups
-    let groups = retrieve_lists_with_connection(&nntp_config.hostname, nntp_config.port)?;
+    let groups = retrieve_lists_with_connection(
+        &nntp_config.hostname,
+        nntp_config.port,
+        nntp_config.username,
+        nntp_config.password,
+    )?;
 
     Ok(groups)
 }

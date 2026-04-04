@@ -129,7 +129,7 @@ impl<'a> Scheduler<'a> {
                     log::warn!(
                         "Multiple lists selected in Range Mode. This is likely a mistake..."
                     );
-                    thread::sleep(Duration::from_secs(2));
+                    thread::sleep(Duration::from_millis(100));
                 }
                 let worker_handles = self.spawn_worker_to_read_email_by_index(workers, receiver);
 

@@ -64,7 +64,7 @@ fn test_read_from_local_nntp_server() {
             hostname: "localhost".to_owned(),
             port: host_port,
             group_lists: Some(vec!["*".to_owned()]),
-            article_range: None,
+            ..NntpConfig::default()
         }),
     };
 
@@ -158,6 +158,7 @@ fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> 
             port: host_port,
             group_lists: Some(vec!["*".to_owned()]),
             article_range,
+            ..NntpConfig::default()
         }),
     };
 
@@ -315,4 +316,75 @@ fn test_read_mixed_range() {
     assert_eq!(found_files, expected_files);
 
     check_and_delete_folder("./test_output_mixed".to_string()).unwrap();
+}
+
+// =============================================================================
+// Authentication Integration Tests
+// =============================================================================
+
+#[test]
+fn test_read_from_local_nntp_server_with_auth() {
+    println!("loading Containerfile for auth test");
+    let image = GenericBuildableImage::new("test_nttp_server", "latest")
+        .with_dockerfile("./tests/Containerfile")
+        .with_file("./tests/test_nttp_server", "./test_nttp_server")
+        .build_image()
+        .unwrap();
+
+    let container = image
+        .with_wait_for(WaitFor::message_on_stdout("Serving on port :8119"))
+        .start()
+        .unwrap();
+
+    let host_port = container.get_host_port_ipv4(8119).unwrap();
+    let output_dir = "./test_output_auth".to_owned();
+
+    println!("server container running on host port: {}", host_port);
+    let mut app_config = AppConfig {
+        output_dir: output_dir.clone(),
+        nthreads: 1,
+        loop_groups: false,
+        nntp: Some(NntpConfig {
+            hostname: "localhost".to_owned(),
+            port: host_port,
+            group_lists: Some(vec!["*.foo".to_owned()]),
+            username: Some("foo".to_owned()),
+            password: Some("bar".to_owned()),
+            ..NntpConfig::default()
+        }),
+    };
+
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    println!("Starting worker with auth");
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+    let child_handle = thread::spawn(move || {
+        println!("Child thread started (auth test).");
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+        println!("Child thread stopped (auth test).");
+    });
+
+    println!("waiting server thread to finish (auth test)");
+    child_handle.join().expect("Child thread panicked");
+    container.stop().unwrap();
+    container.rm().unwrap();
+
+    println!("Loading list of files (auth test)");
+    let mut found_files = file_list_dir(output_dir.clone());
+    // Verify that files were created (same expected files as the non-auth test)
+    let mut expected_files = vec![
+        "./test_output_auth",
+        "./test_output_auth/test.groups.foo",
+        "./test_output_auth/test.groups.foo/__last_article_number",
+        "./test_output_auth/test.groups.foo/1.eml",
+        "./test_output_auth/test.groups.foo/2.eml",
+    ];
+    found_files.sort();
+    expected_files.sort();
+    assert_eq!(found_files, expected_files);
+
+    check_and_delete_folder(output_dir).unwrap();
 }

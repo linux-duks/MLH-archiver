@@ -17,6 +17,11 @@ pub struct NntpConfig {
     /// (optional). Read a specific range of articles from the first list provided.
     /// Comma separated values, or dash separated ranges, like low-high
     pub article_range: Option<String>,
+
+    /// (optional). NNTP server username for authentication
+    pub username: Option<String>,
+    /// (optional). NNTP server password for authentication
+    pub password: Option<String>,
 }
 
 impl Default for NntpConfig {
@@ -26,6 +31,8 @@ impl Default for NntpConfig {
             port: default_port(),
             group_lists: None,
             article_range: None,
+            username: None,
+            password: None,
         }
     }
 }

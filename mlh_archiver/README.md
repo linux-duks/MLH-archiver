@@ -171,6 +171,8 @@ nntp:
 | `port` | integer | NNTP server port (default: 119) |
 | `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
+| `username` | string | Optional. NNTP server username for authentication |
+| `password` | string | Optional. NNTP server password for authentication |
 
 ## Article Range Selection
 
@@ -194,6 +196,21 @@ nntp:
 - Retry failed articles: `article_range: "42,108,256"`
 - Fetch specific date ranges (if you know article numbers)
 - Test runs with small samples: `article_range: "1-10"`
+
+## Authentication
+
+If your NNTP server requires authentication, provide credentials in the config:
+
+```yaml
+nntp:
+  hostname: "nntp.example.com"
+  port: 563
+  username: "myuser"
+  password: "mypass"
+  group_lists: ["*"]
+```
+
+Both `username` and `password` are optional. If omitted, the archiver connects without authentication.
 
 ## Output Format
 

@@ -13,6 +13,6 @@ mock_db(nntp, join(__dirname, './fixtures/db.yml'));
 console.log(`Starting server on ${addr}`)
 return nntp.listen(addr).then(() => {
       running_address = nntp.server.address();
-			console.log(`Serving on port :${running_address.port}`)
+	    console.log(`Serving on port :${running_address.port}`)
     });
 console.log(`Stopped server`)

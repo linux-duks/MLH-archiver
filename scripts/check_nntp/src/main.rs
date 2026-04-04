@@ -18,9 +18,7 @@
 
 use clap::Parser;
 use inquire::{Confirm, MultiSelect, Select, Text};
-use mlh_archiver::nntp_source::{
-    connect_to_nntp_server, retrieve_lists_with_connection,
-};
+use mlh_archiver::nntp_source::{connect_to_nntp_server, retrieve_lists_with_connection};
 use std::env;
 
 /// Interactive NNTP mailing list browser and configuration generator
@@ -34,6 +32,14 @@ struct Args {
     /// NNTP server port (overridden if port is specified in --hostname)
     #[arg(short = 'p', long = "port", default_value = "119")]
     port: u16,
+
+    /// Optional: username
+    #[arg(short = 'u', long = "username")]
+    username: Option<String>,
+
+    /// Optional: password
+    #[arg(short = 'P', long = "password")]
+    password: Option<String>,
 
     /// Export configuration to YAML file after browsing
     #[arg(long = "export-config")]
@@ -68,8 +74,16 @@ fn main() -> mlh_archiver::Result<()> {
     log::info!("Connecting to NNTP server: {}:{}", hostname, port);
 
     // Connect and retrieve list of groups
-    println!("🔍 Fetching available mailing lists from {}:{}...", hostname, port);
-    let groups = match retrieve_lists_with_connection(&hostname, port) {
+    println!(
+        "🔍 Fetching available mailing lists from {}:{}...",
+        hostname, port
+    );
+    let groups = match retrieve_lists_with_connection(
+        &hostname,
+        port,
+        args.username.clone(),
+        args.password.clone(),
+    ) {
         Ok(g) => g,
         Err(e) => {
             eprintln!("❌ Failed to connect to NNTP server: {}", e);
@@ -103,10 +117,7 @@ fn main() -> mlh_archiver::Result<()> {
         println!("📋 Previewing all {} lists...\n", groups.len());
         groups.clone()
     } else {
-        println!(
-            "📋 Previewing {} selected lists...\n",
-            selected.len()
-        );
+        println!("📋 Previewing {} selected lists...\n", selected.len());
         selected.clone()
     };
 
@@ -116,6 +127,8 @@ fn main() -> mlh_archiver::Result<()> {
         &hostname,
         port,
         &groups_to_preview,
+        args.username.clone(),
+        args.password.clone(),
     ) {
         Ok(info) => info,
         Err(e) => {
@@ -134,11 +147,7 @@ fn main() -> mlh_archiver::Result<()> {
         let article_count = group_info.high - group_info.low + 1;
         let range_str = format!("[{}..{}]", group_info.low, group_info.high);
         println!("{:<50} {:>12}", truncate_str(group_name, 49), range_str);
-        println!(
-            "{:<50} {:>12}",
-            "",
-            format!("({} total)", article_count)
-        );
+        println!("{:<50} {:>12}", "", format!("({} total)", article_count));
     }
 
     println!("─────────────────────────────────────────────────────────────\n");
@@ -176,7 +185,8 @@ fn main() -> mlh_archiver::Result<()> {
         if test_fetch {
             let list_options: Vec<&String> = groups_info.iter().map(|(name, _)| name).collect();
             if let Ok(selection) = Select::new("Select a list to test:", list_options).prompt() {
-                if let Some((_, group_info)) = groups_info.iter().find(|(name, _)| name == selection)
+                if let Some((_, group_info)) =
+                    groups_info.iter().find(|(name, _)| name == selection)
                 {
                     println!(
                         "\n📥 Testing fetch from {} (articles {} to {})",
@@ -187,12 +197,14 @@ fn main() -> mlh_archiver::Result<()> {
                         let test_article_num = group_info.high;
                         println!("Attempting to fetch article #{}...", test_article_num);
 
-                        match connect_to_nntp_server(&hostname, port) {
+                        match connect_to_nntp_server(&hostname, port, args.username, args.password)
+                        {
                             Ok(mut stream) => {
                                 // Select the group first
                                 match stream.group(selection) {
                                     Ok(_) => {
-                                        match stream.raw_article_by_number(test_article_num as isize)
+                                        match stream
+                                            .raw_article_by_number(test_article_num)
                                         {
                                             Ok(raw_lines) => {
                                                 println!(
