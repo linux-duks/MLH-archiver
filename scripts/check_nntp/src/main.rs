@@ -6,32 +6,113 @@
 //! # Usage
 //!
 //! ```bash
-//! # Interactive mode (prompts for hostname)
+//! # Interactive mode (prompts for server URL)
 //! cargo run --package check_nntp
 //!
 //! # With CLI arguments
-//! cargo run --package check_nntp -- -H nntp.example.com -p 119
+//! cargo run --package check_nntp -- -s nntp://nntp.example.com
+//!
+//! # With TLS
+//! cargo run --package check_nntp -- -s nntps://nntp.example.com
+//!
+//! # Custom port
+//! cargo run --package check_nntp -- -s nntp://nntp.example.com:8119
 //!
 //! # Export configuration after browsing
-//! cargo run --package check_nntp -- -H nntp.example.com --export-config
+//! cargo run --package check_nntp -- -s nntp://nntp.example.com --export-config
 //! ```
 
 use clap::Parser;
 use inquire::{Confirm, MultiSelect, Select, Text};
-use mlh_archiver::nntp_source::{connect_to_nntp_server, retrieve_lists_with_connection};
+use mlh_archiver::nntp_source::{
+    connect_to_nntp_server, nntp_utils::server_address, retrieve_lists_with_connection,
+};
 use std::env;
+
+/// Parsed server configuration from a URL.
+struct ServerConfig {
+    hostname: String,
+    port: Option<u16>,
+    use_tls: bool,
+}
+
+/// Parses an NNTP server URL into a [`ServerConfig`].
+///
+/// # Supported formats
+///
+/// - `nntp://hostname` → port 119, plaintext
+/// - `nntps://hostname` → port 563, TLS
+/// - `nntp://hostname:port` → custom port, plaintext
+/// - `nntps://hostname:port` → custom port, TLS
+///
+/// # Examples
+///
+/// ```
+/// let cfg = parse_server_url("nntp://example.com").unwrap();
+/// assert_eq!(cfg.hostname, "nntp://example.com");
+/// assert_eq!(cfg.port, None);
+/// assert!(!cfg.use_tls);
+///
+/// let cfg = parse_server_url("nntps://example.com").unwrap();
+/// assert_eq!(cfg.hostname, "nntps://example.com");
+/// assert_eq!(cfg.port, None);
+/// assert!(cfg.use_tls);
+///
+/// let cfg = parse_server_url("nntp://example.com:8119").unwrap();
+/// assert_eq!(cfg.hostname, "nntp://example.com");
+/// assert_eq!(cfg.port, Some(8119));
+/// ```
+fn parse_server_url(input: &str) -> Result<ServerConfig, String> {
+    if input.is_empty() {
+        return Err("empty hostname".to_string());
+    }
+
+    let input = input.trim();
+
+    // Determine scheme and strip it
+    let use_tls = if input.starts_with("nntps://") {
+        true
+    } else if input.starts_with("nntp://") {
+        false
+    } else {
+        // No recognized scheme — default to plaintext NNTP
+        false
+    };
+
+    // Only treat the last ':' as a port separator if what follows is purely numeric.
+    // This avoids splitting on colons in malformed URLs like "s://hostname".
+    let (hostname, port) = if let Some((host, port_str)) = input.rsplit_once(':') {
+        if port_str.chars().all(|c| c.is_ascii_digit()) && !port_str.is_empty() {
+            let port = port_str
+                .parse::<u16>()
+                .map_err(|_| format!("invalid port '{}'", port_str))?;
+            (host.to_string(), Some(port))
+        } else {
+            // Not a valid port — treat entire rest as hostname
+            (input.to_string(), None)
+        }
+    } else {
+        (input.to_string(), None)
+    };
+
+    if hostname.is_empty() {
+        return Err("empty hostname".to_string());
+    }
+
+    Ok(ServerConfig {
+        hostname,
+        port,
+        use_tls,
+    })
+}
 
 /// Interactive NNTP mailing list browser and configuration generator
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    /// NNTP server hostname (accepts "hostname" or "hostname:port")
-    #[arg(short = 'H', long = "hostname")]
-    hostname: Option<String>,
-
-    /// NNTP server port (overridden if port is specified in --hostname)
-    #[arg(short = 'p', long = "port", default_value = "119")]
-    port: u16,
+    /// NNTP server URL (e.g., nntp://hostname, nntps://hostname, nntp://hostname:port)
+    #[arg(short = 's', long = "server")]
+    server: Option<String>,
 
     /// Optional: username
     #[arg(short = 'u', long = "username")]
@@ -60,27 +141,37 @@ fn main() -> mlh_archiver::Result<()> {
     println!("📬 check_nntp - NNTP Mailing List Browser");
     println!("=========================================\n");
 
-    // Get hostname and port from CLI, env, or prompt
-    // Priority: CLI args > env vars > interactive prompt
-    // The prompt accepts "hostname:port" format
-    let (hostname, port) = if let Some(host_input) = args.hostname {
-        parse_host_port(&host_input, args.port)
-    } else if let Ok(env_input) = env::var("NNTP_HOSTNAME") {
-        parse_host_port(&env_input, args.port)
+    // Get server config from CLI, env, or prompt
+    let server = if let Some(url) = args.server {
+        match parse_server_url(&url) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("❌ Invalid server URL: {}", e);
+                eprintln!("Expected format: nntp://hostname[:port] or nntps://hostname[:port]");
+                std::process::exit(1);
+            }
+        }
+    } else if let Ok(env_input) = env::var("NNTP_SERVER") {
+        match parse_server_url(&env_input) {
+            Ok(cfg) => cfg,
+            Err(e) => {
+                eprintln!("❌ Invalid NNTP_SERVER env var: {}", e);
+                std::process::exit(1);
+            }
+        }
     } else {
-        prompt_for_server(args.port)
+        prompt_for_server()
     };
 
-    log::info!("Connecting to NNTP server: {}:{}", hostname, port);
+    let server_url = server_address(&server.hostname, server.port);
+    let tls_label = if server.use_tls { " (TLS)" } else { "" };
+    log::info!("Connecting to NNTP server: {}{}", server_url, tls_label);
 
     // Connect and retrieve list of groups
-    println!(
-        "🔍 Fetching available mailing lists from {}:{}...",
-        hostname, port
-    );
+    println!("🔍 Fetching available mailing lists from {}{}...", server_url, tls_label);
     let groups = match retrieve_lists_with_connection(
-        &hostname,
-        port,
+        &server.hostname,
+        server.port,
         args.username.clone(),
         args.password.clone(),
     ) {
@@ -99,7 +190,7 @@ fn main() -> mlh_archiver::Result<()> {
     }
 
     // Interactive selection
-    let mut select_options = vec!["ALL".to_string()];
+    let mut select_options = vec!["*".to_string()];
     select_options.extend(groups.clone());
 
     let selected = MultiSelect::new("Select mailing lists to preview:", select_options)
@@ -112,8 +203,8 @@ fn main() -> mlh_archiver::Result<()> {
         return Ok(());
     }
 
-    // Handle "ALL" selection
-    let groups_to_preview = if selected.iter().any(|s| s == "ALL") {
+    // Handle "*" selection
+    let groups_to_preview = if selected.iter().any(|s| s == "*") {
         println!("📋 Previewing all {} lists...\n", groups.len());
         groups.clone()
     } else {
@@ -124,8 +215,8 @@ fn main() -> mlh_archiver::Result<()> {
     // Get group info (article ranges)
     println!("📊 Fetching article ranges...");
     let groups_info = match mlh_archiver::nntp_source::retrieve_groups_info(
-        &hostname,
-        port,
+        &server.hostname,
+        server.port,
         &groups_to_preview,
         args.username.clone(),
         args.password.clone(),
@@ -154,7 +245,7 @@ fn main() -> mlh_archiver::Result<()> {
 
     // Show sample configuration
     if args.export_config {
-        let config_yaml = generate_config_yaml(&hostname, port, &groups_to_preview);
+        let config_yaml = generate_config_yaml(&server, &groups_to_preview);
         println!("📝 Generated configuration:");
         println!("{}", config_yaml);
 
@@ -165,7 +256,7 @@ fn main() -> mlh_archiver::Result<()> {
             .unwrap_or(false);
 
         if save {
-            let config_content = generate_full_config_yaml(&hostname, port, &groups_to_preview);
+            let config_content = generate_full_config_yaml(&server, &groups_to_preview);
             match std::fs::write("archiver_config.yaml", config_content) {
                 Ok(_) => println!("✅ Configuration saved to archiver_config.yaml"),
                 Err(e) => eprintln!("❌ Failed to save configuration: {}", e),
@@ -197,36 +288,36 @@ fn main() -> mlh_archiver::Result<()> {
                         let test_article_num = group_info.high;
                         println!("Attempting to fetch article #{}...", test_article_num);
 
-                        match connect_to_nntp_server(&hostname, port, args.username, args.password)
-                        {
+                        match connect_to_nntp_server(
+                            &server.hostname,
+                            server.port,
+                            args.username.clone(),
+                            args.password.clone(),
+                        ) {
                             Ok(mut stream) => {
                                 // Select the group first
                                 match stream.group(selection) {
-                                    Ok(_) => {
-                                        match stream
-                                            .raw_article_by_number(test_article_num)
-                                        {
-                                            Ok(raw_lines) => {
-                                                println!(
-                                                    "✅ Successfully fetched article #{}",
-                                                    test_article_num
-                                                );
-                                                println!("Size: {} lines", raw_lines.len());
-                                                println!(
-                                                    "First few lines: {}",
-                                                    raw_lines
-                                                        .iter()
-                                                        .take(3)
-                                                        .map(|s| s.as_str())
-                                                        .collect::<Vec<_>>()
-                                                        .join(", ")
-                                                );
-                                            }
-                                            Err(e) => {
-                                                println!("⚠️  Article unavailable: {}", e);
-                                            }
+                                    Ok(_) => match stream.raw_article_by_number(test_article_num) {
+                                        Ok(raw_lines) => {
+                                            println!(
+                                                "✅ Successfully fetched article #{}",
+                                                test_article_num
+                                            );
+                                            println!("Size: {} lines", raw_lines.len());
+                                            println!(
+                                                "First few lines: {}",
+                                                raw_lines
+                                                    .iter()
+                                                    .take(3)
+                                                    .map(|s| s.as_str())
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ")
+                                            );
                                         }
-                                    }
+                                        Err(e) => {
+                                            println!("⚠️  Article unavailable: {}", e);
+                                        }
+                                    },
                                     Err(e) => {
                                         println!("⚠️  Failed to select group: {}", e);
                                     }
@@ -249,37 +340,23 @@ fn main() -> mlh_archiver::Result<()> {
     Ok(())
 }
 
-/// Parses a "hostname:port" string, returning (hostname, port).
-/// If no port is specified in the input, returns the default port.
-///
-/// # Supported formats
-///
-/// - `"hostname"` → `(hostname, default_port)`
-/// - `"hostname:port"` → `(hostname, port)`
-/// - `"192.168.1.1:5119"` → `("192.168.1.1", 5119)`
-fn parse_host_port(input: &str, default_port: u16) -> (String, u16) {
-    let input = input.trim();
-
-    // Try to split on the last colon to handle hostname:port
-    if let Some((host, port_str)) = input.rsplit_once(':') {
-        if let Ok(port) = port_str.parse::<u16>() {
-            return (host.to_string(), port);
-        }
-    }
-
-    // No valid port found, return input as hostname with default port
-    (input.to_string(), default_port)
-}
-
-/// Prompt user for NNTP server address (hostname or hostname:port)
-fn prompt_for_server(default_port: u16) -> (String, u16) {
-    let input = Text::new("Enter NNTP server (hostname or hostname:port):")
-        .with_default("nntp.example.com")
-        .with_help_message("e.g., nntp.example.com or nntp.example.com:5119")
+/// Prompt user for NNTP server URL
+fn prompt_for_server() -> ServerConfig {
+    let input = Text::new("Enter NNTP server URL:")
+        .with_default("nntp://nntp.example.com")
+        .with_help_message(
+            "nntp://hostname (port 119), nntps://hostname (port 563), or nntp://hostname:port",
+        )
         .prompt()
         .unwrap_or_else(|_| std::process::exit(0));
 
-    parse_host_port(&input, default_port)
+    match parse_server_url(&input) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            eprintln!("❌ Invalid URL: {}", e);
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Truncate string to max length with ellipsis
@@ -291,13 +368,19 @@ fn truncate_str(s: &str, max_len: usize) -> String {
     }
 }
 
+
 /// Generate minimal config snippet for selected lists
-fn generate_config_yaml(hostname: &str, port: u16, groups: &[String]) -> String {
+fn generate_config_yaml(server: &ServerConfig, groups: &[String]) -> String {
     let lists_yaml = groups
         .iter()
         .map(|g| format!("      - {}", g))
         .collect::<Vec<_>>()
         .join("\n");
+
+    let port_line = match server.port {
+        Some(p) => format!("  port: {}", p),
+        None => "  # port: 119  # optional, defaults to 119".to_string(),
+    };
 
     format!(
         r#"# NNTP Configuration Snippet
@@ -305,21 +388,26 @@ fn generate_config_yaml(hostname: &str, port: u16, groups: &[String]) -> String 
 
 nntp:
   hostname: "{}"
-  port: {}
+{}
   group_lists:
 {}
 "#,
-        hostname, port, lists_yaml
+        server.hostname, port_line, lists_yaml
     )
 }
 
 /// Generate full configuration file content
-fn generate_full_config_yaml(hostname: &str, port: u16, groups: &[String]) -> String {
+fn generate_full_config_yaml(server: &ServerConfig, groups: &[String]) -> String {
     let lists_yaml = groups
         .iter()
         .map(|g| format!("      - {}", g))
         .collect::<Vec<_>>()
         .join("\n");
+
+    let port_line = match server.port {
+        Some(p) => format!("  port: {}", p),
+        None => "  # port: 119  # optional, defaults to 119".to_string(),
+    };
 
     format!(
         r#"# MLH Archiver Configuration
@@ -331,12 +419,12 @@ loop_groups: true
 
 nntp:
   hostname: "{}"
-  port: {}
+{}
   group_lists:
 {}
   # article_range: "1-100"  # Optional: fetch specific range
 "#,
-        hostname, port, lists_yaml
+        server.hostname, port_line, lists_yaml
     )
 }
 
@@ -345,51 +433,111 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_hostname_only() {
-        let (host, port) = parse_host_port("nntp.example.com", 119);
-        assert_eq!(host, "nntp.example.com");
-        assert_eq!(port, 119);
+    fn test_parse_nntp_default_port() {
+        let cfg = parse_server_url("nntp://example.com").unwrap();
+        assert_eq!(cfg.hostname, "nntp://example.com");
+        assert_eq!(cfg.port, None);
+        assert!(!cfg.use_tls);
     }
 
     #[test]
-    fn test_parse_hostname_with_port() {
-        let (host, port) = parse_host_port("nntp.example.com:5119", 119);
-        assert_eq!(host, "nntp.example.com");
-        assert_eq!(port, 5119);
+    fn test_parse_nntps_default_port() {
+        let cfg = parse_server_url("nntps://example.com").unwrap();
+        assert_eq!(cfg.hostname, "nntps://example.com");
+        assert_eq!(cfg.port, None);
+        assert!(cfg.use_tls);
+    }
+
+    #[test]
+    fn test_parse_nntp_with_port() {
+        let cfg = parse_server_url("nntp://example.com:8119").unwrap();
+        assert_eq!(cfg.hostname, "nntp://example.com");
+        assert_eq!(cfg.port, Some(8119));
+        assert!(!cfg.use_tls);
+    }
+
+    #[test]
+    fn test_parse_nntps_with_port() {
+        let cfg = parse_server_url("nntps://example.com:563").unwrap();
+        assert_eq!(cfg.hostname, "nntps://example.com");
+        assert_eq!(cfg.port, Some(563));
+        assert!(cfg.use_tls);
     }
 
     #[test]
     fn test_parse_ip_with_port() {
-        let (host, port) = parse_host_port("192.168.1.1:5119", 119);
-        assert_eq!(host, "192.168.1.1");
-        assert_eq!(port, 5119);
+        let cfg = parse_server_url("nntp://192.168.1.1:5119").unwrap();
+        assert_eq!(cfg.hostname, "nntp://192.168.1.1");
+        assert_eq!(cfg.port, Some(5119));
+        assert!(!cfg.use_tls);
     }
 
     #[test]
     fn test_parse_ip_without_port() {
-        let (host, port) = parse_host_port("192.168.1.1", 119);
-        assert_eq!(host, "192.168.1.1");
-        assert_eq!(port, 119);
+        let cfg = parse_server_url("nntp://192.168.1.1").unwrap();
+        assert_eq!(cfg.hostname, "nntp://192.168.1.1");
+        assert_eq!(cfg.port, None);
+        assert!(!cfg.use_tls);
+    }
+
+    #[test]
+    fn test_parse_no_scheme_defaults_to_nntp() {
+        let cfg = parse_server_url("example.com").unwrap();
+        assert_eq!(cfg.hostname, "example.com");
+        assert_eq!(cfg.port, None);
+        assert!(!cfg.use_tls);
+    }
+
+    #[test]
+    fn test_parse_no_scheme_with_port() {
+        let cfg = parse_server_url("example.com:8119").unwrap();
+        assert_eq!(cfg.hostname, "example.com");
+        assert_eq!(cfg.port, Some(8119));
+        assert!(!cfg.use_tls);
     }
 
     #[test]
     fn test_parse_trims_whitespace() {
-        let (host, port) = parse_host_port("  nntp.example.com:5119  ", 119);
-        assert_eq!(host, "nntp.example.com");
-        assert_eq!(port, 5119);
+        let cfg = parse_server_url("  nntp://example.com:5119  ").unwrap();
+        assert_eq!(cfg.hostname, "nntp://example.com");
+        assert_eq!(cfg.port, Some(5119));
     }
 
     #[test]
-    fn test_parse_invalid_port_falls_back() {
-        let (host, port) = parse_host_port("nntp.example.com:abc", 119);
-        assert_eq!(host, "nntp.example.com:abc");
-        assert_eq!(port, 119);
+    fn test_parse_invalid_port_falls_back_to_hostname() {
+        // Non-numeric "port" is treated as part of the hostname
+        let cfg = parse_server_url("nntp://example.com:abc").unwrap();
+        assert_eq!(cfg.hostname, "nntp://example.com:abc");
+        assert_eq!(cfg.port, None);
     }
 
     #[test]
-    fn test_parse_port_out_of_range_falls_back() {
-        let (host, port) = parse_host_port("nntp.example.com:70000", 119);
-        assert_eq!(host, "nntp.example.com:70000");
-        assert_eq!(port, 119);
+    fn test_parse_port_out_of_range() {
+        let result = parse_server_url("nntp://example.com:70000");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_empty_hostname() {
+        // "nntp://" has no hostname after scheme — rsplit_once gives ("nntp", "")
+        // "" is not numeric, so falls back to full input as hostname
+        let cfg = parse_server_url("nntp://").unwrap();
+        assert_eq!(cfg.hostname, "nntp://");
+        assert_eq!(cfg.port, None);
+    }
+
+    #[test]
+    fn test_parse_empty_input() {
+        let result = parse_server_url("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_typo_scheme_keeps_full_input() {
+        // "nntps://" (double t) is not recognized — full input becomes hostname
+        let cfg = parse_server_url("nntps://news.example.com").unwrap();
+        assert_eq!(cfg.hostname, "nntps://news.example.com");
+        assert_eq!(cfg.port, None);
+        assert!(!cfg.use_tls);
     }
 }

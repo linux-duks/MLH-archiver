@@ -1,4 +1,5 @@
 use crate::errors::ConfigError;
+use crate::nntp_source::nntp_utils::server_address;
 
 /// NNTP-specific configuration
 ///
@@ -7,10 +8,11 @@ use crate::errors::ConfigError;
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct NntpConfig {
     /// nntp server domain/ip
+    /// can be prefixed by [`nntp://`] or [`nntps://`]
+    /// to indicate PLAINTEXT or TLS
     pub hostname: String,
     /// nntp server port
-    #[serde(default = "default_port")]
-    pub port: u16,
+    pub port: Option<u16>,
     /// List of groups to be read. "*" will select all lists available.
     /// Empty value will prompt a selection in the TUI (and save selected values)
     pub group_lists: Option<Vec<String>>,
@@ -28,17 +30,13 @@ impl Default for NntpConfig {
     fn default() -> Self {
         Self {
             hostname: String::new(),
-            port: default_port(),
+            port: None,
             group_lists: None,
             article_range: None,
             username: None,
             password: None,
         }
     }
-}
-
-fn default_port() -> u16 {
-    119
 }
 
 impl NntpConfig {
@@ -52,6 +50,6 @@ impl NntpConfig {
 
     /// Get the NNTP server address as a string
     pub fn server_address(&self) -> String {
-        format!("{}:{}", self.hostname, self.port)
+        server_address(&self.hostname, self.port)
     }
 }

@@ -32,18 +32,20 @@ use nntp::NNTPStream;
 /// ```rust,no_run
 /// use mlh_archiver::nntp_source::nntp_utils::connect_to_nntp_server;
 ///
-/// let mut stream = connect_to_nntp_server("nntp.example.com", 119, None, None)?;
+/// let mut stream = connect_to_nntp_server("nntp://nntp.example.com", None, None, None)?;
 /// // Use stream for NNTP commands
 /// stream.quit()?;
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
 pub fn connect_to_nntp_server(
     hostname: &str,
-    port: u16,
+    port: Option<u16>,
     username: Option<String>,
     password: Option<String>,
 ) -> errors::Result<NNTPStream> {
-    let address = format!("{}:{}", hostname, port);
+    // if port is None, let the library assume 119 (PLAINTEXT) or 563 (TLS)
+    let address = server_address(hostname, port);
+
     let mut nntp_stream = NNTPStream::connect(address)?;
 
     let _ = nntp_stream.set_mode_reader();
@@ -60,11 +62,23 @@ pub fn connect_to_nntp_server(
     }
 
     if let (Some(username), Some(password)) = (username.clone(), password.clone())
-        && let Err(e) = nntp_stream.user_password_authenticate(&username, &password) {
-            log::warn!("NNTP authentication failed: {}", e);
-        }
+        && let Err(e) = nntp_stream.user_password_authenticate(&username, &password)
+    {
+        log::warn!("NNTP authentication failed: {}", e);
+    }
 
     Ok(nntp_stream)
+}
+
+/// format the server with of without the port
+///
+/// if port is None, let the library assume 119 (PLAINTEXT) or 563 (TLS)
+pub fn server_address(hostname: &str, port: Option<u16>) -> String {
+    // TODO: validate if the hostname already has a port in-text ?
+    match port {
+        Some(port_value) => format!("{}:{}", hostname, port_value),
+        None => hostname.to_string(),
+    }
 }
 
 /// Retrieves information about a newsgroup including article range.
@@ -88,7 +102,7 @@ pub fn connect_to_nntp_server(
 /// ```rust,no_run
 /// use mlh_archiver::nntp_source::nntp_utils::{connect_to_nntp_server, get_group_info};
 ///
-/// let mut stream = connect_to_nntp_server("nntp.example.com", 119, None, None)?;
+/// let mut stream = connect_to_nntp_server("nntps://nntp.example.com", None, None, None)?;
 /// let group = get_group_info(&mut stream, "dev.example.lists")?;
 /// println!("Articles: {} to {}", group.low, group.high);
 /// # Ok::<(), mlh_archiver::errors::Error>(())
@@ -122,13 +136,13 @@ pub fn get_group_info(
 /// ```rust,no_run
 /// use mlh_archiver::nntp_source::nntp_utils::retrieve_lists_with_connection;
 ///
-/// let groups = retrieve_lists_with_connection("nntp.example.com", 119, None, None)?;
+/// let groups = retrieve_lists_with_connection("nntp://nntp.example.com", Some(119), None, None)?;
 /// println!("Available groups: {}", groups.len());
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
 pub fn retrieve_lists_with_connection(
     hostname: &str,
-    port: u16,
+    port: Option<u16>,
     username: Option<String>,
     password: Option<String>,
 ) -> errors::Result<Vec<String>> {
@@ -160,7 +174,7 @@ pub fn retrieve_lists_with_connection(
 /// * `Err(...)` - Connection or protocol error
 pub fn retrieve_groups_info(
     hostname: &str,
-    port: u16,
+    port: Option<u16>,
     groups: &[String],
     username: Option<String>,
     password: Option<String>,

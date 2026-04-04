@@ -69,8 +69,8 @@ impl NNTPWorker {
     /// use mlh_archiver::nntp_source::{nntp_config::NntpConfig, nntp_worker::NNTPWorker};
     ///
     /// let config = NntpConfig {
-    ///     hostname: "nntp.example.com".to_string(),
-    ///     port: 119,
+    ///     hostname: "nntp://nntp.example.com".to_string(),
+    ///     port: Some(119),
     ///     ..NntpConfig::default()
     /// };
     /// let shutdown_flag = Arc::new(AtomicBool::new(false));

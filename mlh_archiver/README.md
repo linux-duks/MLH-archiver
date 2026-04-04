@@ -299,6 +299,7 @@ mlh_archiver/
 │       ├── mod.rs           # Module exports, NNTP connection helper
 │       ├── nntp_config.rs   # NNTP configuration struct
 │       ├── nntp_lister.rs   # List retrieval from NNTP server
+│       ├── nntp_utils.rs    # shared utils handling the NNTP lib
 │       └── nntp_worker.rs   # NNTPWorker implementation
 ├── rust-nntp/               # Forked NNTP library
 ├── tests/

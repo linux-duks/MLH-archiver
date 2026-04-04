@@ -38,9 +38,9 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
 #[test]
 fn test_read_from_local_nntp_server() {
     println!("loading Containerfile");
-    let image = GenericBuildableImage::new("test_nttp_server", "latest")
+    let image = GenericBuildableImage::new("test_nntp_server", "latest")
         .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nttp_server", "./test_nttp_server")
+        .with_file("./tests/test_nntp_server", "./test_nntp_server")
         .build_image()
         .unwrap();
 
@@ -62,7 +62,7 @@ fn test_read_from_local_nntp_server() {
         loop_groups: false,
         nntp: Some(NntpConfig {
             hostname: "localhost".to_owned(),
-            port: host_port,
+            port: Some(host_port),
             group_lists: Some(vec!["*".to_owned()]),
             ..NntpConfig::default()
         }),
@@ -133,9 +133,9 @@ fn test_read_from_local_nntp_server() {
 /// Returns the list of files created
 fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> Vec<String> {
     println!("loading Containerfile for {}", test_name);
-    let image = GenericBuildableImage::new("test_nttp_server", "latest")
+    let image = GenericBuildableImage::new("test_nntp_server", "latest")
         .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nttp_server", "./test_nttp_server")
+        .with_file("./tests/test_nntp_server", "./test_nntp_server")
         .build_image()
         .unwrap();
 
@@ -155,7 +155,7 @@ fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> 
         loop_groups: false,
         nntp: Some(NntpConfig {
             hostname: "localhost".to_owned(),
-            port: host_port,
+            port: Some(host_port),
             group_lists: Some(vec!["*".to_owned()]),
             article_range,
             ..NntpConfig::default()
@@ -325,9 +325,9 @@ fn test_read_mixed_range() {
 #[test]
 fn test_read_from_local_nntp_server_with_auth() {
     println!("loading Containerfile for auth test");
-    let image = GenericBuildableImage::new("test_nttp_server", "latest")
+    let image = GenericBuildableImage::new("test_nntp_server", "latest")
         .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nttp_server", "./test_nttp_server")
+        .with_file("./tests/test_nntp_server", "./test_nntp_server")
         .build_image()
         .unwrap();
 
@@ -346,7 +346,7 @@ fn test_read_from_local_nntp_server_with_auth() {
         loop_groups: false,
         nntp: Some(NntpConfig {
             hostname: "localhost".to_owned(),
-            port: host_port,
+            port: Some(host_port),
             group_lists: Some(vec!["*.foo".to_owned()]),
             username: Some("foo".to_owned()),
             password: Some("bar".to_owned()),

@@ -9,7 +9,6 @@ output_dir: "./output"
 loop_groups: true
 
 nntp:
-  hostname: "localhost"
-  port: 119
+  hostname: "nntp://localhost"
   group_lists: ["ALL"]
   # article_range: "1-100"  # Optional: fetch specific range from first list

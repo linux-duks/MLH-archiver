@@ -1,5 +1,5 @@
 services:
-  nttp_server:
+  nntp_server:
     build:
       context: .
       dockerfile: Containerfile

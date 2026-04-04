@@ -70,8 +70,7 @@ One of the dependencies is a git submodule. To build correclty
    loop_groups: true
 
    nntp:
-     hostname: "nntp.example.com"
-     port: 119
+     hostname: "nntps://nntp.example.com"
      group_lists:
        - dev.example.me.lists.gfs2
        - dev.example.me.lists.iommu
