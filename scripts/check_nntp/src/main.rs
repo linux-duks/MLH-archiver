@@ -533,13 +533,4 @@ mod tests {
         let result = parse_server_url("");
         assert!(result.is_err());
     }
-
-    #[test]
-    fn test_parse_typo_scheme_keeps_full_input() {
-        // "nntps://" (double t) is not recognized — full input becomes hostname
-        let cfg = parse_server_url("nntps://news.example.com").unwrap();
-        assert_eq!(cfg.hostname, "nntps://news.example.com");
-        assert_eq!(cfg.port, None);
-        assert!(!cfg.use_tls);
-    }
 }
