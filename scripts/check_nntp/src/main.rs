@@ -168,7 +168,10 @@ fn main() -> mlh_archiver::Result<()> {
     log::info!("Connecting to NNTP server: {}{}", server_url, tls_label);
 
     // Connect and retrieve list of groups
-    println!("🔍 Fetching available mailing lists from {}{}...", server_url, tls_label);
+    println!(
+        "🔍 Fetching available mailing lists from {}{}...",
+        server_url, tls_label
+    );
     let groups = match retrieve_lists_with_connection(
         &server.hostname,
         server.port,
@@ -367,7 +370,6 @@ fn truncate_str(s: &str, max_len: usize) -> String {
         format!("{}...", &s[..max_len - 3])
     }
 }
-
 
 /// Generate minimal config snippet for selected lists
 fn generate_config_yaml(server: &ServerConfig, groups: &[String]) -> String {

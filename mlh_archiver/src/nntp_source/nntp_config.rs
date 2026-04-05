@@ -5,7 +5,7 @@ use crate::nntp_source::nntp_utils::server_address;
 ///
 /// All NNTP-related settings are nested under this struct.
 /// Future source methods (IMAP, local, mbox) will have their own structs.
-#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
+#[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct NntpConfig {
     /// nntp server domain/ip
     /// can be prefixed by [`nntp://`] or [`nntps://`]
@@ -24,19 +24,6 @@ pub struct NntpConfig {
     pub username: Option<String>,
     /// (optional). NNTP server password for authentication
     pub password: Option<String>,
-}
-
-impl Default for NntpConfig {
-    fn default() -> Self {
-        Self {
-            hostname: String::new(),
-            port: None,
-            group_lists: None,
-            article_range: None,
-            username: None,
-            password: None,
-        }
-    }
 }
 
 impl NntpConfig {
