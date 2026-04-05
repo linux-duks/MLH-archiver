@@ -94,17 +94,17 @@ fn test_read_from_local_nntp_server() {
     let mut expected_files = vec![
         "./test_output",
         "./test_output/test.groups.foo",
-        "./test_output/test.groups.foo/__last_article_number",
+        "./test_output/test.groups.foo/__progress.yaml",
         "./test_output/test.groups.foo/1.eml",
         "./test_output/test.groups.foo/2.eml",
         "./test_output/test.groups.bar",
-        "./test_output/test.groups.bar/__last_article_number",
+        "./test_output/test.groups.bar/__progress.yaml",
         "./test_output/test.groups.bar/1.eml",
         "./test_output/test.groups.bar/2.eml",
         "./test_output/test.groups.empty",
-        "./test_output/test.groups.empty/__last_article_number",
+        "./test_output/test.groups.empty/__progress.yaml",
         "./test_output/test.groups.synthetic",
-        "./test_output/test.groups.synthetic/__last_article_number",
+        "./test_output/test.groups.synthetic/__progress.yaml",
         "./test_output/test.groups.synthetic/1.eml",
         "./test_output/test.groups.synthetic/2.eml",
         "./test_output/test.groups.synthetic/3.eml",
@@ -190,17 +190,17 @@ fn test_read_single_article_by_range() {
     let found_files = run_archiver_with_range(Some("5".to_string()), "single".to_string());
 
     // Only article 5 should be fetched (only exists in synthetic list)
-    // Other lists will have __errors files because article 5 doesn't exist
+    // Other lists will have __errors.csv files because article 5 doesn't exist
     let mut expected_files = vec![
         "./test_output_single",
         "./test_output_single/test.groups.foo",
-        "./test_output_single/test.groups.foo/__errors",
+        "./test_output_single/test.groups.foo/__errors.csv",
         "./test_output_single/test.groups.bar",
-        "./test_output_single/test.groups.bar/__errors",
+        "./test_output_single/test.groups.bar/__errors.csv",
         "./test_output_single/test.groups.empty",
-        "./test_output_single/test.groups.empty/__errors",
+        "./test_output_single/test.groups.empty/__errors.csv",
         "./test_output_single/test.groups.synthetic",
-        "./test_output_single/test.groups.synthetic/__last_article_number",
+        "./test_output_single/test.groups.synthetic/__progress.yaml",
         "./test_output_single/test.groups.synthetic/5.eml",
     ];
 
@@ -218,23 +218,23 @@ fn test_read_article_range() {
 
     // Articles 1, 2, 3 should be fetched from each list
     // foo has 2 articles (1, 2), bar has 2 (1, 2), synthetic has 3 (1, 2, 3)
-    // Lists with unavailable articles will also have __errors files
+    // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = vec![
         "./test_output_range",
         "./test_output_range/test.groups.foo",
-        "./test_output_range/test.groups.foo/__last_article_number",
+        "./test_output_range/test.groups.foo/__progress.yaml",
         "./test_output_range/test.groups.foo/1.eml",
         "./test_output_range/test.groups.foo/2.eml",
-        "./test_output_range/test.groups.foo/__errors",
+        "./test_output_range/test.groups.foo/__errors.csv",
         "./test_output_range/test.groups.bar",
-        "./test_output_range/test.groups.bar/__last_article_number",
+        "./test_output_range/test.groups.bar/__progress.yaml",
         "./test_output_range/test.groups.bar/1.eml",
         "./test_output_range/test.groups.bar/2.eml",
-        "./test_output_range/test.groups.bar/__errors",
+        "./test_output_range/test.groups.bar/__errors.csv",
         "./test_output_range/test.groups.empty",
-        "./test_output_range/test.groups.empty/__errors",
+        "./test_output_range/test.groups.empty/__errors.csv",
         "./test_output_range/test.groups.synthetic",
-        "./test_output_range/test.groups.synthetic/__last_article_number",
+        "./test_output_range/test.groups.synthetic/__progress.yaml",
         "./test_output_range/test.groups.synthetic/1.eml",
         "./test_output_range/test.groups.synthetic/2.eml",
         "./test_output_range/test.groups.synthetic/3.eml",
@@ -254,21 +254,21 @@ fn test_read_multiple_articles_by_range() {
 
     // Articles 1, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 3 (1, 5, 10)
-    // Lists with unavailable articles will also have __errors files
+    // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = vec![
         "./test_output_multiple",
         "./test_output_multiple/test.groups.foo",
-        "./test_output_multiple/test.groups.foo/__last_article_number",
+        "./test_output_multiple/test.groups.foo/__progress.yaml",
         "./test_output_multiple/test.groups.foo/1.eml",
-        "./test_output_multiple/test.groups.foo/__errors",
+        "./test_output_multiple/test.groups.foo/__errors.csv",
         "./test_output_multiple/test.groups.bar",
-        "./test_output_multiple/test.groups.bar/__last_article_number",
+        "./test_output_multiple/test.groups.bar/__progress.yaml",
         "./test_output_multiple/test.groups.bar/1.eml",
-        "./test_output_multiple/test.groups.bar/__errors",
+        "./test_output_multiple/test.groups.bar/__errors.csv",
         "./test_output_multiple/test.groups.empty",
-        "./test_output_multiple/test.groups.empty/__errors",
+        "./test_output_multiple/test.groups.empty/__errors.csv",
         "./test_output_multiple/test.groups.synthetic",
-        "./test_output_multiple/test.groups.synthetic/__last_article_number",
+        "./test_output_multiple/test.groups.synthetic/__progress.yaml",
         "./test_output_multiple/test.groups.synthetic/1.eml",
         "./test_output_multiple/test.groups.synthetic/5.eml",
         "./test_output_multiple/test.groups.synthetic/10.eml",
@@ -288,21 +288,21 @@ fn test_read_mixed_range() {
 
     // Articles 1, 3, 4, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 5 (1, 3, 4, 5, 10)
-    // Lists with unavailable articles will also have __errors files
+    // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = vec![
         "./test_output_mixed",
         "./test_output_mixed/test.groups.foo",
-        "./test_output_mixed/test.groups.foo/__last_article_number",
+        "./test_output_mixed/test.groups.foo/__progress.yaml",
         "./test_output_mixed/test.groups.foo/1.eml",
-        "./test_output_mixed/test.groups.foo/__errors",
+        "./test_output_mixed/test.groups.foo/__errors.csv",
         "./test_output_mixed/test.groups.bar",
-        "./test_output_mixed/test.groups.bar/__last_article_number",
+        "./test_output_mixed/test.groups.bar/__progress.yaml",
         "./test_output_mixed/test.groups.bar/1.eml",
-        "./test_output_mixed/test.groups.bar/__errors",
+        "./test_output_mixed/test.groups.bar/__errors.csv",
         "./test_output_mixed/test.groups.empty",
-        "./test_output_mixed/test.groups.empty/__errors",
+        "./test_output_mixed/test.groups.empty/__errors.csv",
         "./test_output_mixed/test.groups.synthetic",
-        "./test_output_mixed/test.groups.synthetic/__last_article_number",
+        "./test_output_mixed/test.groups.synthetic/__progress.yaml",
         "./test_output_mixed/test.groups.synthetic/1.eml",
         "./test_output_mixed/test.groups.synthetic/3.eml",
         "./test_output_mixed/test.groups.synthetic/4.eml",
@@ -378,7 +378,7 @@ fn test_read_from_local_nntp_server_with_auth() {
     let mut expected_files = vec![
         "./test_output_auth",
         "./test_output_auth/test.groups.foo",
-        "./test_output_auth/test.groups.foo/__last_article_number",
+        "./test_output_auth/test.groups.foo/__progress.yaml",
         "./test_output_auth/test.groups.foo/1.eml",
         "./test_output_auth/test.groups.foo/2.eml",
     ];

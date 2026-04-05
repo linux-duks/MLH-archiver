@@ -2,10 +2,12 @@ import nox
 import os
 import tomllib
 
+
 def get_project_name():
     with open("pyproject.toml", "rb") as f:
         data = tomllib.load(f)
     return data["project"]["name"]
+
 
 @nox.session(reuse_venv=True, venv_backend="uv")
 def tests(session):
@@ -20,7 +22,6 @@ def tests(session):
         "--cov-report=term-missing",
     ]
 
-
     # Also write to a file for PR comments
     cov_args.append("--cov-report=markdown:coverage-summary.md")
 
@@ -29,7 +30,7 @@ def tests(session):
     cov_args.append("--cov-report=markdown:coverage-summary.md")
 
     session.run("pytest", "-vv", *cov_args)
-    
+
     # Add header to the markdown file for PR comments
     if os.path.exists("coverage-summary.md"):
         with open("coverage-summary.md", "r") as f:

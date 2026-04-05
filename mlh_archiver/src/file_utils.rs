@@ -54,7 +54,7 @@ pub fn write_lines_file(file_path: &Path, lines: Vec<String>) -> io::Result<()> 
 
 /// Appends a single line to a file, creating parent directories as needed.
 ///
-/// This function is used to log unavailable articles to `__errors` files.
+/// This function is used to log unavailable articles to `__errors.csv` files.
 ///
 /// # Arguments
 ///
@@ -91,7 +91,7 @@ pub fn append_line_to_file(file_path: &Path, line: &str) -> io::Result<()> {
 /// Attempts to read a number from a file.
 ///
 /// Reads the file content and parses the first valid number found.
-/// Used to read `__last_article_number` files for progress tracking.
+/// Used to read `__progress.yaml` files for progress tracking.
 ///
 /// # Arguments
 ///
@@ -121,7 +121,7 @@ pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
 
 /// Writes a serializable value to a YAML file.
 ///
-/// Used for persisting progress tracking data (`__last_article_number`)
+/// Used for persisting progress tracking data (`__progress.yaml`)
 /// and user list selections.
 ///
 /// # Arguments
@@ -160,7 +160,7 @@ where
 
 /// Reads and deserializes a value from a YAML file.
 ///
-/// Used for reading progress tracking data (`__last_article_number`).
+/// Used for reading progress tracking data (`__progress.yaml`).
 ///
 /// # Arguments
 ///

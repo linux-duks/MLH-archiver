@@ -3,34 +3,6 @@ use std::sync::{Arc, atomic::AtomicBool};
 use crate::config::{AppConfig, RunMode, RunModeConfig};
 use crate::nntp_source::nntp_worker::NNTPWorker;
 
-/// Helper function to check if a shutdown has been requested via the shared flag.
-///
-/// This is a convenience function for checking the shutdown flag using
-/// the correct memory ordering (`Relaxed`).
-///
-/// # Arguments
-///
-/// * `shutdown_flag` - Reference to the shared atomic shutdown flag
-///
-/// # Returns
-///
-/// `true` if shutdown was requested, `false` otherwise
-///
-/// # Example
-///
-/// ```rust,no_run
-/// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-/// use mlh_archiver::worker::is_shutdown_requested;
-///
-/// let flag = Arc::new(AtomicBool::new(false));
-/// if is_shutdown_requested(&flag) {
-///     // Clean up and exit
-/// }
-/// ```
-pub fn is_shutdown_requested(shutdown_flag: &Arc<AtomicBool>) -> bool {
-    shutdown_flag.load(std::sync::atomic::Ordering::Relaxed)
-}
-
 /// Trait representing a worker that can fetch emails from a specific source.
 ///
 /// Workers are the core unit of email fetching. Each worker:
@@ -38,6 +10,17 @@ pub fn is_shutdown_requested(shutdown_flag: &Arc<AtomicBool>) -> bool {
 /// - Is moved to its own thread before execution
 /// - Receives mailing list names via a crossbeam channel
 /// - Checks a shared shutdown flag for graceful termination
+/// - **Uses [`ArchiveWriter`](crate::archive_writer::ArchiveWriter) for all file I/O**
+///
+/// # File I/O Requirement
+///
+/// **All worker implementations MUST use `ArchiveWriter` for:**
+/// - Writing fetched emails to disk (`.eml` files)
+/// - Tracking progress (`__progress.yaml` YAML)
+/// - Logging errors for unavailable articles (`__errors.csv` CSV)
+///
+/// This ensures consistent progress tracking and resume support across
+/// all source types. Do NOT write files directly.
 ///
 /// # Implementing a New Source
 ///
@@ -75,8 +58,8 @@ pub trait Worker: Send {
     /// This is the main entry point for email fetching. Implementations should:
     /// 1. Loop indefinitely, receiving list names from the channel
     /// 2. Check shutdown flag at start of each iteration
-    /// 3. Fetch all new emails for the list
-    /// 4. Track progress (e.g., write `__last_article_number`)
+    /// 3. Create an [`ArchiveWriter`](crate::archive_writer::ArchiveWriter) for the list
+    /// 4. Fetch all new emails for the list using the writer for storage
     /// 5. Handle errors gracefully (retry, log, continue)
     ///
     /// # Arguments

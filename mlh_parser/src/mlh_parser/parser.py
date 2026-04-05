@@ -61,9 +61,9 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
             for f in all_emails
             if f
             not in (
-                "__last_article_number",
+                "__progress.yaml",
                 "errors.md",
-                "__errors",
+                "__errors.csv",
                 "errors.txt",
             )
             and os.path.isfile(os.path.join(list_input_path, f))
