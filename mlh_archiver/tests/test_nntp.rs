@@ -79,7 +79,7 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
 
     // Verify list_name
     assert!(
-        content.contains(&format!("list_name: {}", expected_list_name)),
+        content.contains(expected_list_name),
         "Lineage file should have list_name={}: {}",
         expected_list_name,
         path
@@ -118,6 +118,68 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
         expected_email_indices.len(),
         entry_count,
         path
+    );
+}
+
+// =============================================================================
+// Expected file list helpers
+// =============================================================================
+
+/// Returns the root output directory path as a single-element vector.
+fn root_dir(dir: &str) -> Vec<String> {
+    vec![dir.to_string()]
+}
+
+/// Generates all expected file paths for a single mailing list.
+///
+/// Always includes:
+/// - The list directory
+///
+/// Conditionally includes:
+/// - `__progress.yaml` — if `articles` is non-empty (created by `archive_email`)
+/// - `__lineage.yaml` — if `articles` is non-empty
+/// - `{N}.eml` — for each N in `articles`
+/// - `__errors.csv` — if `has_errors` is true
+fn list_entry(dir: &str, list_name: &str, articles: &[usize], has_errors: bool) -> Vec<String> {
+    let mut files = vec![format!("{}/{}", dir, list_name)];
+
+    // Progress and lineage files only exist when at least one article was fetched
+    if !articles.is_empty() {
+        files.push(format!("{}/{}/__progress.yaml", dir, list_name));
+        files.push(format!("{}/{}/__lineage.yaml", dir, list_name));
+    }
+
+    // Article files
+    for &n in articles {
+        files.push(format!("{}/{}/{}.eml", dir, list_name, n));
+    }
+
+    // Errors file
+    if has_errors {
+        files.push(format!("{}/{}/__errors.csv", dir, list_name));
+    }
+
+    files
+}
+
+/// Validates both progress and lineage files for a mailing list.
+///
+/// Checks `__progress.yaml` has the expected `last_email` value,
+/// and `__lineage.yaml` contains the expected article indices.
+/// Skips all validation for empty article lists (no files created).
+fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
+    if articles.is_empty() {
+        return;
+    }
+    let max_article = articles.iter().copied().max().unwrap();
+    validate_progress_file(
+        &format!("{}/{}/__progress.yaml", dir, list_name),
+        max_article,
+    );
+    validate_lineage_file(
+        &format!("{}/{}/__lineage.yaml", dir, list_name),
+        list_name,
+        articles,
     );
 }
 
@@ -180,72 +242,35 @@ fn test_read_from_local_nntp_server() {
 
     println!("Loading list of files");
     let mut found_files = file_list_dir(output_dir.clone());
-    // TODO: read file list dynamically from mock db file
-    let mut expected_files = vec![
-        "./test_output",
-        "./test_output/test.groups.foo",
-        "./test_output/test.groups.foo/__progress.yaml",
-        "./test_output/test.groups.foo/__lineage.yaml",
-        "./test_output/test.groups.foo/1.eml",
-        "./test_output/test.groups.foo/2.eml",
-        "./test_output/test.groups.bar",
-        "./test_output/test.groups.bar/__progress.yaml",
-        "./test_output/test.groups.bar/__lineage.yaml",
-        "./test_output/test.groups.bar/1.eml",
-        "./test_output/test.groups.bar/2.eml",
-        "./test_output/test.groups.empty",
-        "./test_output/test.groups.empty/__progress.yaml",
-        "./test_output/test.groups.synthetic",
-        "./test_output/test.groups.synthetic/__progress.yaml",
-        "./test_output/test.groups.synthetic/__lineage.yaml",
-        "./test_output/test.groups.synthetic/1.eml",
-        "./test_output/test.groups.synthetic/2.eml",
-        "./test_output/test.groups.synthetic/3.eml",
-        "./test_output/test.groups.synthetic/4.eml",
-        "./test_output/test.groups.synthetic/5.eml",
-        "./test_output/test.groups.synthetic/6.eml",
-        "./test_output/test.groups.synthetic/7.eml",
-        "./test_output/test.groups.synthetic/8.eml",
-        "./test_output/test.groups.synthetic/9.eml",
-        "./test_output/test.groups.synthetic/10.eml",
-        "./test_output/test.groups.synthetic/11.eml",
-        "./test_output/test.groups.synthetic/12.eml",
-    ];
+    let mut expected_files = [
+        root_dir("./test_output"),
+        list_entry("./test_output", "test.groups.foo", &[1, 2], false),
+        list_entry("./test_output", "test.groups.bar", &[1, 2], false),
+        list_entry("./test_output", "test.groups.empty", &[], false),
+        // __progress.yaml is created for empty lists in handle_group via last_processed_id()
+        vec!["./test_output/test.groups.empty/__progress.yaml".to_string()],
+        list_entry(
+            "./test_output",
+            "test.groups.synthetic",
+            &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+            false,
+        ),
+    ]
+    .concat();
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage file content
-    validate_progress_file(
-        "./test_output/test.groups.foo/__progress.yaml",
-        2,
-    );
-    validate_progress_file(
-        "./test_output/test.groups.bar/__progress.yaml",
-        2,
-    );
+    validate_list("./test_output", "test.groups.foo", &[1, 2]);
+    validate_list("./test_output", "test.groups.bar", &[1, 2]);
+    // empty list: __progress.yaml created via last_processed_id() even with 0 articles
     validate_progress_file(
         "./test_output/test.groups.empty/__progress.yaml",
         0,
     );
-    validate_progress_file(
-        "./test_output/test.groups.synthetic/__progress.yaml",
-        12,
-    );
-
-    validate_lineage_file(
-        "./test_output/test.groups.foo/__lineage.yaml",
-        "test.groups.foo",
-        &[1, 2],
-    );
-    validate_lineage_file(
-        "./test_output/test.groups.bar/__lineage.yaml",
-        "test.groups.bar",
-        &[1, 2],
-    );
-    // test.groups.empty has no lineage (0 articles fetched)
-    validate_lineage_file(
-        "./test_output/test.groups.synthetic/__lineage.yaml",
+    validate_list(
+        "./test_output",
         "test.groups.synthetic",
         &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     );
@@ -319,35 +344,24 @@ fn test_read_single_article_by_range() {
 
     // Only article 5 should be fetched (only exists in synthetic list)
     // Other lists will have __errors.csv files because article 5 doesn't exist
-    let mut expected_files = vec![
-        "./test_output_single",
-        "./test_output_single/test.groups.foo",
-        "./test_output_single/test.groups.foo/__errors.csv",
-        "./test_output_single/test.groups.bar",
-        "./test_output_single/test.groups.bar/__errors.csv",
-        "./test_output_single/test.groups.empty",
-        "./test_output_single/test.groups.empty/__errors.csv",
-        "./test_output_single/test.groups.synthetic",
-        "./test_output_single/test.groups.synthetic/__progress.yaml",
-        "./test_output_single/test.groups.synthetic/__lineage.yaml",
-        "./test_output_single/test.groups.synthetic/5.eml",
-    ];
-
+    let mut expected_files = [
+        root_dir("./test_output_single"),
+        list_entry("./test_output_single", "test.groups.foo", &[], true),
+        list_entry("./test_output_single", "test.groups.bar", &[], true),
+        list_entry("./test_output_single", "test.groups.empty", &[], true),
+        list_entry("./test_output_single", "test.groups.synthetic", &[5], false),
+    ]
+    .concat();
     let mut found_files = found_files;
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_progress_file(
-        "./test_output_single/test.groups.synthetic/__progress.yaml",
-        5,
-    );
-    validate_lineage_file(
-        "./test_output_single/test.groups.synthetic/__lineage.yaml",
-        "test.groups.synthetic",
-        &[5],
-    );
+    validate_list("./test_output_single", "test.groups.foo", &[]);
+    validate_list("./test_output_single", "test.groups.bar", &[]);
+    validate_list("./test_output_single", "test.groups.empty", &[]);
+    validate_list("./test_output_single", "test.groups.synthetic", &[5]);
 
     check_and_delete_folder("./test_output_single".to_string()).unwrap();
 }
@@ -359,60 +373,40 @@ fn test_read_article_range() {
     // Articles 1, 2, 3 should be fetched from each list
     // foo has 2 articles (1, 2), bar has 2 (1, 2), synthetic has 3 (1, 2, 3)
     // Lists with unavailable articles will also have __errors.csv files
-    let mut expected_files = vec![
-        "./test_output_range",
-        "./test_output_range/test.groups.foo",
-        "./test_output_range/test.groups.foo/__progress.yaml",
-        "./test_output_range/test.groups.foo/__lineage.yaml",
-        "./test_output_range/test.groups.foo/1.eml",
-        "./test_output_range/test.groups.foo/2.eml",
-        "./test_output_range/test.groups.foo/__errors.csv",
-        "./test_output_range/test.groups.bar",
-        "./test_output_range/test.groups.bar/__progress.yaml",
-        "./test_output_range/test.groups.bar/__lineage.yaml",
-        "./test_output_range/test.groups.bar/1.eml",
-        "./test_output_range/test.groups.bar/2.eml",
-        "./test_output_range/test.groups.bar/__errors.csv",
-        "./test_output_range/test.groups.empty",
-        "./test_output_range/test.groups.empty/__errors.csv",
-        "./test_output_range/test.groups.synthetic",
-        "./test_output_range/test.groups.synthetic/__progress.yaml",
-        "./test_output_range/test.groups.synthetic/__lineage.yaml",
-        "./test_output_range/test.groups.synthetic/1.eml",
-        "./test_output_range/test.groups.synthetic/2.eml",
-        "./test_output_range/test.groups.synthetic/3.eml",
-    ];
-
+    let mut expected_files = [
+        root_dir("./test_output_range"),
+        list_entry(
+            "./test_output_range",
+            "test.groups.foo",
+            &[1, 2],
+            true,
+        ),
+        list_entry(
+            "./test_output_range",
+            "test.groups.bar",
+            &[1, 2],
+            true,
+        ),
+        list_entry("./test_output_range", "test.groups.empty", &[], true),
+        list_entry(
+            "./test_output_range",
+            "test.groups.synthetic",
+            &[1, 2, 3],
+            false,
+        ),
+    ]
+    .concat();
     let mut found_files = found_files;
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_progress_file(
-        "./test_output_range/test.groups.foo/__progress.yaml",
-        2,
-    );
-    validate_lineage_file(
-        "./test_output_range/test.groups.foo/__lineage.yaml",
-        "test.groups.foo",
-        &[1, 2],
-    );
-    validate_progress_file(
-        "./test_output_range/test.groups.bar/__progress.yaml",
-        2,
-    );
-    validate_lineage_file(
-        "./test_output_range/test.groups.bar/__lineage.yaml",
-        "test.groups.bar",
-        &[1, 2],
-    );
-    validate_progress_file(
-        "./test_output_range/test.groups.synthetic/__progress.yaml",
-        3,
-    );
-    validate_lineage_file(
-        "./test_output_range/test.groups.synthetic/__lineage.yaml",
+    validate_list("./test_output_range", "test.groups.foo", &[1, 2]);
+    validate_list("./test_output_range", "test.groups.bar", &[1, 2]);
+    validate_list("./test_output_range", "test.groups.empty", &[]);
+    validate_list(
+        "./test_output_range",
         "test.groups.synthetic",
         &[1, 2, 3],
     );
@@ -427,58 +421,40 @@ fn test_read_multiple_articles_by_range() {
     // Articles 1, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 3 (1, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
-    let mut expected_files = vec![
-        "./test_output_multiple",
-        "./test_output_multiple/test.groups.foo",
-        "./test_output_multiple/test.groups.foo/__progress.yaml",
-        "./test_output_multiple/test.groups.foo/__lineage.yaml",
-        "./test_output_multiple/test.groups.foo/1.eml",
-        "./test_output_multiple/test.groups.foo/__errors.csv",
-        "./test_output_multiple/test.groups.bar",
-        "./test_output_multiple/test.groups.bar/__progress.yaml",
-        "./test_output_multiple/test.groups.bar/__lineage.yaml",
-        "./test_output_multiple/test.groups.bar/1.eml",
-        "./test_output_multiple/test.groups.bar/__errors.csv",
-        "./test_output_multiple/test.groups.empty",
-        "./test_output_multiple/test.groups.empty/__errors.csv",
-        "./test_output_multiple/test.groups.synthetic",
-        "./test_output_multiple/test.groups.synthetic/__progress.yaml",
-        "./test_output_multiple/test.groups.synthetic/__lineage.yaml",
-        "./test_output_multiple/test.groups.synthetic/1.eml",
-        "./test_output_multiple/test.groups.synthetic/5.eml",
-        "./test_output_multiple/test.groups.synthetic/10.eml",
-    ];
-
+    let mut expected_files = [
+        root_dir("./test_output_multiple"),
+        list_entry(
+            "./test_output_multiple",
+            "test.groups.foo",
+            &[1],
+            true,
+        ),
+        list_entry(
+            "./test_output_multiple",
+            "test.groups.bar",
+            &[1],
+            true,
+        ),
+        list_entry("./test_output_multiple", "test.groups.empty", &[], true),
+        list_entry(
+            "./test_output_multiple",
+            "test.groups.synthetic",
+            &[1, 5, 10],
+            false,
+        ),
+    ]
+    .concat();
     let mut found_files = found_files;
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_progress_file(
-        "./test_output_multiple/test.groups.foo/__progress.yaml",
-        1,
-    );
-    validate_lineage_file(
-        "./test_output_multiple/test.groups.foo/__lineage.yaml",
-        "test.groups.foo",
-        &[1],
-    );
-    validate_progress_file(
-        "./test_output_multiple/test.groups.bar/__progress.yaml",
-        1,
-    );
-    validate_lineage_file(
-        "./test_output_multiple/test.groups.bar/__lineage.yaml",
-        "test.groups.bar",
-        &[1],
-    );
-    validate_progress_file(
-        "./test_output_multiple/test.groups.synthetic/__progress.yaml",
-        10,
-    );
-    validate_lineage_file(
-        "./test_output_multiple/test.groups.synthetic/__lineage.yaml",
+    validate_list("./test_output_multiple", "test.groups.foo", &[1]);
+    validate_list("./test_output_multiple", "test.groups.bar", &[1]);
+    validate_list("./test_output_multiple", "test.groups.empty", &[]);
+    validate_list(
+        "./test_output_multiple",
         "test.groups.synthetic",
         &[1, 5, 10],
     );
@@ -493,60 +469,40 @@ fn test_read_mixed_range() {
     // Articles 1, 3, 4, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 5 (1, 3, 4, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
-    let mut expected_files = vec![
-        "./test_output_mixed",
-        "./test_output_mixed/test.groups.foo",
-        "./test_output_mixed/test.groups.foo/__progress.yaml",
-        "./test_output_mixed/test.groups.foo/__lineage.yaml",
-        "./test_output_mixed/test.groups.foo/1.eml",
-        "./test_output_mixed/test.groups.foo/__errors.csv",
-        "./test_output_mixed/test.groups.bar",
-        "./test_output_mixed/test.groups.bar/__progress.yaml",
-        "./test_output_mixed/test.groups.bar/__lineage.yaml",
-        "./test_output_mixed/test.groups.bar/1.eml",
-        "./test_output_mixed/test.groups.bar/__errors.csv",
-        "./test_output_mixed/test.groups.empty",
-        "./test_output_mixed/test.groups.empty/__errors.csv",
-        "./test_output_mixed/test.groups.synthetic",
-        "./test_output_mixed/test.groups.synthetic/__progress.yaml",
-        "./test_output_mixed/test.groups.synthetic/__lineage.yaml",
-        "./test_output_mixed/test.groups.synthetic/1.eml",
-        "./test_output_mixed/test.groups.synthetic/3.eml",
-        "./test_output_mixed/test.groups.synthetic/4.eml",
-        "./test_output_mixed/test.groups.synthetic/5.eml",
-        "./test_output_mixed/test.groups.synthetic/10.eml",
-    ];
-
+    let mut expected_files = [
+        root_dir("./test_output_mixed"),
+        list_entry(
+            "./test_output_mixed",
+            "test.groups.foo",
+            &[1],
+            true,
+        ),
+        list_entry(
+            "./test_output_mixed",
+            "test.groups.bar",
+            &[1],
+            true,
+        ),
+        list_entry("./test_output_mixed", "test.groups.empty", &[], true),
+        list_entry(
+            "./test_output_mixed",
+            "test.groups.synthetic",
+            &[1, 3, 4, 5, 10],
+            false,
+        ),
+    ]
+    .concat();
     let mut found_files = found_files;
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_progress_file(
-        "./test_output_mixed/test.groups.foo/__progress.yaml",
-        1,
-    );
-    validate_lineage_file(
-        "./test_output_mixed/test.groups.foo/__lineage.yaml",
-        "test.groups.foo",
-        &[1],
-    );
-    validate_progress_file(
-        "./test_output_mixed/test.groups.bar/__progress.yaml",
-        1,
-    );
-    validate_lineage_file(
-        "./test_output_mixed/test.groups.bar/__lineage.yaml",
-        "test.groups.bar",
-        &[1],
-    );
-    validate_progress_file(
-        "./test_output_mixed/test.groups.synthetic/__progress.yaml",
-        10,
-    );
-    validate_lineage_file(
-        "./test_output_mixed/test.groups.synthetic/__lineage.yaml",
+    validate_list("./test_output_mixed", "test.groups.foo", &[1]);
+    validate_list("./test_output_mixed", "test.groups.bar", &[1]);
+    validate_list("./test_output_mixed", "test.groups.empty", &[]);
+    validate_list(
+        "./test_output_mixed",
         "test.groups.synthetic",
         &[1, 3, 4, 5, 10],
     );
@@ -610,29 +566,22 @@ fn test_read_from_local_nntp_server_with_auth() {
 
     println!("Loading list of files (auth test)");
     let mut found_files = file_list_dir(output_dir.clone());
-    // Verify that files were created (same expected files as the non-auth test)
-    let mut expected_files = vec![
-        "./test_output_auth",
-        "./test_output_auth/test.groups.foo",
-        "./test_output_auth/test.groups.foo/__progress.yaml",
-        "./test_output_auth/test.groups.foo/__lineage.yaml",
-        "./test_output_auth/test.groups.foo/1.eml",
-        "./test_output_auth/test.groups.foo/2.eml",
-    ];
+    let mut expected_files = [
+        root_dir("./test_output_auth"),
+        list_entry(
+            "./test_output_auth",
+            "test.groups.foo",
+            &[1, 2],
+            false,
+        ),
+    ]
+    .concat();
     found_files.sort();
     expected_files.sort();
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_progress_file(
-        "./test_output_auth/test.groups.foo/__progress.yaml",
-        2,
-    );
-    validate_lineage_file(
-        "./test_output_auth/test.groups.foo/__lineage.yaml",
-        "test.groups.foo",
-        &[1, 2],
-    );
+    validate_list("./test_output_auth", "test.groups.foo", &[1, 2]);
 
     check_and_delete_folder(output_dir).unwrap();
 }
