@@ -21,7 +21,7 @@ use std::{
 /// # Arguments
 ///
 /// * `file_path` - Path to the output file
-/// * `lines` - Vector of strings to write (without newlines)
+/// * `lines` - Slice of strings to write (without newlines)
 ///
 /// # Returns
 ///
@@ -32,7 +32,7 @@ use std::{
 ///
 /// - Creates parent directories if they don't exist
 /// - Truncates existing file
-pub fn write_lines_file(file_path: &Path, lines: Vec<String>) -> io::Result<()> {
+pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
     // Create or open (truncate) a file for writing
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {

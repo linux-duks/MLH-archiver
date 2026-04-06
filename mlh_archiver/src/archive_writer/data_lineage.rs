@@ -30,10 +30,29 @@
 //! ```
 
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, LazyLock};
 
 use crate::config::{RunModeConfig, built_info};
-use serde::{Deserialize, Serialize};
+
+/// Shared build info string — computed once, cloned cheaply via `Arc`.
+static BUILD_INFO: LazyLock<Arc<str>> = LazyLock::new(|| {
+    format!(
+        "Archiver v='{}' commit='{}' dirty='{}' build_time_utc='{}' target='{}' rustc='{}'",
+        built_info::PKG_VERSION,
+        built_info::GIT_VERSION.unwrap_or("unkown"),
+        match built_info::GIT_DIRTY {
+            Some(true) => "true",
+            Some(false) => "false",
+            None => "unknown",
+        },
+        built_info::BUILT_TIME_UTC,
+        built_info::TARGET,
+        built_info::RUSTC_VERSION,
+    )
+    .into()
+});
 
 /// Progress state for a mailing list.
 #[derive(Serialize, Deserialize, Debug)]
@@ -55,7 +74,7 @@ pub(crate) struct DataLineage {
 pub struct DataLineageWriter {
     output_path: PathBuf,
     list_name: String,
-    build_info: String,
+    build_info: Arc<str>,
     // save as string, ready to format
     run_mode: String,
 }
@@ -66,24 +85,10 @@ impl DataLineageWriter {
     /// * `base_path` - Root output directory (e.g., `./output`)
     /// * `list_name` - Mailing list name (becomes subdirectory)
     pub fn new(base_path: &Path, list_name: &str, run_mode: RunModeConfig) -> Self {
-        let build_info = format!(
-            "Archiver v='{}' commit='{}' dirty='{}' build_time_utc='{}' target='{}' rustc='{}'",
-            built_info::PKG_VERSION,
-            built_info::GIT_VERSION.unwrap_or("unkown"),
-            match built_info::GIT_DIRTY {
-                Some(true) => "true",
-                Some(false) => "false",
-                None => "unknown",
-            },
-            built_info::BUILT_TIME_UTC,
-            built_info::TARGET,
-            built_info::RUSTC_VERSION,
-        );
-
         Self {
             output_path: base_path.join(list_name).join("__lineage.yaml"),
             list_name: list_name.to_string(),
-            build_info,
+            build_info: BUILD_INFO.clone(),
             run_mode: run_mode.to_string(),
         }
     }
@@ -96,7 +101,6 @@ impl DataLineageWriter {
     pub fn update(
         &self,
         id: usize,
-        // source_details: String
     ) -> crate::Result<()> {
         crate::file_utils::append_yaml_to_file(
             self.output_path.to_str().unwrap(),
@@ -104,8 +108,7 @@ impl DataLineageWriter {
                 email_index: id,
                 list_name: self.list_name.clone(),
                 source_type: self.run_mode.clone(),
-                archiver_build_info: self.build_info.clone(),
-                // source_details: source_details.clone(),
+                archiver_build_info: (*self.build_info).to_string(),
                 timestamp: Utc::now(),
             },
         )
