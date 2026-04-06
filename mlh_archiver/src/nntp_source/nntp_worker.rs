@@ -1,4 +1,5 @@
 use crate::archive_writer::ArchiveWriter;
+use crate::config::RunModeConfig;
 use crate::errors;
 use crate::nntp_source::nntp_config::NntpConfig;
 use crate::nntp_source::nntp_utils::connect_to_nntp_server;
@@ -154,7 +155,12 @@ impl Worker for NNTPWorker {
                 }
             };
 
-            let writer = ArchiveWriter::new(Path::new(&self.base_output_path), &list_name);
+            // create ArchiveWriter instance for the new list
+            let writer = ArchiveWriter::new(
+                Path::new(&self.base_output_path),
+                &list_name,
+                RunModeConfig::NNTP(self.nntp_config.clone()),
+            );
 
             match self.handle_group(list_name.clone(), &writer) {
                 Ok(return_status) => {
@@ -210,7 +216,11 @@ impl Worker for NNTPWorker {
     }
 
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
-        let writer = ArchiveWriter::new(Path::new(&self.base_output_path), &list_name);
+        let writer = ArchiveWriter::new(
+            Path::new(&self.base_output_path),
+            &list_name,
+            RunModeConfig::NNTP(self.nntp_config.clone()),
+        );
 
         log::info!("W{}: Checking group : {list_name}", self.id);
 
@@ -357,13 +367,9 @@ impl NNTPWorker {
             match self.get_raw_article_by_number_retryable(current_mail as isize, 3) {
                 Ok(raw_article) => {
                     writer
-                        .write_email(current_mail, &raw_article)
+                        .archive_email(current_mail, &raw_article)
                         .map_err(|e| nntp::NNTPError::Io(std::io::Error::other(e)))?;
                     num_emails_read += 1;
-
-                    writer
-                        .update_progress(current_mail)
-                        .map_err(|e| nntp::NNTPError::Io(std::io::Error::other(e)))?;
                 }
                 Err(e) => match e {
                     nntp::NNTPError::ArticleUnavailable => {

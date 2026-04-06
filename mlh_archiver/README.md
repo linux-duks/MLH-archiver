@@ -298,6 +298,7 @@ mlh_archiver/
 │   ├── archive_writer/      # Reusable storage facade (MUST be used by all workers)
 │   │   ├── mod.rs           # ArchiveWriter facade
 │   │   ├── progress.rs      # ProgressTracker (reads/writes __progress.yaml)
+│   │   ├── data_lineage.rs  # DataLineageWriter (appends audit trail)
 │   │   ├── error_log.rs     # ErrorLogger (appends to __errors.csv)
 │   │   └── email_store.rs   # EmailStore (writes .eml files)
 │   └── nntp_source/         # NNTP-specific implementation
@@ -375,8 +376,9 @@ output/
 ├── list.name/
 │   ├── 1.eml                    # Fetched article
 │   ├── 2.eml
-│   ├── __progress.yaml    # YAML: last processed ID
-│   └── __errors.csv                 # CSV: id,error_message
+│   ├── __progress.yaml          # YAML: last processed ID (resume)
+│   ├── __lineage.yaml           # YAML stream: DataLineage audit trail
+│   └── __errors.csv             # CSV: id,error_message
 ```
 
 ### 1. Create Source Module

@@ -158,6 +158,71 @@ where
     Ok(())
 }
 
+/// Appends a serializable value to a YAML file as a new document.
+///
+/// Used for streaming-append operations where multiple YAML documents
+/// should be stored in a single file (e.g., append-only event logs).
+///
+/// Each value is preceded by a `---` document separator. If the file
+/// is newly created, no leading separator is written (the first document
+/// starts directly).
+///
+/// # Arguments
+///
+/// * `file_name` - Path to the output file
+/// * `value` - Value to serialize (must implement `serde::Serialize`)
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
+///
+/// # Side Effects
+///
+/// - Creates parent directories if needed
+/// - Appends `---\n` + serialized value to the file
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use mlh_archiver::file_utils::append_yaml_to_file;
+///
+/// #[derive(serde::Serialize)]
+/// struct Event { id: usize, msg: String }
+///
+/// append_yaml_to_file("./events.yaml", &Event { id: 1, msg: "first".to_string() }).unwrap();
+/// append_yaml_to_file("./events.yaml", &Event { id: 2, msg: "second".to_string() }).unwrap();
+/// // File content:
+/// // id: 1
+/// // msg: first
+/// // ---
+/// // id: 2
+/// // msg: second
+/// ```
+pub fn append_yaml_to_file<T>(file_name: &str, value: &T) -> io::Result<()>
+where
+    T: ?Sized + ser::Serialize,
+{
+    let file_path = Path::new(file_name);
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let mut f = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(file_path)?;
+
+    // Check if file is empty — only add separator for subsequent documents
+    if f.metadata().map(|m| m.len() > 0).unwrap_or(false) {
+        writeln!(f, "---").map_err(io::Error::other)?;
+    }
+
+    serde_yaml::to_writer(&mut f, value)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(())
+}
+
 /// Reads and deserializes a value from a YAML file.
 ///
 /// Used for reading progress tracking data (`__progress.yaml`).
@@ -210,4 +275,94 @@ pub fn check_or_create_folder(folder_path: String) -> io::Result<()> {
         );
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Serialize, Deserialize, Debug, PartialEq)]
+    struct TestDoc {
+        id: usize,
+        msg: String,
+    }
+
+    #[test]
+    fn test_append_yaml_creates_file_with_first_doc() {
+        let path = "/tmp/test_append_yaml_first.yaml";
+        let _ = fs::remove_file(path);
+
+        append_yaml_to_file(path, &TestDoc { id: 1, msg: "first".to_string() }).unwrap();
+
+        let content = fs::read_to_string(path).unwrap();
+        // First document should NOT have a leading ---
+        assert!(!content.starts_with("---"));
+        assert!(content.contains("id: 1"));
+        assert!(content.contains("msg: first"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_append_yaml_adds_separator_for_second_doc() {
+        let path = "/tmp/test_append_yaml_second.yaml";
+        let _ = fs::remove_file(path);
+
+        append_yaml_to_file(path, &TestDoc { id: 1, msg: "first".to_string() }).unwrap();
+        append_yaml_to_file(path, &TestDoc { id: 2, msg: "second".to_string() }).unwrap();
+
+        let content = fs::read_to_string(path).unwrap();
+        // Should contain a document separator
+        assert!(content.contains("\n---\n"));
+        assert!(content.contains("id: 1"));
+        assert!(content.contains("id: 2"));
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn test_append_yaml_creates_parent_dirs() {
+        let path = "/tmp/test_append_yaml_nested/deep/dir/doc.yaml";
+        let _ = fs::remove_dir_all("/tmp/test_append_yaml_nested");
+
+        append_yaml_to_file(path, &TestDoc { id: 1, msg: "test".to_string() }).unwrap();
+        assert!(Path::new(path).exists());
+
+        let _ = fs::remove_dir_all("/tmp/test_append_yaml_nested");
+    }
+
+    #[test]
+    fn test_append_yaml_multi_doc_roundtrip() {
+        let path = "/tmp/test_append_yaml_roundtrip.yaml";
+        let _ = fs::remove_file(path);
+
+        let docs = vec![
+            TestDoc { id: 1, msg: "one".to_string() },
+            TestDoc { id: 2, msg: "two".to_string() },
+            TestDoc { id: 3, msg: "three".to_string() },
+        ];
+        for doc in &docs {
+            append_yaml_to_file(path, doc).unwrap();
+        }
+
+        // Read back — split on --- to get individual documents
+        let content = fs::read_to_string(path).unwrap();
+        let parts: Vec<&str> = content.split("\n---\n").collect();
+        assert_eq!(parts.len(), 3);
+
+        let first: TestDoc = serde_yaml::from_str(parts[0]).unwrap();
+        assert_eq!(first, docs[0]);
+
+        let second: TestDoc = serde_yaml::from_str(parts[1]).unwrap();
+        assert_eq!(second, docs[1]);
+
+        let third: TestDoc = serde_yaml::from_str(parts[2]).unwrap();
+        assert_eq!(third, docs[2]);
+
+        // Verify separator count (n-1 separators for n documents)
+        assert_eq!(content.matches("\n---\n").count(), 2);
+
+        let _ = fs::remove_file(path);
+    }
 }
