@@ -265,10 +265,7 @@ fn test_read_from_local_nntp_server() {
     validate_list("./test_output", "test.groups.foo", &[1, 2]);
     validate_list("./test_output", "test.groups.bar", &[1, 2]);
     // empty list: __progress.yaml created via last_processed_id() even with 0 articles
-    validate_progress_file(
-        "./test_output/test.groups.empty/__progress.yaml",
-        0,
-    );
+    validate_progress_file("./test_output/test.groups.empty/__progress.yaml", 0);
     validate_list(
         "./test_output",
         "test.groups.synthetic",
@@ -375,18 +372,8 @@ fn test_read_article_range() {
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
         root_dir("./test_output_range"),
-        list_entry(
-            "./test_output_range",
-            "test.groups.foo",
-            &[1, 2],
-            true,
-        ),
-        list_entry(
-            "./test_output_range",
-            "test.groups.bar",
-            &[1, 2],
-            true,
-        ),
+        list_entry("./test_output_range", "test.groups.foo", &[1, 2], true),
+        list_entry("./test_output_range", "test.groups.bar", &[1, 2], true),
         list_entry("./test_output_range", "test.groups.empty", &[], true),
         list_entry(
             "./test_output_range",
@@ -405,11 +392,7 @@ fn test_read_article_range() {
     validate_list("./test_output_range", "test.groups.foo", &[1, 2]);
     validate_list("./test_output_range", "test.groups.bar", &[1, 2]);
     validate_list("./test_output_range", "test.groups.empty", &[]);
-    validate_list(
-        "./test_output_range",
-        "test.groups.synthetic",
-        &[1, 2, 3],
-    );
+    validate_list("./test_output_range", "test.groups.synthetic", &[1, 2, 3]);
 
     check_and_delete_folder("./test_output_range".to_string()).unwrap();
 }
@@ -423,18 +406,8 @@ fn test_read_multiple_articles_by_range() {
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
         root_dir("./test_output_multiple"),
-        list_entry(
-            "./test_output_multiple",
-            "test.groups.foo",
-            &[1],
-            true,
-        ),
-        list_entry(
-            "./test_output_multiple",
-            "test.groups.bar",
-            &[1],
-            true,
-        ),
+        list_entry("./test_output_multiple", "test.groups.foo", &[1], true),
+        list_entry("./test_output_multiple", "test.groups.bar", &[1], true),
         list_entry("./test_output_multiple", "test.groups.empty", &[], true),
         list_entry(
             "./test_output_multiple",
@@ -471,18 +444,8 @@ fn test_read_mixed_range() {
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
         root_dir("./test_output_mixed"),
-        list_entry(
-            "./test_output_mixed",
-            "test.groups.foo",
-            &[1],
-            true,
-        ),
-        list_entry(
-            "./test_output_mixed",
-            "test.groups.bar",
-            &[1],
-            true,
-        ),
+        list_entry("./test_output_mixed", "test.groups.foo", &[1], true),
+        list_entry("./test_output_mixed", "test.groups.bar", &[1], true),
         list_entry("./test_output_mixed", "test.groups.empty", &[], true),
         list_entry(
             "./test_output_mixed",
@@ -568,12 +531,7 @@ fn test_read_from_local_nntp_server_with_auth() {
     let mut found_files = file_list_dir(output_dir.clone());
     let mut expected_files = [
         root_dir("./test_output_auth"),
-        list_entry(
-            "./test_output_auth",
-            "test.groups.foo",
-            &[1, 2],
-            false,
-        ),
+        list_entry("./test_output_auth", "test.groups.foo", &[1, 2], false),
     ]
     .concat();
     found_files.sort();

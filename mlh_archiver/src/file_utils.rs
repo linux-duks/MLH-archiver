@@ -293,7 +293,14 @@ mod tests {
         let path = "/tmp/test_append_yaml_first.yaml";
         let _ = fs::remove_file(path);
 
-        append_yaml_to_file(path, &TestDoc { id: 1, msg: "first".to_string() }).unwrap();
+        append_yaml_to_file(
+            path,
+            &TestDoc {
+                id: 1,
+                msg: "first".to_string(),
+            },
+        )
+        .unwrap();
 
         let content = fs::read_to_string(path).unwrap();
         // First document should NOT have a leading ---
@@ -309,8 +316,22 @@ mod tests {
         let path = "/tmp/test_append_yaml_second.yaml";
         let _ = fs::remove_file(path);
 
-        append_yaml_to_file(path, &TestDoc { id: 1, msg: "first".to_string() }).unwrap();
-        append_yaml_to_file(path, &TestDoc { id: 2, msg: "second".to_string() }).unwrap();
+        append_yaml_to_file(
+            path,
+            &TestDoc {
+                id: 1,
+                msg: "first".to_string(),
+            },
+        )
+        .unwrap();
+        append_yaml_to_file(
+            path,
+            &TestDoc {
+                id: 2,
+                msg: "second".to_string(),
+            },
+        )
+        .unwrap();
 
         let content = fs::read_to_string(path).unwrap();
         // Should contain a document separator
@@ -326,7 +347,14 @@ mod tests {
         let path = "/tmp/test_append_yaml_nested/deep/dir/doc.yaml";
         let _ = fs::remove_dir_all("/tmp/test_append_yaml_nested");
 
-        append_yaml_to_file(path, &TestDoc { id: 1, msg: "test".to_string() }).unwrap();
+        append_yaml_to_file(
+            path,
+            &TestDoc {
+                id: 1,
+                msg: "test".to_string(),
+            },
+        )
+        .unwrap();
         assert!(Path::new(path).exists());
 
         let _ = fs::remove_dir_all("/tmp/test_append_yaml_nested");
@@ -338,9 +366,18 @@ mod tests {
         let _ = fs::remove_file(path);
 
         let docs = vec![
-            TestDoc { id: 1, msg: "one".to_string() },
-            TestDoc { id: 2, msg: "two".to_string() },
-            TestDoc { id: 3, msg: "three".to_string() },
+            TestDoc {
+                id: 1,
+                msg: "one".to_string(),
+            },
+            TestDoc {
+                id: 2,
+                msg: "two".to_string(),
+            },
+            TestDoc {
+                id: 3,
+                msg: "three".to_string(),
+            },
         ];
         for doc in &docs {
             append_yaml_to_file(path, doc).unwrap();
