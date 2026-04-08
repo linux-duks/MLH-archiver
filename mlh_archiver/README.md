@@ -295,6 +295,12 @@ mlh_archiver/
 │   ├── errors.rs            # Error types (Error, ConfigError)
 │   ├── file_utils.rs        # File I/O, YAML serialization
 │   ├── range_inputs.rs      # Article range parsing (lazy iterator)
+│   ├── archive_writer/      # Reusable storage facade (MUST be used by all workers)
+│   │   ├── mod.rs           # ArchiveWriter facade
+│   │   ├── progress.rs      # ProgressTracker (reads/writes __progress.yaml)
+│   │   ├── data_lineage.rs  # DataLineageWriter (appends audit trail)
+│   │   ├── error_log.rs     # ErrorLogger (appends to __errors.csv)
+│   │   └── email_store.rs   # EmailStore (writes .eml files)
 │   └── nntp_source/         # NNTP-specific implementation
 │       ├── mod.rs           # Module exports, NNTP connection helper
 │       ├── nntp_config.rs   # NNTP configuration struct
@@ -325,6 +331,55 @@ mlh_archiver/
 ## Development: Implementing a New Source
 
 To add a new email source (e.g., ListArchiveX, IMAP, local mbox), follow these steps:
+
+### ArchiveWriter — The Reusable Storage Interface
+
+**All worker implementations MUST use [`ArchiveWriter`](src/archive_writer/) for:**
+- Writing fetched emails to disk (`.eml` files)
+- Tracking progress (`__progress.yaml` YAML)
+- Logging errors for unavailable articles (`__errors.csv` CSV)
+
+The `ArchiveWriter` provides a consistent storage interface so that:
+1. Progress is tracked uniformly across all sources
+2. Resume from last position works the same way regardless of source
+3. File layout is consistent across all implementations
+
+Since each worker writes to a distinct output path per list, **no concurrency control is needed**. Workers create their own `ArchiveWriter` instance per task.
+
+```rust
+use mlh_archiver::archive_writer::ArchiveWriter;
+use std::path::Path;
+
+// Inside worker's consumme_list or read_email_by_index:
+let writer = ArchiveWriter::new(
+    Path::new(&self.base_output_path),
+    &list_name,
+);
+
+// Get last processed article ID (for resume)
+let last_id = writer.last_processed_id();
+
+// Write a fetched email
+writer.write_email(article_id, &raw_lines)?;
+
+// Update progress after successful write
+writer.update_progress(article_id)?;
+
+// Log unavailable articles (non-fatal)
+writer.log_error(article_id, &error.to_string());
+```
+
+**File layout produced by `ArchiveWriter`:**
+
+```
+output/
+├── list.name/
+│   ├── 1.eml                    # Fetched article
+│   ├── 2.eml
+│   ├── __progress.yaml          # YAML: last processed ID (resume)
+│   ├── __lineage.yaml           # YAML stream: DataLineage audit trail
+│   └── __errors.csv             # CSV: id,error_message
+```
 
 ### 1. Create Source Module
 
@@ -368,12 +423,15 @@ impl ListArchiveXConfig {
 **`src/list_archive_x_source/list_archive_x_worker.rs`:**
 
 ```rust
+use crate::archive_writer::ArchiveWriter;
 use crate::worker::Worker;
+use std::path::Path;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
 
 pub struct ListArchiveXWorker {
     id: u8,
     config: ListArchiveXConfig,
+    base_output_path: String,
     shutdown_flag: Arc<AtomicBool>,
     // ... other fields (e.g., HTTP client)
 }
@@ -388,6 +446,7 @@ impl ListArchiveXWorker {
         ListArchiveXWorker {
             id,
             config,
+            base_output_path,
             shutdown_flag,
             // ...
         }
@@ -412,7 +471,19 @@ impl Worker for ListArchiveXWorker {
                 Err(_) => return Ok(()), // Channel closed
             };
 
-            // Fetch emails for list_name...
+            // Create ArchiveWriter for this list
+            let writer = ArchiveWriter::new(
+                Path::new(&self.base_output_path),
+                &list_name,
+            );
+
+            // Get last processed ID for resume
+            let last_id = writer.last_processed_id();
+
+            // Fetch emails for list_name using writer for storage...
+            // writer.write_email(id, &lines)?;
+            // writer.update_progress(id)?;
+            // writer.log_error(id, &error);
         }
     }
 
@@ -421,8 +492,15 @@ impl Worker for ListArchiveXWorker {
         list_name: String,
         email_index: usize,
     ) -> crate::Result<()> {
-        // Implement single email retrieval
-        // ...
+        // Create writer for this list
+        let writer = ArchiveWriter::new(
+            Path::new(&self.base_output_path),
+            &list_name,
+        );
+
+        // Fetch and store the specific article...
+        // writer.write_email(email_index, &lines)?;
+        // writer.update_progress(email_index)?;
         Ok(())
     }
 }
@@ -434,6 +512,7 @@ impl Worker for ListArchiveXWorker {
   - Start of each task iteration
   - During long waits or retries
   - During email fetching loops
+- **Use `ArchiveWriter` for all file I/O** — do NOT write files directly
 - Use `RefCell` or `Mutex` for mutable connection state
 
 ### 4. Update Configuration

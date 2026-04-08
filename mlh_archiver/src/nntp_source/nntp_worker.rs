@@ -1,5 +1,6 @@
+use crate::archive_writer::ArchiveWriter;
+use crate::config::RunModeConfig;
 use crate::errors;
-use crate::file_utils;
 use crate::nntp_source::nntp_config::NntpConfig;
 use crate::nntp_source::nntp_utils::connect_to_nntp_server;
 use crate::worker::Worker;
@@ -35,9 +36,9 @@ use std::time::Duration;
 ///
 /// # Progress Tracking
 ///
-/// Progress is tracked via YAML files:
-/// - `__last_article_number` - Last successfully fetched article ID
-/// - `__errors` - Log of unavailable articles
+/// Progress is managed by [`ArchiveWriter`]:
+/// - `__progress.yaml` - Last successfully fetched article ID
+/// - `__errors.csv` - Log of unavailable articles
 pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
@@ -154,7 +155,14 @@ impl Worker for NNTPWorker {
                 }
             };
 
-            match self.handle_group(list_name.clone()) {
+            // create ArchiveWriter instance for the new list
+            let writer = ArchiveWriter::new(
+                Path::new(&self.base_output_path),
+                &list_name,
+                RunModeConfig::NNTP(self.nntp_config.clone()),
+            );
+
+            match self.handle_group(list_name.clone(), &writer) {
                 Ok(return_status) => {
                     log::info!("W{}: completed a task with: {return_status}", self.id);
                 }
@@ -208,6 +216,12 @@ impl Worker for NNTPWorker {
     }
 
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
+        let writer = ArchiveWriter::new(
+            Path::new(&self.base_output_path),
+            &list_name,
+            RunModeConfig::NNTP(self.nntp_config.clone()),
+        );
+
         log::info!("W{}: Checking group : {list_name}", self.id);
 
         // Verify group exists - borrow dropped immediately after
@@ -218,7 +232,7 @@ impl Worker for NNTPWorker {
             self.id
         );
         // Borrow is dropped, safe to call read_new_mails
-        self.read_new_mails(list_name.clone(), email_index, email_index)?;
+        self.read_new_mails(list_name.clone(), email_index, email_index, &writer)?;
         Ok(())
     }
 }
@@ -227,14 +241,15 @@ impl NNTPWorker {
     /// Processes a mailing list and fetches all new emails.
     ///
     /// This method:
-    /// 1. Reads the last fetched article ID from `__last_article_number`
+    /// 1. Reads the last fetched article ID from the archive writer
     /// 2. Queries the NNTP server for the current high water mark
     /// 3. Fetches all articles between last ID and high water mark
-    /// 4. Updates progress after each successful fetch
+    /// 4. Updates progress after each successful fetch via the writer
     ///
     /// # Arguments
     ///
     /// * `list_name` - Name of the mailing list to process
+    /// * `writer` - ArchiveWriter for progress tracking and storage
     ///
     /// # Returns
     ///
@@ -244,52 +259,19 @@ impl NNTPWorker {
     ///
     /// # Side Effects
     ///
-    /// - Creates/updates `__last_article_number` YAML file
-    /// - Writes fetched emails as `.eml` files
-    /// - Logs unavailable articles to `__errors` file
-    pub fn handle_group(&self, list_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
-        let read_status: ReadStatus = match file_utils::read_yaml::<ReadStatus>(
-            format!(
-                "{}/{}/__last_article_number",
-                self.base_output_path, list_name
-            )
-            .as_str(),
-        ) {
-            Ok(r) => r,
-            Err(e) => {
-                log::warn!("W{}: Error reading status:  {e}", self.id);
-                // attempted to read a number from the file, or fallback to 1
-                let last_article_number = file_utils::try_read_number(Path::new(
-                    format!(
-                        "{}/{}/__last_article_number",
-                        self.base_output_path, list_name
-                    )
-                    .as_str(),
-                ))
-                .unwrap_or(0);
-                if last_article_number == 0 {
-                    log::info!("W{}: Reading list {list_name} from mail 0", self.id);
-                }
+    /// - Creates/updates `__progress.yaml` YAML file via writer
+    /// - Writes fetched emails as `.eml` files via writer
+    /// - Logs unavailable articles to `__errors.csv` file via writer
+    pub fn handle_group(
+        &self,
+        list_name: String,
+        writer: &ArchiveWriter,
+    ) -> nntp::Result<NNTPWorkerGroupResult> {
+        let last_article_number = writer.last_processed_id();
 
-                let read_status = ReadStatus {
-                    last_email: last_article_number,
-                };
-
-                // write ReadStatus
-                file_utils::write_yaml(
-                    format!(
-                        "{}/{}/__last_article_number",
-                        self.base_output_path, list_name
-                    )
-                    .as_str(),
-                    &read_status,
-                )?;
-
-                read_status
-            }
-        };
-
-        let last_article_number = read_status.last_email;
+        if last_article_number == 0 {
+            log::info!("W{}: Reading list {list_name} from mail 0", self.id);
+        }
 
         log::info!(
             "W{}: Checking group : {list_name}. Local max ID: {last_article_number}",
@@ -316,7 +298,12 @@ impl NNTPWorker {
         if let Some((low, high)) = should_read_info {
             log::info!("W{}: Reading emails for group : {list_name}.", self.id);
             // Borrow is already dropped, safe to call read_new_mails
-            match self.read_new_mails(list_name.clone(), last_article_number.max(low), high) {
+            match self.read_new_mails(
+                list_name.clone(),
+                last_article_number.max(low),
+                high,
+                writer,
+            ) {
                 Ok(num_emails_read) => {
                     return Ok(NNTPWorkerGroupResult::Ok(list_name, num_emails_read));
                 }
@@ -340,14 +327,15 @@ impl NNTPWorker {
     /// 1. Iterates through article IDs from `low` to `high`
     /// 2. Checks shutdown flag before each fetch
     /// 3. Retrieves raw article content with retry logic
-    /// 4. Writes emails to `{output_dir}/{list_name}/{id}.eml`
-    /// 5. Updates `__last_article_number` after each success
+    /// 4. Writes emails to `{output_dir}/{list_name}/{id}.eml` via writer
+    /// 5. Updates `__progress.yaml` via writer after each success
     ///
     /// # Arguments
     ///
     /// * `list_name` - Name of the mailing list
     /// * `low` - Starting article ID (inclusive)
     /// * `high` - Ending article ID (inclusive)
+    /// * `writer` - ArchiveWriter for storage and progress
     ///
     /// # Returns
     ///
@@ -358,8 +346,13 @@ impl NNTPWorker {
     ///
     /// If shutdown is requested during fetching, returns the count of
     /// emails fetched so far without error.
-    fn read_new_mails(&self, list_name: String, low: usize, high: usize) -> nntp::Result<usize> {
-        // take the last_article_number or the "low"" result for the group
+    fn read_new_mails(
+        &self,
+        list_name: String,
+        low: usize,
+        high: usize,
+        writer: &ArchiveWriter,
+    ) -> nntp::Result<usize> {
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {
             // Check shutdown flag during email fetching
@@ -373,52 +366,18 @@ impl NNTPWorker {
 
             match self.get_raw_article_by_number_retryable(current_mail as isize, 3) {
                 Ok(raw_article) => {
-                    file_utils::write_lines_file(
-                        Path::new(
-                            format!(
-                                "{}/{}/{}.eml",
-                                self.base_output_path, list_name, current_mail
-                            )
-                            .as_str(),
-                        ),
-                        raw_article,
-                    )
-                    .unwrap();
+                    writer
+                        .archive_email(current_mail, &raw_article)
+                        .map_err(|e| nntp::NNTPError::Io(std::io::Error::other(e)))?;
                     num_emails_read += 1;
-
-                    // write ReadStatus
-                    file_utils::write_yaml(
-                        format!(
-                            "{}/{}/__last_article_number",
-                            self.base_output_path, list_name
-                        )
-                        .as_str(),
-                        &ReadStatus {
-                            last_email: current_mail,
-                        },
-                    )?;
                 }
-                Err(e) => {
-                    match e {
-                        nntp::NNTPError::ArticleUnavailable => {
-                            file_utils::append_line_to_file(
-                                Path::new(
-                                    format!("{}/{}/__errors", self.base_output_path, list_name)
-                                        .as_str(),
-                                ),
-                                format!("{current_mail},{e}").as_str(),
-                            )
-                            .unwrap();
-                            log::warn!(
-                                "W{}: Email with number {current_mail} unavailable",
-                                self.id
-                            );
-                        }
-                        _ => return Err(e),
+                Err(e) => match e {
+                    nntp::NNTPError::ArticleUnavailable => {
+                        writer.log_error(current_mail, &e.to_string());
+                        log::warn!("W{}: Email with number {current_mail} unavailable", self.id);
                     }
-                    // // TODO: should the program signal a need to reconnect here or upstream ?
-                    // return Err(e);
-                }
+                    _ => return Err(e),
+                },
             }
 
             log::info!(
@@ -429,7 +388,7 @@ impl NNTPWorker {
                 (current_mail as f64 / high as f64 * 100.0)
             );
         }
-        return Ok(num_emails_read);
+        Ok(num_emails_read)
     }
 
     fn get_raw_article_by_number_retryable(
@@ -500,9 +459,4 @@ impl fmt::Display for NNTPWorkerGroupResult {
             }
         }
     }
-}
-
-#[derive(serde::Serialize, serde::Deserialize, Debug)]
-struct ReadStatus {
-    pub last_email: usize,
 }

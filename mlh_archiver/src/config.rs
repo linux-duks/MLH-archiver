@@ -2,10 +2,16 @@ use crate::nntp_source::nntp_config;
 use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
+use core::fmt;
 use glob::glob;
 use globset::{Glob, GlobMatcher};
 use inquire::MultiSelect;
 use std::collections::{HashMap, HashSet};
+
+// The file `built.rs` was placed there by cargo and `build.rs`
+pub(crate) mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 
 /// Main application configuration
 ///
@@ -72,6 +78,17 @@ pub enum RunMode {
 pub enum RunModeConfig {
     NNTP(nntp_config::NntpConfig),
     LocalMbox,
+}
+
+/// Display implementation for RunModeConfig does not need to provide every field
+/// It it used in the data-lineage module to save info about how it was used
+impl fmt::Display for RunModeConfig {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RunModeConfig::NNTP(config) => write!(f, "NNTP h={}", config.clone().hostname),
+            RunModeConfig::LocalMbox => unimplemented!(),
+        }
+    }
 }
 
 /// Here are implemented the functions for config related to the RunMode and its configs

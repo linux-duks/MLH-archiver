@@ -39,11 +39,11 @@ def get_list_len(mailing_list):
     list_input_path = INPUT_DIR_PATH + "/" + mailing_list
 
     all_emails = os.listdir(list_input_path)
-    all_emails.remove("__last_article_number")
+    all_emails.remove("__progress.yaml")
     if "errors.md" in all_emails:
         all_emails.remove("errors.md")
-    if "__errors" in all_emails:
-        all_emails.remove("__errors")
+    if "__errors.csv" in all_emails:
+        all_emails.remove("__errors.csv")
     if "errors.txt" in all_emails:
         all_emails.remove("errors.txt")
 

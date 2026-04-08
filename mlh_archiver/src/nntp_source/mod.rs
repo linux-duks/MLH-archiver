@@ -14,7 +14,7 @@
 //! 1. Connects to the NNTP server on creation
 //! 2. Uses `RefCell` for interior mutability of the connection
 //! 3. Checks shutdown flag during long operations
-//! 4. Tracks progress via `__last_article_number` files
+//! 4. Tracks progress via `__progress.yaml` files
 //! 5. Handles reconnection on network errors
 
 pub mod nntp_config;

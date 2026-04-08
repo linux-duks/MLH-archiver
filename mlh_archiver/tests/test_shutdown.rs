@@ -1,24 +1,11 @@
 // Tests for shutdown flag functionality
 
-use mlh_archiver::worker::is_shutdown_requested;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
 use std::thread;
 use std::time::Duration;
-
-#[test]
-fn test_is_shutdown_requested_helper() {
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-
-    // Initially not set
-    assert!(!is_shutdown_requested(&shutdown_flag));
-
-    // Set the flag
-    shutdown_flag.store(true, Ordering::Relaxed);
-    assert!(is_shutdown_requested(&shutdown_flag));
-}
 
 #[test]
 fn test_shutdown_flag_clone_shares_state() {

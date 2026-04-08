@@ -21,6 +21,7 @@
 //! 5. Workers fetch emails and store them as RFC 822 files
 //! 6. Graceful shutdown via Ctrl+C signal
 
+pub mod archive_writer;
 pub mod config;
 pub mod errors;
 pub mod file_utils;
