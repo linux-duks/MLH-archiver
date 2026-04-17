@@ -447,7 +447,10 @@ dependencies = [
  "anyhow",
  "chrono",
  "clap",
+ "env_logger",
  "gix",
+ "inquire",
+ "log",
  "mlh_archiver",
 ]
 

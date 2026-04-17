@@ -192,6 +192,7 @@ fn test_app_config_get_nntp_config_with_nntp() {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
     let nntp = config.nntp.unwrap();
     assert_eq!(nntp.hostname, "nntp.example.com");
@@ -204,6 +205,7 @@ fn test_app_config_get_nntp_config_without_nntp() {
         output_dir: "./output".to_string(),
         loop_groups: true,
         nntp: None,
+        ..Default::default()
     };
     assert!(config.nntp.is_none());
 }
@@ -223,6 +225,7 @@ fn test_get_group_lists_star_glob() {
             group_lists: Some(vec!["*".to_string()]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let available_lists = vec![
@@ -247,6 +250,7 @@ fn test_get_group_lists_specific_lists() {
             group_lists: Some(vec!["list1".to_string(), "list2".to_string()]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let available_lists = vec![
@@ -274,6 +278,7 @@ fn test_get_group_lists_filters_invalid() {
             group_lists: Some(vec!["valid_list".to_string(), "invalid_list".to_string()]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let available_lists = vec!["valid_list".to_string(), "another_valid_list".to_string()];
@@ -297,6 +302,7 @@ fn test_get_group_lists_all_invalid() {
             group_lists: Some(vec!["invalid1".to_string(), "invalid2".to_string()]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let available_lists = vec!["valid_list".to_string(), "another_valid_list".to_string()];
@@ -324,6 +330,7 @@ fn test_get_group_lists_deduplicates() {
             ]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let available_lists = vec!["list1".to_string(), "list2".to_string()];
@@ -348,6 +355,7 @@ fn test_get_article_range_none() {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let result = config.get_range_selection_text(RunMode::NNTP);
@@ -367,6 +375,7 @@ fn test_get_article_range_single_number() {
             article_range: Some("100".to_string()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let result = config.get_range_selection_text(RunMode::NNTP);
@@ -389,6 +398,7 @@ fn test_get_article_range_multiple_numbers() {
             article_range: Some("1,5,10".to_string()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let result = config.get_range_selection_text(RunMode::NNTP);
@@ -412,6 +422,7 @@ fn test_get_article_range_dash_range() {
             article_range: Some("1-5".to_string()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let result = config.get_range_selection_text(RunMode::NNTP);
@@ -434,6 +445,7 @@ fn test_get_article_range_mixed() {
             article_range: Some("1,3-5,10".to_string()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     let result = config.get_range_selection_text(RunMode::NNTP);
@@ -457,6 +469,7 @@ fn test_get_article_range_invalid() {
             article_range: Some("invalid".to_string()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     // get_range_selection_text returns the raw string
@@ -476,6 +489,7 @@ fn test_get_article_range_no_nntp() {
         output_dir: "./output".to_string(),
         loop_groups: true,
         nntp: None,
+        ..Default::default()
     };
 
     // When nntp is None, get_range_selection_text returns None
@@ -538,6 +552,7 @@ fn test_config_validation_workflow() {
             hostname: String::new(),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     if let Some(ref nntp) = config.nntp {
@@ -563,6 +578,7 @@ fn config_with_group_lists(lists: Vec<String>) -> AppConfig {
             group_lists: Some(lists),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     }
 }
 

@@ -1,5 +1,5 @@
 use crate::nntp_source::nntp_config;
-use crate::public_inbox_source;
+use crate::public_inbox_source::pi_config;
 use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
@@ -48,6 +48,9 @@ pub struct AppConfig {
 
     /// NNTP-specific configuration
     pub nntp: Option<nntp_config::NntpConfig>,
+
+    /// PublicInbox configuration
+    pub public_inbox: Option<pi_config::PIConfig>,
 }
 
 /// Represents a source type that can be processed by the archiver.
@@ -63,6 +66,7 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
     NNTP,
+    PublicInbox,
     LocalMbox,
 }
 
@@ -78,7 +82,7 @@ pub enum RunMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunModeConfig {
     NNTP(nntp_config::NntpConfig),
-    PublicInbox(public_inbox_source::pi_config::PIConfig),
+    PublicInbox(pi_config::PIConfig),
     LocalMbox,
 }
 
@@ -122,6 +126,7 @@ impl AppConfig {
     pub fn get_run_mode_config(&self, run_mode: RunMode) -> Option<RunModeConfig> {
         match run_mode {
             RunMode::NNTP => Some(RunModeConfig::NNTP(self.nntp.clone()?)),
+            RunMode::PublicInbox => Some(RunModeConfig::PublicInbox(self.public_inbox.clone()?)),
             RunMode::LocalMbox => Some(RunModeConfig::LocalMbox),
         }
     }
@@ -171,6 +176,9 @@ impl AppConfig {
         if self.nntp.is_some() {
             run_modes.push(RunMode::NNTP);
         }
+        if self.public_inbox.is_some() {
+            run_modes.push(RunMode::PublicInbox);
+        }
         return run_modes;
     }
 
@@ -178,12 +186,18 @@ impl AppConfig {
     fn get_list_selection(&self, run_mode: RunMode) -> Option<Vec<String>> {
         match run_mode {
             RunMode::NNTP => {
-                match &self.nntp {
-                    Some(nntp_config) => {
-                        return nntp_config.group_lists.clone();
-                    }
-                    None => return None,
-                };
+                if let Some(nntp_config) = &self.nntp {
+                    nntp_config.group_lists.clone()
+                } else {
+                    None
+                }
+            }
+            RunMode::PublicInbox => {
+                if let Some(pi_config) = &self.public_inbox {
+                    pi_config.group_lists.clone()
+                } else {
+                    None
+                }
             }
             RunMode::LocalMbox => unimplemented!(),
         }
@@ -275,6 +289,7 @@ impl Default for AppConfig {
             output_dir: default_output_dir(),
             loop_groups: default_loop_groups(),
             nntp: None,
+            public_inbox: None,
         }
     }
 }

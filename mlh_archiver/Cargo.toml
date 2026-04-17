@@ -4,6 +4,9 @@ version = "0.2.0"
 edition = "2024"
 build = "build.rs"
 
+
+default-run = "mlh_archiver"
+
 [dependencies]
 anyhow = "1.0"
 built = { version = "0.8", features = ["chrono", "semver" ] }

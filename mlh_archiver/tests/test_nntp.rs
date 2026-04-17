@@ -218,6 +218,7 @@ fn test_read_from_local_nntp_server() {
             group_lists: Some(vec!["*".to_owned()]),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     check_and_delete_folder(output_dir.clone()).unwrap();
@@ -310,6 +311,7 @@ fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> 
             article_range,
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     check_and_delete_folder(output_dir.clone()).unwrap();
@@ -507,6 +509,7 @@ fn test_read_from_local_nntp_server_with_auth() {
             password: Some("bar".to_owned()),
             ..NntpConfig::default()
         }),
+        ..Default::default()
     };
 
     check_and_delete_folder(output_dir.clone()).unwrap();
