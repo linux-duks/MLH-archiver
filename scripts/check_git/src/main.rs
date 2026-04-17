@@ -53,12 +53,9 @@ fn run(args: Args) -> anyhow::Result<()> {
         println!("  Version: {}", inbox.version);
         println!("  Git repo: {}", inbox.git_dir.display());
 
-        match read_recent_emails(inbox, count) {
-            Ok(emails) => {
-                println!("  Read {} email(s)\n", emails.len());
-                for (i, email) in emails.iter().enumerate() {
-                    print_email(email, i + 1);
-                }
+        match process_inbox(inbox, count) {
+            Ok(email_count) => {
+                println!("  Read {} email(s)\n", email_count);
             }
             Err(e) => eprintln!("  Error reading emails: {e}\n"),
         }
@@ -163,8 +160,9 @@ fn detect_inbox(dir: &Path) -> anyhow::Result<Option<PublicInbox>> {
     Ok(None)
 }
 
-/// Reads the most recent emails from a public-inbox.
-fn read_recent_emails(inbox: &PublicInbox, count: usize) -> anyhow::Result<Vec<EmailInfo>> {
+/// Opens a public-inbox git repo, reads the most recent emails,
+/// prints each one immediately, and returns the count of emails processed.
+fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
     let repo = gix::open(&inbox.git_dir)?;
 
     // Enable object cache for better performance
@@ -182,7 +180,7 @@ fn read_recent_emails(inbox: &PublicInbox, count: usize) -> anyhow::Result<Vec<E
         .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
         .to_owned();
 
-    // Walk all commits from HEAD
+    // Walk all commits from HEAD (tip/newest first)
     let all_commit_ids: Vec<_> = repo
         .rev_walk([head_id])
         .all()?
@@ -190,26 +188,24 @@ fn read_recent_emails(inbox: &PublicInbox, count: usize) -> anyhow::Result<Vec<E
         .collect();
 
     if all_commit_ids.is_empty() {
-        return Ok(Vec::new());
+        return Ok(0);
     }
 
-    // revwalk goes from tip (newest) to root (oldest).
-    // Take the first `count` commits (most recent).
+    // Take the first `count` commits (most recent)
     let commits_to_process: Vec<_> = all_commit_ids
         .into_iter()
         .take(count)
         .collect();
 
-    let mut emails = Vec::new();
+    let mut email_count = 0;
 
     for info in commits_to_process {
         let commit = repo.find_commit(info.id)?;
         let commit_ref = commit.decode()?;
 
-        // Extract commit info
         let author = commit_ref.author()?;
         let author_time = author.time()?;
-        let message = commit_ref.message.to_str_lossy().to_string();
+        let subject = commit_ref.message.to_str_lossy().to_string();
 
         // Get the tree and find the "m" entry (message file)
         let tree_id = commit_ref.tree();
@@ -225,50 +221,32 @@ fn read_recent_emails(inbox: &PublicInbox, count: usize) -> anyhow::Result<Vec<E
             let blob = repo.find_blob(blob_oid)?;
             let raw_email = String::from_utf8_lossy(&blob.data).to_string();
 
-            emails.push(EmailInfo {
-                subject: message,
-                author: String::from_utf8_lossy(author.name).to_string(),
-                author_email: String::from_utf8_lossy(author.email).to_string(),
-                timestamp: author_time.seconds,
-                commit_id: info.id.to_hex().to_string(),
-                raw_email,
-            });
+            // Print immediately
+            let timestamp = DateTime::from_timestamp(author_time.seconds, 0)
+                .map(|dt| dt.to_rfc3339())
+                .unwrap_or_else(|| format!("timestamp={}", author_time.seconds));
+
+            let preview = if raw_email.len() > 500 {
+                format!("{}...", &raw_email[..500])
+            } else {
+                raw_email
+            };
+
+            email_count += 1;
+            println!("  --- Email {email_count} ---");
+            println!("  Subject: {}", subject.lines().next().unwrap_or(""));
+            println!("  Author:  {} <{}>", author.name, author.email);
+            println!("  Date:    {timestamp}");
+            println!("  Commit:  {}", info.id.to_hex());
+            println!("  Raw email:");
+            for line in preview.lines() {
+                println!("    {line}");
+            }
+            println!();
+            // blob, tree, commit dropped here; memory freed
         }
     }
 
-    Ok(emails)
-}
-
-/// Holds extracted email information.
-struct EmailInfo {
-    subject: String,
-    author: String,
-    author_email: String,
-    timestamp: i64,
-    commit_id: String,
-    raw_email: String,
-}
-
-/// Prints a single email's information.
-fn print_email(email: &EmailInfo, index: usize) {
-    let timestamp = DateTime::from_timestamp(email.timestamp, 0)
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| format!("timestamp={}", email.timestamp));
-
-    println!("  --- Email {index} ---");
-    println!("  Subject: {}", email.subject.lines().next().unwrap_or(""));
-    println!("  Author:  {} <{}>", email.author, email.author_email);
-    println!("  Date:    {timestamp}");
-    println!("  Commit:  {}", email.commit_id);
-    println!("  Raw email:");
-    // Print first 500 chars of raw email
-    let preview = if email.raw_email.len() > 500 {
-        format!("{}...", &email.raw_email[..500])
-    } else {
-        email.raw_email.clone()
-    };
-    for line in preview.lines() {
-        println!("    {line}");
-    }
-    println!();
+    // repo dropped here; entire inbox freed from memory
+    Ok(email_count)
 }

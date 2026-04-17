@@ -3,6 +3,35 @@ use std::sync::{Arc, atomic::AtomicBool};
 use crate::config::{AppConfig, RunMode, RunModeConfig};
 use crate::nntp_source::nntp_worker::NNTPWorker;
 
+/// Helper function to check if a shutdown has been requested via the shared flag.
+///
+/// This is a convenience function for checking the shutdown flag using
+/// the correct memory ordering (`Relaxed`).
+///
+/// # Arguments
+///
+/// * `shutdown_flag` - Reference to the shared atomic shutdown flag
+///
+/// # Returns
+///
+/// `true` if shutdown was requested, `false` otherwise
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+/// use mlh_archiver::worker::is_shutdown_requested;
+///
+/// let flag = Arc::new(AtomicBool::new(false));
+/// if is_shutdown_requested(&flag) {
+///     // Clean up and exit
+/// }
+/// ```
+#[inline]
+pub fn is_shutdown_requested(shutdown_flag: &Arc<AtomicBool>) -> bool {
+    shutdown_flag.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// Trait representing a worker that can fetch emails from a specific source.
 ///
 /// Workers are the core unit of email fetching. Each worker:

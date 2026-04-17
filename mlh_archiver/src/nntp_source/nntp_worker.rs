@@ -3,7 +3,7 @@ use crate::config::RunModeConfig;
 use crate::errors;
 use crate::nntp_source::nntp_config::NntpConfig;
 use crate::nntp_source::nntp_utils::connect_to_nntp_server;
-use crate::worker::Worker;
+use crate::worker::{Worker, is_shutdown_requested};
 use nntp::NNTPStream;
 use std::cell::{Cell, RefCell};
 use std::fmt;
@@ -110,7 +110,7 @@ impl Worker for NNTPWorker {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // Check shutdown flag at start of each iteration
-            if self.shutdown_flag.load(Ordering::Relaxed) {
+            if is_shutdown_requested(&self.shutdown_flag) {
                 log::info!("W{}: Shutdown requested, exiting...", self.id);
                 return Ok(());
             }
@@ -123,7 +123,7 @@ impl Worker for NNTPWorker {
                 let check_interval = Duration::from_secs(1);
                 let mut elapsed = Duration::ZERO;
                 while elapsed < reconnect_wait {
-                    if self.shutdown_flag.load(Ordering::Relaxed) {
+                    if is_shutdown_requested(&self.shutdown_flag) {
                         log::info!("W{}: Shutdown requested during reconnection wait", self.id);
                         return Ok(());
                     }
@@ -178,7 +178,7 @@ impl Worker for NNTPWorker {
                         let check_interval = Duration::from_secs(1);
                         let mut elapsed = Duration::ZERO;
                         while elapsed < sleep_duration {
-                            if self.shutdown_flag.load(Ordering::Relaxed) {
+                            if is_shutdown_requested(&self.shutdown_flag) {
                                 log::info!("W{}: Shutdown requested during error wait", self.id);
                                 return Ok(());
                             }
