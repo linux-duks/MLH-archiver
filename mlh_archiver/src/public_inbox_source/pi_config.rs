@@ -4,6 +4,8 @@ use crate::errors::ConfigError;
 pub struct PIConfig {
     /// (optional) if specified, will use grokmirror to identify the lists available
     pub inport_directory: String,
+    // TODO: can we check in the public-inbox metadata ?
+    pub origin: String,
     pub grokmirror_manifest: Option<String>,
     pub group_lists: Option<Vec<String>>,
     /// (optional). Read a specific range of articles from the first list provided.

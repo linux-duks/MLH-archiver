@@ -123,9 +123,9 @@ impl ArchiveWriter {
     /// call this before starting to fetch emails, then start from the
     /// returned ID + 1.
     ///
-    /// If no progress file exists, returns `0` and initializes one to mark
-    /// the list as discovered.
-    pub fn last_processed_id(&self) -> usize {
+    /// If no progress file exists, returns None, and each implementations
+    /// should determine what is the initial ID
+    pub fn last_processed_id(&self) -> Option<String> {
         self.progress.last_processed_id()
     }
 
@@ -142,9 +142,9 @@ impl ArchiveWriter {
     ///
     /// * `email_id` - Email/article number
     /// * `lines` - Raw email lines
-    pub fn archive_email(&self, email_id: usize, lines: &[String]) -> crate::Result<()> {
-        self.email_store.write(email_id, lines)?;
-        self.progress.update(email_id)?;
+    pub fn archive_email(&self, email_id: String, lines: &[&str]) -> crate::Result<()> {
+        self.email_store.write(&email_id, lines)?;
+        self.progress.update(&email_id)?;
         self.data_lineage.update(email_id)
     }
 
@@ -153,7 +153,7 @@ impl ArchiveWriter {
     /// Appends `{email_id},{error}` to the `__errors.csv` file.
     /// Failures to write the error log are logged as warnings but
     /// do not propagate as errors.
-    pub fn log_error(&self, email_id: usize, error: &str) {
+    pub fn log_error(&self, email_id: String, error: &str) {
         self.error_log.log(email_id, error);
     }
 }

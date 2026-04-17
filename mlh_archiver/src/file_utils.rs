@@ -32,7 +32,7 @@ use std::{
 ///
 /// - Creates parent directories if they don't exist
 /// - Truncates existing file
-pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
+pub fn write_lines_file(file_path: &Path, lines: &[&str]) -> io::Result<()> {
     // Create or open (truncate) a file for writing
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {
@@ -43,7 +43,7 @@ pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
 
     lines
         .iter()
-        .for_each(|line| write!(file, "{}", line.as_str()).expect("Cannot write to file"));
+        .for_each(|line| write!(file, "{}", line).expect("Cannot write to file"));
 
     file.flush()?;
 

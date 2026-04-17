@@ -58,7 +58,7 @@ static BUILD_INFO: LazyLock<Arc<str>> = LazyLock::new(|| {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DataLineage {
     /// email id/file_name
-    pub(crate) email_index: usize,
+    pub(crate) email_index: String,
     /// mailing list name
     pub(crate) list_name: String,
     /// name of the RunMode
@@ -98,7 +98,7 @@ impl DataLineageWriter {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    pub fn update(&self, id: usize) -> crate::Result<()> {
+    pub fn update(&self, id: String) -> crate::Result<()> {
         crate::file_utils::append_yaml_to_file(
             self.output_path.to_str().unwrap(),
             &DataLineage {

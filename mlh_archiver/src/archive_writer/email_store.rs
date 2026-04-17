@@ -39,7 +39,7 @@ impl EmailStore {
     ///
     /// * `email_id` - email number
     /// * `lines` - Raw email lines (written without added newlines)
-    pub fn write(&self, email_id: usize, lines: &[String]) -> crate::Result<()> {
+    pub fn write(&self, email_id: &String, lines: &[&str]) -> crate::Result<()> {
         let file_path = self.output_path.join(format!("{email_id}.eml"));
         crate::file_utils::write_lines_file(&file_path, lines).map_err(crate::errors::Error::Io)
     }

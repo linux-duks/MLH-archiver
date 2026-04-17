@@ -1,4 +1,5 @@
 use crate::nntp_source::nntp_config;
+use crate::public_inbox_source;
 use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
@@ -77,6 +78,7 @@ pub enum RunMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunModeConfig {
     NNTP(nntp_config::NntpConfig),
+    PublicInbox(public_inbox_source::pi_config::PIConfig),
     LocalMbox,
 }
 
@@ -86,6 +88,9 @@ impl fmt::Display for RunModeConfig {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RunModeConfig::NNTP(config) => write!(f, "NNTP h={}", config.clone().hostname),
+            RunModeConfig::PublicInbox(config) => {
+                write!(f, "PublicInbox h={}", config.clone().origin)
+            }
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }
@@ -138,6 +143,7 @@ impl AppConfig {
     pub fn get_range_selection_text(&self, run_mode: RunMode) -> Option<String> {
         match self.get_run_mode_config(run_mode)? {
             RunModeConfig::NNTP(nntp_config) => nntp_config.article_range,
+            RunModeConfig::PublicInbox(pi_config) => pi_config.article_range,
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }

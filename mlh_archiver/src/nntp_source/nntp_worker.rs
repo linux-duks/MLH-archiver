@@ -267,7 +267,11 @@ impl NNTPWorker {
         list_name: String,
         writer: &ArchiveWriter,
     ) -> nntp::Result<NNTPWorkerGroupResult> {
-        let last_article_number = writer.last_processed_id();
+        let last_article_number = writer
+            .last_processed_id()
+            .unwrap_or("0".to_string())
+            .parse::<usize>()
+            .expect("IDs in NNTP should be numeric");
 
         if last_article_number == 0 {
             log::info!("W{}: Reading list {list_name} from mail 0", self.id);
@@ -367,13 +371,13 @@ impl NNTPWorker {
             match self.get_raw_article_by_number_retryable(current_mail as isize, 3) {
                 Ok(raw_article) => {
                     writer
-                        .archive_email(current_mail, &raw_article)
+                        .archive_email(current_mail.to_string(), raw_article)
                         .map_err(|e| nntp::NNTPError::Io(std::io::Error::other(e)))?;
                     num_emails_read += 1;
                 }
                 Err(e) => match e {
                     nntp::NNTPError::ArticleUnavailable => {
-                        writer.log_error(current_mail, &e.to_string());
+                        writer.log_error(current_mail.to_string(), &e.to_string());
                         log::warn!("W{}: Email with number {current_mail} unavailable", self.id);
                     }
                     _ => return Err(e),

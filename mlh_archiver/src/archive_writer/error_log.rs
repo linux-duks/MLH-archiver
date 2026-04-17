@@ -42,7 +42,7 @@ impl ErrorLogger {
     ///
     /// * `email_id` - email number that failed
     /// * `error` - Error message
-    pub fn log(&self, email_id: usize, error: &str) {
+    pub fn log(&self, email_id: String, error: &str) {
         let line = format!("{email_id},{error}");
         if let Err(e) = crate::file_utils::append_line_to_file(&self.output_path, &line) {
             log::warn!("Failed to append error log for email {email_id}: {e}");
