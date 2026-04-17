@@ -141,8 +141,12 @@ impl ArchiveWriter {
     /// # Arguments
     ///
     /// * `email_id` - Email/article number
-    /// * `lines` - Raw email lines
-    pub fn archive_email(&self, email_id: String, lines: &[&str]) -> crate::Result<()> {
+    /// * `lines` - Raw email lines (can be any iterable collection of strings)
+    pub fn archive_email<I, L>(&self, email_id: String, lines: I) -> crate::Result<()>
+    where
+        I: IntoIterator<Item = L>,
+        L: AsRef<str>,
+    {
         self.email_store.write(&email_id, lines)?;
         self.progress.update(&email_id)?;
         self.data_lineage.update(email_id)

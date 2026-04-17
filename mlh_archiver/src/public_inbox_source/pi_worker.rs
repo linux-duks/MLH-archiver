@@ -126,8 +126,7 @@ impl PIWorker {
             match blob_oid {
                 Some(blob_oid) => {
                     let raw_body = read_by_blob_id(&repo, blob_oid)?;
-                    let lines: Vec<&str> = raw_body.lines().collect();
-                    writer.archive_email(blob_oid.to_string(), &lines);
+                    writer.archive_email(blob_oid.to_string(), &[raw_body.as_str()])?;
                 }
                 None => unimplemented!(),
             }
