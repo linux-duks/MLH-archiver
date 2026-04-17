@@ -3,6 +3,8 @@
 //! This module defines the error hierarchy used throughout the application.
 //! All errors implement `std::error::Error` and can be converted using `?`.
 
+use anyhow;
+use gix;
 use std::io::{self};
 use std::result;
 use thiserror::Error;
@@ -48,6 +50,32 @@ pub enum Error {
     #[allow(clippy::upper_case_acronyms)]
     #[error(transparent)]
     NNTP(#[from] nntp::NNTPError),
+
+    // #[allow(clippy::upper_case_acronyms)]
+    // #[error(transparent)]
+    // GIT(#[from] gix::Error),
+
+    #[allow(clippy::upper_case_acronyms)]
+    #[error(transparent)]
+    GITOpen(#[from] gix::open::Error),
+
+    #[error(transparent)]
+    GITRefFind(#[from] gix::refs::file::find::existing::Error),
+
+    #[error(transparent)]
+    GITRevWalk(#[from] gix::revision::walk::Error),
+
+    #[error(transparent)]
+    GITObjectFind(#[from] gix::object::find::existing::with_conversion::Error),
+
+    #[error(transparent)]
+    GITObjectDecode(#[from] gix::objs::decode::Error),
+
+    #[error(transparent)]
+    GITDateParse(#[from] gix::date::Error),
+
+    #[error(transparent)]
+    Anyhow(#[from] anyhow::Error),
 
     #[error(transparent)]
     Config(#[from] ConfigError),

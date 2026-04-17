@@ -26,6 +26,7 @@ pub mod config;
 pub mod errors;
 pub mod file_utils;
 pub mod nntp_source;
+pub mod public_inbox_source;
 pub mod range_inputs;
 pub mod scheduler;
 pub mod worker;

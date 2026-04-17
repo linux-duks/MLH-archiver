@@ -8,3 +8,4 @@ anyhow = "1.0.102"
 chrono = "0.4"
 clap = { version = "4.6", features = ["derive"] }
 gix = "0.81.0"
+mlh_archiver = { path = "../../mlh_archiver" }

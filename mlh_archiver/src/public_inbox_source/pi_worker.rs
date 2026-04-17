@@ -156,5 +156,3 @@ fn process_inbox(inbox: &str) -> errors::Result<usize> {
     // repo dropped here; entire inbox freed from memory
     Ok(email_count)
 }
-
-

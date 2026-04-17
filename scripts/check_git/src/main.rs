@@ -6,6 +6,8 @@ use chrono::DateTime;
 use clap::Parser;
 use gix::bstr::ByteSlice;
 
+use mlh_archiver::public_inbox_source::pi_utils::*;
+
 fn main() {
     let args = Args::parse_from(gix::env::args_os());
     match run(args) {
@@ -35,14 +37,20 @@ fn run(args: Args) -> anyhow::Result<()> {
     let count = args.count;
 
     if !inbox_dir.is_dir() {
-        anyhow::bail!("Inbox directory does not exist or is not a directory: {}", inbox_dir.display());
+        anyhow::bail!(
+            "Inbox directory does not exist or is not a directory: {}",
+            inbox_dir.display()
+        );
     }
 
     // Find all public-inbox subdirectories
     let inboxes = find_public_inboxes(inbox_dir)?;
 
     if inboxes.is_empty() {
-        println!("No public-inbox directories found in {}", inbox_dir.display());
+        println!(
+            "No public-inbox directories found in {}",
+            inbox_dir.display()
+        );
         return Ok(());
     }
 
@@ -62,102 +70,6 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     Ok(())
-}
-
-/// Represents a detected public-inbox directory.
-struct PublicInbox {
-    /// Display name of the inbox
-    name: String,
-    /// V1 or V2
-    version: String,
-    /// Path to the git repository containing the emails
-    git_dir: PathBuf,
-}
-
-/// Scans the base directory for public-inbox subdirectories.
-fn find_public_inboxes(base_dir: &Path) -> anyhow::Result<Vec<PublicInbox>> {
-    let mut inboxes = Vec::new();
-
-    for entry in std::fs::read_dir(base_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-
-        if !path.is_dir() {
-            continue;
-        }
-
-        // Try to detect if this is a public-inbox directory
-        if let Some(inbox) = detect_inbox(&path)? {
-            inboxes.push(inbox);
-        }
-    }
-
-    // Sort by name for consistent output
-    inboxes.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(inboxes)
-}
-
-/// Detects if a directory is a public-inbox (V1 or V2) and returns its info.
-fn detect_inbox(dir: &Path) -> anyhow::Result<Option<PublicInbox>> {
-    let name = dir
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("unknown")
-        .to_string();
-
-    // Check for V2: has git/ directory with numbered epoch repos (git/0.git, git/1.git, etc.)
-    // and an all.git that chains them via git alternates.
-    let git_dir = dir.join("git");
-    if git_dir.is_dir() {
-        // Look for epoch repos like 0.git, 1.git, etc.
-        for entry in std::fs::read_dir(&git_dir)? {
-            let entry = entry?;
-            let epoch_path = entry.path();
-            if epoch_path.is_dir() {
-                let epoch_name = epoch_path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
-                // Check if it ends with .git (like 0.git) and has refs/heads/master
-                if epoch_name.ends_with(".git")
-                    && epoch_path.join("HEAD").is_file()
-                    && epoch_path.join("refs/heads/master").is_file()
-                {
-                    return Ok(Some(PublicInbox {
-                        name,
-                        version: "V2".to_string(),
-                        git_dir: epoch_path,
-                    }));
-                }
-            }
-        }
-    }
-
-    // Check for V1: single bare git repo at the inbox directory itself
-    // (or an all.git that IS the main repo, not using alternates)
-    let all_git = dir.join("all.git");
-    if all_git.is_dir() && all_git.join("refs/heads/master").is_file() {
-        return Ok(Some(PublicInbox {
-            name,
-            version: "V1".to_string(),
-            git_dir: all_git,
-        }));
-    }
-
-    // Also check if the directory itself is a bare git repo with master ref
-    if dir.join("HEAD").is_file()
-        && dir.join("objects").is_dir()
-        && dir.join("refs/heads/master").is_file()
-    {
-        return Ok(Some(PublicInbox {
-            name,
-            version: "V1 (bare)".to_string(),
-            git_dir: dir.to_path_buf(),
-        }));
-    }
-
-    Ok(None)
 }
 
 /// Opens a public-inbox git repo, reads the most recent emails,
@@ -192,10 +104,7 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
     }
 
     // Take the first `count` commits (most recent)
-    let commits_to_process: Vec<_> = all_commit_ids
-        .into_iter()
-        .take(count)
-        .collect();
+    let commits_to_process: Vec<_> = all_commit_ids.into_iter().take(count).collect();
 
     let mut email_count = 0;
 

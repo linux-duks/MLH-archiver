@@ -448,6 +448,7 @@ dependencies = [
  "chrono",
  "clap",
  "gix",
+ "mlh_archiver",
 ]
 
 [[package]]
@@ -2719,6 +2720,7 @@ dependencies = [
  "crossbeam-channel",
  "ctrlc",
  "env_logger",
+ "gix",
  "glob",
  "globset",
  "inquire",
