@@ -51,10 +51,10 @@
 //! let last_id = writer.last_processed_id();
 //!
 //! // Archive a fetched email (writes .eml, updates progress, saves lineage)
-//! writer.archive_email(42, &["From: user@example.com".to_string()]).unwrap();
+//! writer.archive_email("42", &["From: user@example.com".to_string()]).unwrap();
 //!
 //! // Log unavailable emails (non-fatal)
-//! writer.log_error(43, "email not available");
+//! writer.log_error("43", "email not available");
 //! ```
 //!
 //! # File Layout
@@ -142,13 +142,13 @@ impl ArchiveWriter {
     ///
     /// * `email_id` - Email/article number
     /// * `lines` - Raw email lines (can be any iterable collection of strings)
-    pub fn archive_email<I, L>(&self, email_id: String, lines: I) -> crate::Result<()>
+    pub fn archive_email<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
     where
         I: IntoIterator<Item = L>,
         L: AsRef<str>,
     {
-        self.email_store.write(&email_id, lines)?;
-        self.progress.update(&email_id)?;
+        self.email_store.write(email_id, lines)?;
+        self.progress.update(email_id)?;
         self.data_lineage.update(email_id)
     }
 
@@ -157,7 +157,7 @@ impl ArchiveWriter {
     /// Appends `{email_id},{error}` to the `__errors.csv` file.
     /// Failures to write the error log are logged as warnings but
     /// do not propagate as errors.
-    pub fn log_error(&self, email_id: String, error: &str) {
+    pub fn log_error(&self, email_id: &str, error: &str) {
         self.error_log.log(email_id, error);
     }
 }

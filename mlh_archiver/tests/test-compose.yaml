@@ -2,6 +2,10 @@ services:
   nntp_server:
     build:
       context: .
-      dockerfile: Containerfile
+      dockerfile: test_nntp_server/Containerfile
     ports:
       - "8119:8119"
+  public_inbox:
+    build:
+      context: .
+      dockerfile: test_public_inbox/Containerfile

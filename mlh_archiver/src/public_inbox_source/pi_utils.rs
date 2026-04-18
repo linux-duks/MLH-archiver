@@ -2,6 +2,9 @@ use crate::errors;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
+use gix::bstr::ByteSlice;
+use gix::revision::walk::Info;
+
 /// Represents a detected public-inbox directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicInbox {
@@ -116,14 +119,15 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     if git_dir.is_dir() {
         // First, try to find an epoch repo with master ref and objects
         if let Some(epoch_repo) = find_epoch_repo_with_master(&git_dir)?
-            && has_objects(&epoch_repo) {
-                return Ok(Some(PublicInbox {
-                    name,
-                    version: "V2".to_string(),
-                    git_dir: epoch_repo,
-                }));
-            }
-        
+            && has_objects(&epoch_repo)
+        {
+            return Ok(Some(PublicInbox {
+                name,
+                version: "V2".to_string(),
+                git_dir: epoch_repo,
+            }));
+        }
+
         // If no epoch repo with master found, check for all.git with alternates
         let all_git = dir.join("all.git");
         if all_git.is_dir() && is_git_repo(&all_git) {
@@ -137,13 +141,17 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
                         if alt_path.ends_with("/objects") {
                             // Extract the git repo path (remove /objects suffix)
                             if let Some(parent) = Path::new(alt_path).parent()
-                                && parent.is_dir() && is_git_repo(parent) && has_master_ref(parent) && has_objects(parent) {
-                                    return Ok(Some(PublicInbox {
-                                        name,
-                                        version: "V2 (alternates)".to_string(),
-                                        git_dir: parent.to_path_buf(),
-                                    }));
-                                }
+                                && parent.is_dir()
+                                && is_git_repo(parent)
+                                && has_master_ref(parent)
+                                && has_objects(parent)
+                            {
+                                return Ok(Some(PublicInbox {
+                                    name,
+                                    version: "V2 (alternates)".to_string(),
+                                    git_dir: parent.to_path_buf(),
+                                }));
+                            }
                         }
                     }
                 }
@@ -185,7 +193,7 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     }
 
     // No git/ directory - check for V1 layouts
-    
+
     // Check for V1: single bare git repo at the inbox directory itself
     // (or an all.git that IS the main repo, not using alternates)
     let all_git = dir.join("all.git");
@@ -217,4 +225,61 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     }
 
     Ok(None)
+}
+
+/// Get commit at given position (0-indexed from newest).
+pub fn get_commit_at_position<'a>(
+    repo: &'a gix::Repository,
+    position: usize,
+) -> crate::Result<Info<'a>> {
+    let head_ref = repo.refs.find("refs/heads/master")?;
+    let head_id = head_ref
+        .target
+        .try_id()
+        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
+        .to_owned();
+
+    let walk = repo.rev_walk([head_id]);
+    let iter = walk.all().map_err(|e| anyhow::anyhow!(e))?;
+    for (i, info) in iter.enumerate() {
+        if i == position {
+            return Ok(info.map_err(|e| anyhow::anyhow!(e))?);
+        }
+    }
+    Err(crate::errors::Error::Config(
+        crate::errors::ConfigError::MissingHostname,
+    ))
+}
+
+/// Extract email content from a commit.
+/// Returns (commit_hash, raw_email).
+pub fn extract_email_from_commit(
+    repo: &gix::Repository,
+    commit: &gix::Commit,
+) -> crate::Result<(String, String)> {
+    let commit_ref = commit.decode()?;
+    let tree_id = commit_ref.tree();
+    let tree = repo.find_tree(tree_id)?;
+
+    let blob_oid = tree
+        .iter()
+        .find_map(|e| e.ok())
+        .filter(|e| e.filename().as_bytes() == b"m")
+        .map(|e| e.object_id());
+
+    match blob_oid {
+        Some(blob_oid) => {
+            let raw_body = read_by_blob_id(repo, blob_oid)?;
+            Ok((commit.id().to_string(), raw_body))
+        }
+        None => Err(crate::errors::Error::Config(
+            crate::errors::ConfigError::MissingHostname,
+        )),
+    }
+}
+
+pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate::Result<String> {
+    let blob = repo.find_blob(blob_oid)?;
+    let raw_email = String::from_utf8_lossy(&blob.data).to_string();
+    return Ok(raw_email);
 }

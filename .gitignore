@@ -1,5 +1,5 @@
 **/target
-output
+output*
 parser_output
 anonymizer_output
 nohup.out

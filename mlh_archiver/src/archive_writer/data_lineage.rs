@@ -98,11 +98,11 @@ impl DataLineageWriter {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    pub fn update(&self, id: String) -> crate::Result<()> {
+    pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::append_yaml_to_file(
             self.output_path.to_str().unwrap(),
             &DataLineage {
-                email_index: id,
+                email_index: id.to_string(),
                 list_name: self.list_name.clone(),
                 source_type: self.run_mode.clone(),
                 archiver_build_info: (*self.build_info).to_string(),

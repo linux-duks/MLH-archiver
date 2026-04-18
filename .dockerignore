@@ -1,4 +1,5 @@
 **/target
-output
-parser_output
-anonymizer_output
+output**
+**_output
+public-inbox-demo
+test_public_inbox

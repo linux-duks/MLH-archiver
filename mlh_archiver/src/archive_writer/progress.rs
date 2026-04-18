@@ -65,11 +65,11 @@ impl ProgressTracker {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    pub fn update(&self, id: &String) -> crate::Result<()> {
+    pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::write_yaml(
             self.output_path.to_str().unwrap(),
             &ReadStatus {
-                last_email: id.clone(),
+                last_email: id.to_string(),
             },
         )
         .map_err(crate::errors::Error::Io)

@@ -41,6 +41,18 @@ struct Args {
     /// Enable verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Run a test fetch of a sample article (non-interactive)
+    #[arg(long = "test")]
+    test: bool,
+
+    /// Specify list name for test fetch (requires --test)
+    #[arg(long = "list")]
+    list_name: Option<String>,
+
+    /// Article number (position) to fetch (requires --test)
+    #[arg(long = "article")]
+    article: Option<usize>,
 }
 
 fn run(args: Args) -> anyhow::Result<()> {
@@ -86,6 +98,24 @@ fn run(args: Args) -> anyhow::Result<()> {
         return Ok(());
     }
 
+    println!("DEBUG: test mode = {}", args.test);
+    // Test mode: fetch a sample article and exit
+    if args.test {
+        return run_test_mode(&valid_inboxes, args.list_name.as_deref(), args.article);
+    }
+
+    // Show commit counts for each inbox
+    println!("DEBUG: commit counts block");
+    println!("📊 Commit counts:");
+    for inbox in &valid_inboxes {
+        eprintln!("DEBUG: counting commits for {}", inbox.name);
+        match count_commits(inbox) {
+            Ok(count) => println!("  - {}: {} commits", inbox.name, count),
+            Err(e) => println!("  - {}: failed to count commits ({})", inbox.name, e),
+        }
+    }
+    println!();
+
     println!(
         "{} valid public-inbox(es) available for selection.\n",
         valid_inboxes.len()
@@ -113,6 +143,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         let actions = vec![
             "Quick preview (last N emails)",
             "Browse commits interactively",
+            "Test fetch a sample article",
             "Generate configuration",
             "Exit",
         ];
@@ -142,6 +173,19 @@ fn run(args: Args) -> anyhow::Result<()> {
                     browse_inbox(inbox)?;
                 }
             }
+            "Test fetch a sample article" => {
+                // Let user choose which inbox to test
+                let inbox_names: Vec<String> = selected.iter().map(|i| i.name.clone()).collect();
+                let chosen = Select::new("Select inbox to test:", inbox_names).prompt()?;
+                if let Some(inbox) = selected.iter().find(|i| i.name == chosen) {
+                    // Ask for article position (optional)
+                    let position_str = Text::new("Article position (optional, default 1):")
+                        .with_default("1")
+                        .prompt()?;
+                    let position = position_str.parse::<usize>().unwrap_or(1);
+                    fetch_single_commit(inbox, position)?;
+                }
+            }
             "Generate configuration" => {
                 generate_config_yaml(&selected, inbox_dir)?;
             }
@@ -154,6 +198,98 @@ fn run(args: Args) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+/// Run test mode: fetch a specific article from a specific list
+fn run_test_mode(
+    valid_inboxes: &[PublicInbox],
+    list_name: Option<&str>,
+    article_pos: Option<usize>,
+) -> anyhow::Result<()> {
+    if valid_inboxes.is_empty() {
+        anyhow::bail!("No valid public inboxes available for testing");
+    }
+
+    let inbox = if let Some(name) = list_name {
+        valid_inboxes
+            .iter()
+            .find(|inbox| inbox.name == name)
+            .ok_or_else(|| anyhow::anyhow!("List '{}' not found", name))?
+    } else {
+        &valid_inboxes[0]
+    };
+
+    let position = article_pos.unwrap_or(1);
+
+    println!("Testing fetch from list '{}', article position {}", inbox.name, position);
+    fetch_single_commit(inbox, position)
+}
+
+/// Fetch a single commit by position (1-indexed from newest)
+fn fetch_single_commit(inbox: &PublicInbox, position: usize) -> anyhow::Result<()> {
+    // Skip incomplete repositories
+    if inbox.version.contains("incomplete") {
+        anyhow::bail!("Incomplete repository: {}", inbox.version);
+    }
+
+    let mut repo = gix::open(&inbox.git_dir)?;
+    repo.object_cache_size(50_000_000);
+
+    // Resolve refs/heads/master to get HEAD commit
+    let head_ref = repo
+        .refs
+        .find("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
+    let head_id = head_ref
+        .target
+        .try_id()
+        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
+        .to_owned();
+
+    // Walk all commits from HEAD (newest first)
+    let all_commit_ids: Vec<_> = repo
+        .rev_walk([head_id])
+        .all()?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    if position == 0 || position > all_commit_ids.len() {
+        anyhow::bail!("Position {} out of range (total commits: {})", position, all_commit_ids.len());
+    }
+
+    let commit_info = &all_commit_ids[position - 1];
+    view_commit(&repo, commit_info, position)
+}
+
+/// Count total commits in a public inbox repository.
+fn count_commits(inbox: &PublicInbox) -> anyhow::Result<usize> {
+    // Skip incomplete repositories
+    if inbox.version.contains("incomplete") {
+        return Ok(0);
+    }
+
+    let mut repo = gix::open(&inbox.git_dir)?;
+    repo.object_cache_size(50_000_000);
+
+    // Resolve refs/heads/master to get HEAD commit
+    let head_ref = repo
+        .refs
+        .find("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
+    let head_id = head_ref
+        .target
+        .try_id()
+        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
+        .to_owned();
+
+    // Walk all commits from HEAD (newest first)
+    let all_commit_ids: Vec<_> = repo
+        .rev_walk([head_id])
+        .all()?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    Ok(all_commit_ids.len())
 }
 
 /// Opens a public-inbox git repo, reads the most recent emails,
