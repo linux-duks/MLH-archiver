@@ -370,9 +370,8 @@ fn test_read_from_synthetic_public_inbox() {
             nthreads: 1,
             loop_groups: false,
             public_inbox: Some(PIConfig {
-                inport_directory: test_data_path.to_owned(),
+                import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
-                grokmirror_manifest: None,
                 public_inbox_config: None,
                 group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
                 article_range: None,
@@ -410,9 +409,8 @@ fn test_pi_article_range() {
             nthreads: 1,
             loop_groups: false,
             public_inbox: Some(PIConfig {
-                inport_directory: test_data_path.to_owned(),
+                import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
-                grokmirror_manifest: None,
                 public_inbox_config: None,
                 group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
                 article_range: Some("1-3".to_owned()),
@@ -518,9 +516,8 @@ fn test_read_from_demo_public_inbox() {
         nthreads: 1,
         loop_groups: false,
         public_inbox: Some(PIConfig {
-            inport_directory: demo_dir.to_string_lossy().to_string(),
+            import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
-            grokmirror_manifest: None,
             public_inbox_config: None,
             group_lists: Some(vec![inbox.name.clone()]), // Only this inbox
             article_range: None,
@@ -652,9 +649,8 @@ fn test_read_article_range_from_demo() {
         nthreads: 1,
         loop_groups: false,
         public_inbox: Some(PIConfig {
-            inport_directory: demo_dir.to_string_lossy().to_string(),
+            import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
-            grokmirror_manifest: None,
             public_inbox_config: None,
             group_lists: Some(vec![inbox.name.clone()]),
             article_range: Some("2".to_owned()), // Only article 2
@@ -750,9 +746,8 @@ fn test_validate_file_structure_using_helpers() {
         nthreads: 1,
         loop_groups: false,
         public_inbox: Some(PIConfig {
-            inport_directory: demo_dir.to_string_lossy().to_string(),
+            import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
-            grokmirror_manifest: None,
             public_inbox_config: None,
             group_lists: Some(vec![inbox.name.clone()]),
             article_range: None,

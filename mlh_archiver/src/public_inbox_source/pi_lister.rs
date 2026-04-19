@@ -23,7 +23,7 @@ use std::path::PathBuf;
 /// use mlh_archiver::public_inbox_source::pi_lister::retrieve_lists;
 ///
 /// let config = PIConfig {
-///     inport_directory: "/path/to/inboxes".to_string(),
+///     import_directory: "/path/to/inboxes".to_string(),
 ///     origin: "example".to_string(),
 ///     ..Default::default()
 /// };
@@ -35,9 +35,9 @@ pub fn retrieve_lists(pi_config: PIConfig) -> crate::Result<Vec<String>> {
 
     log::debug!(
         "Retrieving the list of PublicInboxes in {}",
-        pi_config.inport_directory
+        pi_config.import_directory
     );
-    let path = PathBuf::from(pi_config.clone().inport_directory);
+    let path = PathBuf::from(pi_config.clone().import_directory);
 
     // Attempt to find public inboxes in the given path.
     match find_public_inboxes(&path) {
@@ -59,7 +59,7 @@ pub fn retrieve_lists(pi_config: PIConfig) -> crate::Result<Vec<String>> {
             if valid_list.is_empty() {
                 log::warn!(
                     "No valid public-inboxes found in {}",
-                    pi_config.clone().inport_directory
+                    pi_config.clone().import_directory
                 );
             }
 

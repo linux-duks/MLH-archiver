@@ -137,8 +137,8 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
 
     if REDO_FAILED_PARSES:
         ERROR_FILES_TO_DELETE.append(error_output_path + "/" + email_name)
-        for erro_file in ERROR_FILES_TO_DELETE:
-            os.remove(erro_file)
+        for error_file in ERROR_FILES_TO_DELETE:
+            os.remove(error_file)
 
     logger.info(f"Saved all parsed mail on list '{mailing_list}'")
 

@@ -118,7 +118,7 @@ impl Worker for PIWorker {
             RunModeConfig::PublicInbox(self.pi_config.clone()),
         );
 
-        let inboxes = find_public_inboxes(std::path::Path::new(&self.pi_config.inport_directory))?;
+        let inboxes = find_public_inboxes(std::path::Path::new(&self.pi_config.import_directory))?;
         let inbox = inboxes
             .iter()
             .find(|inbox| inbox.name == list_name)
@@ -126,7 +126,7 @@ impl Worker for PIWorker {
                 anyhow::anyhow!(
                     "Public inbox '{}' not found in {}",
                     list_name,
-                    self.pi_config.inport_directory
+                    self.pi_config.import_directory
                 )
             })?;
 
@@ -200,13 +200,19 @@ impl PIWorker {
     /// * `Ok(usize)` - The number of emails successfully processed
     /// * `Err` - If the inbox is not found or an error occurs during processing
     fn process_inbox(&self, list_name: &str) -> crate::Result<usize> {
+        log::info!(
+            "W{}: Starting processing emails from {}",
+            self.id,
+            list_name
+        );
+
         let writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             list_name,
             RunModeConfig::PublicInbox(self.pi_config.clone()),
         );
 
-        let inboxes = find_public_inboxes(std::path::Path::new(&self.pi_config.inport_directory))?;
+        let inboxes = find_public_inboxes(std::path::Path::new(&self.pi_config.import_directory))?;
         let inbox = inboxes
             .iter()
             .find(|inbox| inbox.name == list_name)
@@ -214,7 +220,7 @@ impl PIWorker {
                 anyhow::anyhow!(
                     "Public inbox '{}' not found in {}",
                     list_name,
-                    self.pi_config.inport_directory
+                    self.pi_config.import_directory
                 )
             })?;
 

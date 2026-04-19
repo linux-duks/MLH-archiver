@@ -260,7 +260,7 @@ impl<'a> Scheduler<'a> {
                         list_name.to_string(),
                         index
                             .parse::<usize>()
-                            .expect("Task index shoud parse into a usize"),
+                            .expect("Task index should parse into a usize"),
                     ) {
                         Ok(_) => {
                             log::debug!("Worker thread finished");

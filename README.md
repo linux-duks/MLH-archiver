@@ -2,7 +2,7 @@
 
 Collect and archive locally all emails from mailing lists, parse them into structured datasets, and analyze them while preserving privacy.
 
-This project is in active development. It currently supports reading from NNTP endpoints.
+This project is in active development. It currently supports reading from NNTP endpoints and public-inbox git repositories.
 
 ## Pipeline Overview
 
@@ -39,7 +39,7 @@ Each component has its own detailed documentation:
 
 1. Clone recursively
 
-One of the dependencies is a git submodule. To build correclty
+One of the dependencies is a git submodule. To build correctly
 
    ```bash
    git clone --recurse-submodules git@github.com:linux-duks/MLH-archiver.git

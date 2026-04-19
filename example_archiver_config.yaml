@@ -1,8 +1,9 @@
 # Example archiver configuration file
 # 
 # This configuration uses the nested format with source-specific blocks.
-# The `nntp:` block contains all NNTP-specific settings.
 # Global settings (nthreads, output_dir, loop_groups) are at the top level.
+# The `nntp:` block contains all NNTP-specific settings.
+# The `public_inbox:` block contains settings for consumming public-inbox git repositories
 
 nthreads: 3
 output_dir: "./output"
@@ -10,5 +11,10 @@ loop_groups: true
 
 nntp:
   hostname: "nntp://localhost"
-  group_lists: ["ALL"]
+  group_lists: ["*"]
   # article_range: "1-100"  # Optional: fetch specific range from first list
+
+public_inbox:
+  origin: public-inbox.example.org
+  import_directory: /media/public-inbox-data
+
