@@ -211,10 +211,6 @@ impl<'a> Scheduler<'a> {
                 }
             });
             worker_handles.push(handle);
-
-            // Space out thread creation (to prevent multiple connections opening at once)
-            #[cfg(not(test))]
-            std::thread::sleep(Duration::from_secs(2));
         }
         return worker_handles;
     }
