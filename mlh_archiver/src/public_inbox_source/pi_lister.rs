@@ -19,6 +19,8 @@ use std::path::PathBuf;
 /// # Example
 ///
 /// ```
+/// use crate::public_inbox_source::{pi_config::PIConfig, pi_lister::retrieve_lists};
+///
 /// let config = PIConfig {
 ///     inport_directory: "/path/to/inboxes".to_string(),
 ///     origin: "example".to_string(),

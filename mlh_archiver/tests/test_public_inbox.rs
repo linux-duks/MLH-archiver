@@ -40,7 +40,7 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
 /// Reads the YAML file and verifies:
 /// - The file exists and contains `last_email` field
 /// - The `last_email` value matches the expected maximum article ID
-/// Supports both plain numeric IDs and formatted IDs (e.g., "123-e2-abc")
+///   Supports both plain numeric IDs and formatted IDs (e.g., "123-e2-abc")
 fn validate_progress_file(path: &str, expected_last_email: usize) {
     let content = fs::read_to_string(path).expect("Progress file should exist");
     assert!(
@@ -77,7 +77,7 @@ fn validate_progress_file(path: &str, expected_last_email: usize) {
 /// - The file exists and contains expected number of lineage entries
 /// - Each entry has: email_index, list_name, source_type, timestamp, archiver_build_info
 /// - The email_index values match the expected article IDs (in order)
-/// Supports both plain numeric indices and formatted IDs (e.g., "listname/2")
+///   Supports both plain numeric indices and formatted IDs (e.g., "listname/2")
 fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_indices: &[usize]) {
     let content = fs::read_to_string(path).expect("Lineage file should exist");
 
@@ -227,13 +227,25 @@ fn validate_exact_file_structure(
     if expected_article_count > 0 {
         let progress_path = format!("{}/__progress.yaml", list_dir);
         let lineage_path = format!("{}/__lineage.yaml", list_dir);
-        assert!(Path::new(&progress_path).is_file(), "Missing: {}", progress_path);
-        assert!(Path::new(&lineage_path).is_file(), "Missing: {}", lineage_path);
+        assert!(
+            Path::new(&progress_path).is_file(),
+            "Missing: {}",
+            progress_path
+        );
+        assert!(
+            Path::new(&lineage_path).is_file(),
+            "Missing: {}",
+            lineage_path
+        );
     }
 
     if has_errors {
         let errors_path = format!("{}/__errors.csv", list_dir);
-        assert!(Path::new(&errors_path).is_file(), "Missing: {}", errors_path);
+        assert!(
+            Path::new(&errors_path).is_file(),
+            "Missing: {}",
+            errors_path
+        );
     }
 
     let actual_files: Vec<String> = WalkDir::new(&list_dir)
@@ -245,9 +257,11 @@ fn validate_exact_file_structure(
 
     let expected_file_count = expected_article_count + 2 + if has_errors { 1 } else { 0 };
     assert_eq!(
-        actual_files.len(), expected_file_count,
+        actual_files.len(),
+        expected_file_count,
         "Expected {} total files, found {}",
-        expected_file_count, actual_files.len()
+        expected_file_count,
+        actual_files.len()
     );
 }
 
@@ -378,13 +392,12 @@ fn test_read_from_synthetic_public_inbox() {
     assert!(Path::new(&format!("{}/__progress.yaml", list_dir)).exists());
     assert!(Path::new(&format!("{}/__lineage.yaml", list_dir)).exists());
 
-    validate_list(output_dir, "v2_test.groups.synthetic", &(1..=12).collect::<Vec<usize>>());
-    validate_exact_file_structure(
+    validate_list(
         output_dir,
         "v2_test.groups.synthetic",
-        12,
-        false,
+        &(1..=12).collect::<Vec<usize>>(),
     );
+    validate_exact_file_structure(output_dir, "v2_test.groups.synthetic", 12, false);
 
     check_and_delete_folder(output_dir.to_string()).unwrap();
 }
