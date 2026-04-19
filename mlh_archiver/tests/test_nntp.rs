@@ -62,7 +62,7 @@ where
     let image = build_test_nntp_image();
     let (container, host_port) = start_test_nntp_container(image);
 
-    let output_dir = format!("./test_output_{}", test_name);
+    let output_dir = format!("./test_nntp_output_{}", test_name);
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     let mut app_config = config_builder(host_port);
@@ -271,7 +271,7 @@ fn test_read_from_local_nntp_server() {
         "default",
     );
 
-    let output_dir = "./test_output_default";
+    let output_dir = "./test_nntp_output_default";
 
     let mut found_files = found_files;
     let mut expected_files = [
@@ -330,11 +330,11 @@ fn test_read_single_article_by_range() {
     // Only article 5 should be fetched (only exists in synthetic list)
     // Other lists will have __errors.csv files because article 5 doesn't exist
     let mut expected_files = [
-        root_dir("./test_output_single"),
-        list_entry("./test_output_single", "test.groups.foo", &[], true),
-        list_entry("./test_output_single", "test.groups.bar", &[], true),
-        list_entry("./test_output_single", "test.groups.empty", &[], true),
-        list_entry("./test_output_single", "test.groups.synthetic", &[5], false),
+        root_dir("./test_nntp_output_single"),
+        list_entry("./test_nntp_output_single", "test.groups.foo", &[], true),
+        list_entry("./test_nntp_output_single", "test.groups.bar", &[], true),
+        list_entry("./test_nntp_output_single", "test.groups.empty", &[], true),
+        list_entry("./test_nntp_output_single", "test.groups.synthetic", &[5], false),
     ]
     .concat();
     let mut found_files = found_files;
@@ -343,12 +343,12 @@ fn test_read_single_article_by_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_single", "test.groups.foo", &[]);
-    validate_list("./test_output_single", "test.groups.bar", &[]);
-    validate_list("./test_output_single", "test.groups.empty", &[]);
-    validate_list("./test_output_single", "test.groups.synthetic", &[5]);
+    validate_list("./test_nntp_output_single", "test.groups.foo", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.bar", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.synthetic", &[5]);
 
-    check_and_delete_folder("./test_output_single".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_single".to_string()).unwrap();
 }
 
 #[test]
@@ -376,12 +376,12 @@ fn test_read_article_range() {
     // foo has 2 articles (1, 2), bar has 2 (1, 2), synthetic has 3 (1, 2, 3)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_range"),
-        list_entry("./test_output_range", "test.groups.foo", &[1, 2], true),
-        list_entry("./test_output_range", "test.groups.bar", &[1, 2], true),
-        list_entry("./test_output_range", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_range"),
+        list_entry("./test_nntp_output_range", "test.groups.foo", &[1, 2], true),
+        list_entry("./test_nntp_output_range", "test.groups.bar", &[1, 2], true),
+        list_entry("./test_nntp_output_range", "test.groups.empty", &[], true),
         list_entry(
-            "./test_output_range",
+            "./test_nntp_output_range",
             "test.groups.synthetic",
             &[1, 2, 3],
             false,
@@ -394,12 +394,12 @@ fn test_read_article_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_range", "test.groups.foo", &[1, 2]);
-    validate_list("./test_output_range", "test.groups.bar", &[1, 2]);
-    validate_list("./test_output_range", "test.groups.empty", &[]);
-    validate_list("./test_output_range", "test.groups.synthetic", &[1, 2, 3]);
+    validate_list("./test_nntp_output_range", "test.groups.foo", &[1, 2]);
+    validate_list("./test_nntp_output_range", "test.groups.bar", &[1, 2]);
+    validate_list("./test_nntp_output_range", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_range", "test.groups.synthetic", &[1, 2, 3]);
 
-    check_and_delete_folder("./test_output_range".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_range".to_string()).unwrap();
 }
 
 #[test]
@@ -427,12 +427,12 @@ fn test_read_multiple_articles_by_range() {
     // foo has 1 article (1), bar has 1 (1), synthetic has 3 (1, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_multiple"),
-        list_entry("./test_output_multiple", "test.groups.foo", &[1], true),
-        list_entry("./test_output_multiple", "test.groups.bar", &[1], true),
-        list_entry("./test_output_multiple", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_multiple"),
+        list_entry("./test_nntp_output_multiple", "test.groups.foo", &[1], true),
+        list_entry("./test_nntp_output_multiple", "test.groups.bar", &[1], true),
+        list_entry("./test_nntp_output_multiple", "test.groups.empty", &[], true),
         list_entry(
-            "./test_output_multiple",
+            "./test_nntp_output_multiple",
             "test.groups.synthetic",
             &[1, 5, 10],
             false,
@@ -445,16 +445,16 @@ fn test_read_multiple_articles_by_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_multiple", "test.groups.foo", &[1]);
-    validate_list("./test_output_multiple", "test.groups.bar", &[1]);
-    validate_list("./test_output_multiple", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_multiple", "test.groups.foo", &[1]);
+    validate_list("./test_nntp_output_multiple", "test.groups.bar", &[1]);
+    validate_list("./test_nntp_output_multiple", "test.groups.empty", &[]);
     validate_list(
-        "./test_output_multiple",
+        "./test_nntp_output_multiple",
         "test.groups.synthetic",
         &[1, 5, 10],
     );
 
-    check_and_delete_folder("./test_output_multiple".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_multiple".to_string()).unwrap();
 }
 
 #[test]
@@ -482,12 +482,12 @@ fn test_read_mixed_range() {
     // foo has 1 article (1), bar has 1 (1), synthetic has 5 (1, 3, 4, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_mixed"),
-        list_entry("./test_output_mixed", "test.groups.foo", &[1], true),
-        list_entry("./test_output_mixed", "test.groups.bar", &[1], true),
-        list_entry("./test_output_mixed", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_mixed"),
+        list_entry("./test_nntp_output_mixed", "test.groups.foo", &[1], true),
+        list_entry("./test_nntp_output_mixed", "test.groups.bar", &[1], true),
+        list_entry("./test_nntp_output_mixed", "test.groups.empty", &[], true),
         list_entry(
-            "./test_output_mixed",
+            "./test_nntp_output_mixed",
             "test.groups.synthetic",
             &[1, 3, 4, 5, 10],
             false,
@@ -500,16 +500,16 @@ fn test_read_mixed_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_mixed", "test.groups.foo", &[1]);
-    validate_list("./test_output_mixed", "test.groups.bar", &[1]);
-    validate_list("./test_output_mixed", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_mixed", "test.groups.foo", &[1]);
+    validate_list("./test_nntp_output_mixed", "test.groups.bar", &[1]);
+    validate_list("./test_nntp_output_mixed", "test.groups.empty", &[]);
     validate_list(
-        "./test_output_mixed",
+        "./test_nntp_output_mixed",
         "test.groups.synthetic",
         &[1, 3, 4, 5, 10],
     );
 
-    check_and_delete_folder("./test_output_mixed".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_mixed".to_string()).unwrap();
 }
 
 // =============================================================================
@@ -540,8 +540,8 @@ fn test_read_from_local_nntp_server_with_auth() {
 
     let mut found_files = found_files;
     let mut expected_files = [
-        root_dir("./test_output_auth"),
-        list_entry("./test_output_auth", "test.groups.foo", &[1, 2], false),
+        root_dir("./test_nntp_output_auth"),
+        list_entry("./test_nntp_output_auth", "test.groups.foo", &[1, 2], false),
     ]
     .concat();
     found_files.sort();
@@ -549,7 +549,7 @@ fn test_read_from_local_nntp_server_with_auth() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_auth", "test.groups.foo", &[1, 2]);
+    validate_list("./test_nntp_output_auth", "test.groups.foo", &[1, 2]);
 
-    check_and_delete_folder("./test_output_auth".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_auth".to_string()).unwrap();
 }

@@ -16,6 +16,15 @@ pub struct PublicInbox {
     pub git_dir: PathBuf,
 }
 
+/// Represents a single epoch within a V2 public inbox.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EpochRepo {
+    /// Epoch name derived from directory name (e.g., "0", "1", "all")
+    pub epoch_name: String,
+    /// Path to the epoch's git repository
+    pub git_dir: PathBuf,
+}
+
 /// Display implementation for RunModeConfig does not need to provide every field
 /// It it used in the data-lineage module to save info about how it was used
 impl fmt::Display for PublicInbox {
@@ -282,4 +291,136 @@ pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate
     let blob = repo.find_blob(blob_oid)?;
     let raw_email = String::from_utf8_lossy(&blob.data).to_string();
     return Ok(raw_email);
+}
+
+/// Finds all epoch repositories within a V2 public inbox's git/ directory.
+/// Returns a sorted Vec<EpochRepo> with numbered epochs first, then "all" last.
+pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
+    let mut epochs = Vec::new();
+
+    if !git_dir.is_dir() {
+        return Ok(epochs);
+    }
+
+    for entry in std::fs::read_dir(git_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        if !name.ends_with(".git") {
+            continue;
+        }
+
+        if !is_git_repo(&path) || !has_master_ref(&path) {
+            continue;
+        }
+
+        let epoch_name = name.strip_suffix(".git").unwrap_or(name).to_string();
+        epochs.push(EpochRepo {
+            epoch_name,
+            git_dir: path,
+        });
+    }
+
+    epochs.sort_by(|a, b| {
+        let a_is_all = a.epoch_name == "all";
+        let b_is_all = b.epoch_name == "all";
+        if a_is_all && !b_is_all {
+            return std::cmp::Ordering::Greater;
+        }
+        if !a_is_all && b_is_all {
+            return std::cmp::Ordering::Less;
+        }
+        a.epoch_name.cmp(&b.epoch_name)
+    });
+
+    Ok(epochs)
+}
+
+/// Counts the total number of commits in a repository from refs/heads/master.
+pub fn count_commits(repo: &gix::Repository) -> crate::Result<usize> {
+    let head_ref = repo.refs.find("refs/heads/master")?;
+    let head_id = head_ref
+        .target
+        .try_id()
+        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
+        .to_owned();
+
+    let count = repo
+        .rev_walk([head_id])
+        .all()?
+        .filter_map(|r| r.ok())
+        .count();
+
+    Ok(count)
+}
+
+/// Formats an email ID from its sequential number, epoch name, and commit SHA.
+/// Format: "{padded_id}-e{epoch}-{short_sha}"
+/// Example: "0000000001-e1-d3ed66e"
+pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
+    let padded = format!("{:010}", email_num);
+    let short_sha = if commit_sha.len() >= 7 {
+        &commit_sha[..7]
+    } else {
+        commit_sha
+    };
+    format!("{}-e{}-{}", padded, epoch_name, short_sha)
+}
+
+/// Parsed components of a formatted email ID.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedEmailId {
+    pub email_num: usize,
+    pub epoch_name: String,
+    pub short_sha: String,
+}
+
+/// Parses a formatted email ID back into its components.
+/// Format: "{padded_id}-e{epoch}-{short_sha}"
+/// Returns None if the format doesn't match.
+pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
+    let parts: Vec<&str> = id.splitn(3, '-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let email_num = parts[0].parse::<usize>().ok()?;
+
+    let epoch_and_sha = parts[1];
+    if !epoch_and_sha.starts_with('e') {
+        return None;
+    }
+    let epoch_name = epoch_and_sha[1..].to_string();
+
+    let short_sha = parts[2].to_string();
+
+    Some(ParsedEmailId {
+        email_num,
+        epoch_name,
+        short_sha,
+    })
+}
+
+/// Collects all commit IDs from a repository, ordered from newest to oldest.
+pub fn collect_all_commits(repo: &gix::Repository) -> crate::Result<Vec<gix::ObjectId>> {
+    let head_ref = repo.refs.find("refs/heads/master")?;
+    let head_id = head_ref
+        .target
+        .try_id()
+        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
+        .to_owned();
+
+    let commits: Vec<_> = repo
+        .rev_walk([head_id])
+        .all()?
+        .filter_map(|r| r.ok())
+        .map(|info| info.id)
+        .collect();
+
+    Ok(commits)
 }
