@@ -183,6 +183,22 @@ It is expected that
 | `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 
+#### Public-Inbox Options (under `public_inbox:` block)
+
+If using a large number of public-inbox repositores, we recommend cloning them with [Grokmirror](https://github.com/mricon/grokmirror).
+We have our complete guide available in the [linux-duks/Public-Inbox-Stack](https://github.com/linux-duks/Public-Inbox-Stack). If using only for this, follow the mirroring steps only.
+
+It is expected that
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `import_directory` | string | **Required.** The parent folder of all mailing lists|
+| `origin` | string | **Required**. server hostname were the lists were cloned from |
+| `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
+| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
+
+
 #### NNTP Options (under `nntp:` block)
 
 | Option | Type | Description |
