@@ -334,7 +334,12 @@ fn test_read_single_article_by_range() {
         list_entry("./test_nntp_output_single", "test.groups.foo", &[], true),
         list_entry("./test_nntp_output_single", "test.groups.bar", &[], true),
         list_entry("./test_nntp_output_single", "test.groups.empty", &[], true),
-        list_entry("./test_nntp_output_single", "test.groups.synthetic", &[5], false),
+        list_entry(
+            "./test_nntp_output_single",
+            "test.groups.synthetic",
+            &[5],
+            false,
+        ),
     ]
     .concat();
     let mut found_files = found_files;
@@ -397,7 +402,11 @@ fn test_read_article_range() {
     validate_list("./test_nntp_output_range", "test.groups.foo", &[1, 2]);
     validate_list("./test_nntp_output_range", "test.groups.bar", &[1, 2]);
     validate_list("./test_nntp_output_range", "test.groups.empty", &[]);
-    validate_list("./test_nntp_output_range", "test.groups.synthetic", &[1, 2, 3]);
+    validate_list(
+        "./test_nntp_output_range",
+        "test.groups.synthetic",
+        &[1, 2, 3],
+    );
 
     check_and_delete_folder("./test_nntp_output_range".to_string()).unwrap();
 }
@@ -430,7 +439,12 @@ fn test_read_multiple_articles_by_range() {
         root_dir("./test_nntp_output_multiple"),
         list_entry("./test_nntp_output_multiple", "test.groups.foo", &[1], true),
         list_entry("./test_nntp_output_multiple", "test.groups.bar", &[1], true),
-        list_entry("./test_nntp_output_multiple", "test.groups.empty", &[], true),
+        list_entry(
+            "./test_nntp_output_multiple",
+            "test.groups.empty",
+            &[],
+            true,
+        ),
         list_entry(
             "./test_nntp_output_multiple",
             "test.groups.synthetic",

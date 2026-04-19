@@ -6,17 +6,25 @@ use gix::bstr::ByteSlice;
 use gix::revision::walk::Info;
 
 /// Represents a detected public-inbox directory.
+///
+/// This struct contains information about a public inbox that has been discovered
+/// in the filesystem, including its name, version (V1 or V2), and the path to its
+/// underlying git repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PublicInbox {
-    /// Display name of the inbox
+    /// Display name of the inbox (typically the directory name)
     pub name: String,
-    /// V1 or V2
+    /// Version of the public inbox format (V1 or V2, with variants)
     pub version: String,
     /// Path to the git repository containing the emails
     pub git_dir: PathBuf,
 }
 
 /// Represents a single epoch within a V2 public inbox.
+///
+/// In V2 public inboxes, emails are organized into epochs (typically numbered
+/// directories like 0.git, 1.git, etc.) that represent time-based partitions
+/// of the email archive.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EpochRepo {
     /// Epoch name derived from directory name (e.g., "0", "1", "all")
@@ -25,8 +33,10 @@ pub struct EpochRepo {
     pub git_dir: PathBuf,
 }
 
-/// Display implementation for RunModeConfig does not need to provide every field
-/// It it used in the data-lineage module to save info about how it was used
+/// Display implementation for PublicInbox.
+///
+/// This implementation is used in the data-lineage module to save information
+/// about how the inbox was used.
 impl fmt::Display for PublicInbox {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.name)
@@ -34,6 +44,19 @@ impl fmt::Display for PublicInbox {
 }
 
 /// Scans the base directory for public-inbox subdirectories.
+///
+/// This function iterates through all entries in the base directory and attempts
+/// to identify which ones are valid public inbox repositories by checking for
+/// the characteristic git structure and metadata.
+///
+/// # Arguments
+///
+/// * `base_dir` - The directory to scan for public inbox subdirectories
+///
+/// # Returns
+///
+/// * `Ok(Vec<PublicInbox>)` - A vector of discovered public inboxes, sorted by name
+/// * `Err` - If an I/O error occurs while reading the directory
 pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> {
     let mut inboxes = Vec::new();
 
@@ -58,11 +81,36 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
 }
 
 /// Check if a directory is a git repository (has HEAD and objects).
+///
+/// This function performs a basic check to determine if a directory is a git
+/// repository by verifying the presence of the HEAD file and objects directory.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to check
+///
+/// # Returns
+///
+/// * `true` if the directory appears to be a git repository
+/// * `false` otherwise
 fn is_git_repo(dir: &Path) -> bool {
     dir.join("HEAD").is_file() && dir.join("objects").is_dir()
 }
 
 /// Check if a git repository has a master ref (either in refs/heads/master or packed-refs).
+///
+/// This function checks for the existence of a master branch reference, which
+/// is necessary for processing emails from the repository. It checks both the
+/// standard refs/heads/master file and the packed-refs file for performance.
+///
+/// # Arguments
+///
+/// * `dir` - The git repository directory to check
+///
+/// # Returns
+///
+/// * `true` if the repository has a master ref
+/// * `false` otherwise
 fn has_master_ref(dir: &Path) -> bool {
     if dir.join("refs/heads/master").is_file() {
         return true;
@@ -79,7 +127,20 @@ fn has_master_ref(dir: &Path) -> bool {
 }
 
 /// Finds an epoch repository (git/*.git) that contains the master ref.
-/// Returns the path to the epoch repo if found, otherwise None.
+///
+/// This helper function searches through a git directory's subdirectories for
+/// epoch repositories (named like 0.git, 1.git, etc.) that contain a master
+/// ref and are valid git repositories.
+///
+/// # Arguments
+///
+/// * `git_dir` - The git directory to search for epoch repositories
+///
+/// # Returns
+///
+/// * `Ok(Some(PathBuf))` - Path to an epoch repository with master ref
+/// * `Ok(None)` - No epoch repository with master ref was found
+/// * `Err` - If an I/O error occurs while reading the directory
 fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>> {
     for entry in std::fs::read_dir(git_dir)? {
         let entry = entry?;
@@ -102,6 +163,18 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
 }
 
 /// Check if a git repository has any objects (non-empty objects directory).
+///
+/// This function checks whether a git repository has any objects stored in its
+/// objects directory, which indicates whether it contains any commits.
+///
+/// # Arguments
+///
+/// * `dir` - The git repository directory to check
+///
+/// # Returns
+///
+/// * `true` if the repository has objects
+/// * `false` if the objects directory is empty or doesn't exist
 fn has_objects(dir: &Path) -> bool {
     let objects_dir = dir.join("objects");
     if !objects_dir.is_dir() {
@@ -115,6 +188,21 @@ fn has_objects(dir: &Path) -> bool {
 }
 
 /// Detects if a directory is a public-inbox (V1 or V2) and returns its info.
+///
+/// This function examines a directory to determine if it follows the structure
+/// of a public inbox email archive. It supports both V1 (single repository)
+/// and V2 (epoch-based) layouts, including various combinations like those
+/// using git alternates.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to check for public inbox structure
+///
+/// # Returns
+///
+/// * `Ok(Some(PublicInbox))` - Information about the detected public inbox
+/// * `Ok(None)` - The directory does not appear to be a public inbox
+/// * `Err` - If an I/O error occurs while reading files
 fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     let name = dir
         .file_name()
@@ -237,6 +325,19 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
 }
 
 /// Get commit at given position (0-indexed from newest).
+///
+/// This function retrieves a specific commit from a repository's history,
+/// counting from the newest commit (position 0) toward older commits.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository to query
+/// * `position` - The zero-indexed position from newest (0 = newest commit)
+///
+/// # Returns
+///
+/// * `Ok(Info)` - Information about the commit at the specified position
+/// * `Err` - If the position is out of bounds or an error occurs during revision walking
 pub fn get_commit_at_position<'a>(
     repo: &'a gix::Repository,
     position: usize,
@@ -261,7 +362,19 @@ pub fn get_commit_at_position<'a>(
 }
 
 /// Extract email content from a commit.
-/// Returns (commit_hash, raw_email).
+///
+/// This function extracts the raw email content from a public inbox commit by
+/// finding the 'm' blob in the commit's tree, which contains the email message.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository containing the commit
+/// * `commit` - The commit from which to extract the email
+///
+/// # Returns
+///
+/// * `Ok((String, String))` - A tuple of (commit_hash, raw_email_content)
+/// * `Err` - If no 'm' blob is found in the commit tree or an error occurs
 pub fn extract_email_from_commit(
     repo: &gix::Repository,
     commit: &gix::Commit,
@@ -287,6 +400,21 @@ pub fn extract_email_from_commit(
     }
 }
 
+/// Read the raw content of a blob by its object ID.
+///
+/// This function retrieves the raw binary data of a git blob object and converts
+/// it to a UTF-8 string, which represents the email content in public inbox
+/// repositories.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository containing the blob
+/// * `blob_oid` - The object ID of the blob to read
+///
+/// # Returns
+///
+/// * `Ok(String)` - The raw content of the blob as a UTF-8 string
+/// * `Err` - If the blob cannot be found or read
 pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate::Result<String> {
     let blob = repo.find_blob(blob_oid)?;
     let raw_email = String::from_utf8_lossy(&blob.data).to_string();
@@ -294,7 +422,20 @@ pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate
 }
 
 /// Finds all epoch repositories within a V2 public inbox's git/ directory.
-/// Returns a sorted Vec<EpochRepo> with numbered epochs first, then "all" last.
+///
+/// This function scans the git/ directory of a V2 public inbox for all epoch
+/// repositories (directories ending in .git that are valid git repositories
+/// with a master ref). It returns them sorted with numeric epochs first,
+/// followed by the "all" epoch last.
+///
+/// # Arguments
+///
+/// * `git_dir` - The git directory of the public inbox to search
+///
+/// # Returns
+///
+/// * `Ok(Vec<EpochRepo>)` - A vector of epoch repositories, sorted appropriately
+/// * `Err` - If an I/O error occurs while reading the directory
 pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
     let mut epochs = Vec::new();
 
@@ -342,6 +483,18 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
 }
 
 /// Counts the total number of commits in a repository from refs/heads/master.
+///
+/// This function counts all commits reachable from the master branch ref by
+/// performing a revision walk from HEAD and counting each commit encountered.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository to count commits in
+///
+/// # Returns
+///
+/// * `Ok(usize)` - The total number of commits in the repository
+/// * `Err` - If an error occurs during revision walking
 pub fn count_commits(repo: &gix::Repository) -> crate::Result<usize> {
     let head_ref = repo.refs.find("refs/heads/master")?;
     let head_id = head_ref
@@ -360,8 +513,23 @@ pub fn count_commits(repo: &gix::Repository) -> crate::Result<usize> {
 }
 
 /// Formats an email ID from its sequential number, epoch name, and commit SHA.
+///
+/// This function creates a standardized email ID format for public inbox
+/// archiving that includes sequential numbering, epoch identification, and
+/// a shortened commit SHA for traceability.
+///
 /// Format: "{padded_id}-e{epoch}-{short_sha}"
 /// Example: "0000000001-e1-d3ed66e"
+///
+/// # Arguments
+///
+/// * `email_num` - The sequential email number (will be zero-padded to 10 digits)
+/// * `epoch_name` - The name of the epoch (e.g., "0", "1", "all")
+/// * `commit_sha` - The full commit SHA (will be shortened to 7 characters)
+///
+/// # Returns
+///
+/// * `String` - The formatted email ID
 pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
     let padded = format!("{:010}", email_num);
     let short_sha = if commit_sha.len() >= 7 {
@@ -373,16 +541,34 @@ pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> 
 }
 
 /// Parsed components of a formatted email ID.
+///
+/// This struct represents the three components that make up a formatted public
+/// inbox email ID: the sequential number, epoch name, and shortened commit SHA.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedEmailId {
+    /// The sequential email number (1-indexed)
     pub email_num: usize,
+    /// The epoch name (e.g., "0", "1", "all")
     pub epoch_name: String,
+    /// The shortened commit SHA (7 characters)
     pub short_sha: String,
 }
 
 /// Parses a formatted email ID back into its components.
+///
+/// This function reverses the format_email_id function, extracting the
+/// sequential number, epoch name, and commit SHA from a formatted email ID.
+///
 /// Format: "{padded_id}-e{epoch}-{short_sha}"
-/// Returns None if the format doesn't match.
+///
+/// # Arguments
+///
+/// * `id` - The formatted email ID string to parse
+///
+/// # Returns
+///
+/// * `Some(ParsedEmailId)` - The parsed components if the format matches
+/// * `None` - If the format doesn't match the expected pattern
 pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
     let parts: Vec<&str> = id.splitn(3, '-').collect();
     if parts.len() != 3 {
@@ -407,6 +593,19 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
 }
 
 /// Collects all commit IDs from a repository, ordered from newest to oldest.
+///
+/// This function performs a revision walk from HEAD (refs/heads/master) and
+/// collects the object IDs of all commits in the repository, ordered from
+/// newest commit first to oldest commit last.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository to collect commits from
+///
+/// # Returns
+///
+/// * `Ok(Vec<gix::ObjectId>)` - A vector of commit object IDs, newest first
+/// * `Err` - If an error occurs during revision walking
 pub fn collect_all_commits(repo: &gix::Repository) -> crate::Result<Vec<gix::ObjectId>> {
     let head_ref = repo.refs.find("refs/heads/master")?;
     let head_id = head_ref

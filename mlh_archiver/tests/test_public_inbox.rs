@@ -300,15 +300,20 @@ fn validate_progress_file_pi(path: &str, expected_last_email: usize) {
         "Progress file should contain 'last_email' field: {}",
         path
     );
-    let yaml_value: serde_yaml::Value = serde_yaml::from_str(&content)
-        .expect("Failed to parse YAML content");
-    let last_email_str = yaml_value.get("last_email")
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).expect("Failed to parse YAML content");
+    let last_email_str = yaml_value
+        .get("last_email")
         .expect("YAML should have last_email field")
         .as_str()
         .expect("last_email should be a string");
 
-    let parsed = parse_email_id(last_email_str)
-        .unwrap_or_else(|| panic!("last_email should be in formatted ID, got: {}", last_email_str));
+    let parsed = parse_email_id(last_email_str).unwrap_or_else(|| {
+        panic!(
+            "last_email should be in formatted ID, got: {}",
+            last_email_str
+        )
+    });
     assert_eq!(
         parsed.email_num, expected_last_email,
         "Progress file {} should have email_num={}, got {}",
@@ -609,7 +614,7 @@ fn test_read_from_demo_public_inbox() {
         let (_, email_file) = email_files
             .iter()
             .find(|(num, _)| *num == article_num)
-            .expect(&format!("Email file for article {} not found", article_num));
+            .unwrap_or_else(|| panic!("Email file for article {} not found", article_num));
 
         let actual_content = fs::read_to_string(email_file).expect("Failed to read email file");
         assert_eq!(
