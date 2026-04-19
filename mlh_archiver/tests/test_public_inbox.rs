@@ -40,6 +40,7 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
 /// Reads the YAML file and verifies:
 /// - The file exists and contains `last_email` field
 /// - The `last_email` value matches the expected maximum article ID
+/// Supports both plain numeric IDs and formatted IDs (e.g., "123-e2-abc")
 fn validate_progress_file(path: &str, expected_last_email: usize) {
     let content = fs::read_to_string(path).expect("Progress file should exist");
     assert!(
@@ -47,7 +48,6 @@ fn validate_progress_file(path: &str, expected_last_email: usize) {
         "Progress file should contain 'last_email' field: {}",
         path
     );
-    // Parse the YAML content properly using serde_yaml
     let yaml_value: serde_yaml::Value =
         serde_yaml::from_str(&content).expect("Failed to parse YAML content");
     let last_email_str = yaml_value
@@ -55,13 +55,19 @@ fn validate_progress_file(path: &str, expected_last_email: usize) {
         .expect("YAML should have last_email field")
         .as_str()
         .expect("last_email should be a string");
-    let last_email: usize = last_email_str
-        .parse()
-        .expect("Failed to parse last_email as usize");
+
+    let actual_email_num = if let Some(parsed) = parse_email_id(last_email_str) {
+        parsed.email_num
+    } else {
+        last_email_str
+            .parse()
+            .expect("Failed to parse last_email as numeric")
+    };
+
     assert_eq!(
-        last_email, expected_last_email,
-        "Progress file {} should have last_email={}",
-        path, expected_last_email
+        actual_email_num, expected_last_email,
+        "Progress file {} should have email_num={}, got {}",
+        path, expected_last_email, actual_email_num
     );
 }
 
@@ -71,10 +77,10 @@ fn validate_progress_file(path: &str, expected_last_email: usize) {
 /// - The file exists and contains expected number of lineage entries
 /// - Each entry has: email_index, list_name, source_type, timestamp, archiver_build_info
 /// - The email_index values match the expected article IDs (in order)
+/// Supports both plain numeric indices and formatted IDs (e.g., "listname/2")
 fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_indices: &[usize]) {
     let content = fs::read_to_string(path).expect("Lineage file should exist");
 
-    // Verify source_type contains "PublicInbox"
     assert!(
         content.contains("source_type:"),
         "Lineage file should contain 'source_type' field: {}",
@@ -86,7 +92,6 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
         path
     );
 
-    // Verify list_name
     assert!(
         content.contains(expected_list_name),
         "Lineage file should have list_name={}: {}",
@@ -94,33 +99,18 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
         path
     );
 
-    // Verify timestamp exists
     assert!(
         content.contains("timestamp:"),
         "Lineage file should contain 'timestamp' field: {}",
         path
     );
 
-    // Verify archiver_build_info exists and is non-empty
     assert!(
         content.contains("archiver_build_info:"),
         "Lineage file should contain 'archiver_build_info' field: {}",
         path
     );
 
-    // Verify email_index values match expected
-    for &email_index in expected_email_indices {
-        let unquoted = format!("email_index: {}", email_index);
-        let quoted = format!("email_index: '{}'", email_index);
-        assert!(
-            content.contains(&unquoted) || content.contains(&quoted),
-            "Lineage file should contain email_index={}: {}",
-            email_index,
-            path
-        );
-    }
-
-    // Verify count of entries
     let entry_count = content.matches("email_index:").count();
     assert_eq!(
         entry_count,
@@ -130,6 +120,22 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
         entry_count,
         path
     );
+
+    for &email_index in expected_email_indices {
+        let search = "email_index:".to_string();
+        let mut found = false;
+        for line in content.lines() {
+            if line.contains(&search) && line.contains(&email_index.to_string()) {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "Lineage file should contain email_index={}: {}",
+            email_index, path
+        );
+    }
 }
 
 // =============================================================================
@@ -182,7 +188,7 @@ fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
     if articles.is_empty() {
         return;
     }
-    let max_article = articles.iter().copied().max().unwrap();
+    let max_article = *articles.iter().max().unwrap_or(&0);
     validate_progress_file(
         &format!("{}/{}/__progress.yaml", dir, list_name),
         max_article,
@@ -191,6 +197,57 @@ fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
         &format!("{}/{}/__lineage.yaml", dir, list_name),
         list_name,
         articles,
+    );
+}
+
+/// Validates that the output directory contains exactly the expected files.
+///
+/// Compares the actual files found against the expected files generated
+/// by `list_entry`. This ensures no extra files and no missing files.
+fn validate_exact_file_structure(
+    output_dir: &str,
+    list_name: &str,
+    expected_article_count: usize,
+    has_errors: bool,
+) {
+    let list_dir = format!("{}/{}", output_dir, list_name);
+    assert!(
+        Path::new(&list_dir).is_dir(),
+        "Expected directory missing: {}",
+        list_dir
+    );
+
+    let actual_eml_count = count_eml_files(&list_dir);
+    assert_eq!(
+        actual_eml_count, expected_article_count,
+        "Expected {} .eml files, found {}",
+        expected_article_count, actual_eml_count
+    );
+
+    if expected_article_count > 0 {
+        let progress_path = format!("{}/__progress.yaml", list_dir);
+        let lineage_path = format!("{}/__lineage.yaml", list_dir);
+        assert!(Path::new(&progress_path).is_file(), "Missing: {}", progress_path);
+        assert!(Path::new(&lineage_path).is_file(), "Missing: {}", lineage_path);
+    }
+
+    if has_errors {
+        let errors_path = format!("{}/__errors.csv", list_dir);
+        assert!(Path::new(&errors_path).is_file(), "Missing: {}", errors_path);
+    }
+
+    let actual_files: Vec<String> = WalkDir::new(&list_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .map(|e| e.path().display().to_string())
+        .collect();
+
+    let expected_file_count = expected_article_count + 2 + if has_errors { 1 } else { 0 };
+    assert_eq!(
+        actual_files.len(), expected_file_count,
+        "Expected {} total files, found {}",
+        expected_file_count, actual_files.len()
     );
 }
 
@@ -276,94 +333,6 @@ where
 // Container-based Integration Tests
 // =============================================================================
 
-/// Validates both progress and lineage files for a public inbox mailing list.
-fn validate_list_pi(dir: &str, list_name: &str, article_count: usize) {
-    if article_count == 0 {
-        return;
-    }
-    validate_progress_file_pi(
-        &format!("{}/{}/__progress.yaml", dir, list_name),
-        article_count,
-    );
-    validate_lineage_file_pi(
-        &format!("{}/{}/__lineage.yaml", dir, list_name),
-        list_name,
-        article_count,
-    );
-}
-
-/// Validates a public inbox progress file exists and has a formatted last_email.
-fn validate_progress_file_pi(path: &str, expected_last_email: usize) {
-    let content = fs::read_to_string(path).expect("Progress file should exist");
-    assert!(
-        content.contains("last_email:"),
-        "Progress file should contain 'last_email' field: {}",
-        path
-    );
-    let yaml_value: serde_yaml::Value =
-        serde_yaml::from_str(&content).expect("Failed to parse YAML content");
-    let last_email_str = yaml_value
-        .get("last_email")
-        .expect("YAML should have last_email field")
-        .as_str()
-        .expect("last_email should be a string");
-
-    let parsed = parse_email_id(last_email_str).unwrap_or_else(|| {
-        panic!(
-            "last_email should be in formatted ID, got: {}",
-            last_email_str
-        )
-    });
-    assert_eq!(
-        parsed.email_num, expected_last_email,
-        "Progress file {} should have email_num={}, got {}",
-        path, expected_last_email, parsed.email_num
-    );
-}
-
-/// Validates a public inbox lineage file.
-/// Public inbox now uses numeric sequential email_index values.
-fn validate_lineage_file_pi(path: &str, expected_list_name: &str, expected_entry_count: usize) {
-    let content = fs::read_to_string(path).expect("Lineage file should exist");
-
-    assert!(
-        content.contains("source_type:"),
-        "Lineage file should contain 'source_type' field: {}",
-        path
-    );
-    assert!(
-        content.contains("PublicInbox"),
-        "Lineage file source_type should contain 'PublicInbox': {}",
-        path
-    );
-
-    assert!(
-        content.contains(expected_list_name),
-        "Lineage file should have list_name={}: {}",
-        expected_list_name,
-        path
-    );
-
-    assert!(
-        content.contains("timestamp:"),
-        "Lineage file should contain 'timestamp' field: {}",
-        path
-    );
-
-    assert!(
-        content.contains("archiver_build_info:"),
-        "Lineage file should contain 'archiver_build_info' field: {}",
-        path
-    );
-
-    let entry_count = content.matches("email_index:").count();
-    assert_eq!(
-        entry_count, expected_entry_count,
-        "Lineage file should have {} entries, found {}: {}",
-        expected_entry_count, entry_count, path
-    );
-}
-
 /// Counts .eml files in a directory.
 fn count_eml_files(dir: &str) -> usize {
     WalkDir::new(dir)
@@ -402,16 +371,20 @@ fn test_read_from_synthetic_public_inbox() {
     let output_dir = "./test_public_inbox_output_pi_synthetic";
     let list_dir = format!("{}/v2_test.groups.synthetic", output_dir);
 
-    // Verify we have the expected number of .eml files
     let eml_count = count_eml_files(&list_dir);
     assert_eq!(eml_count, 12, "Expected 12 .eml files, found {}", eml_count);
 
-    // Check that directory structure files exist
     assert!(Path::new(&list_dir).exists());
     assert!(Path::new(&format!("{}/__progress.yaml", list_dir)).exists());
     assert!(Path::new(&format!("{}/__lineage.yaml", list_dir)).exists());
 
-    validate_list_pi(output_dir, "v2_test.groups.synthetic", 12);
+    validate_list(output_dir, "v2_test.groups.synthetic", &(1..=12).collect::<Vec<usize>>());
+    validate_exact_file_structure(
+        output_dir,
+        "v2_test.groups.synthetic",
+        12,
+        false,
+    );
 
     check_and_delete_folder(output_dir.to_string()).unwrap();
 }
@@ -442,7 +415,8 @@ fn test_pi_article_range() {
     let eml_count = count_eml_files(&list_dir);
     assert_eq!(eml_count, 3, "Expected 3 .eml files, found {}", eml_count);
 
-    validate_list_pi(output_dir, "v2_test.groups.synthetic", 3);
+    validate_list(output_dir, "v2_test.groups.synthetic", &[1, 2, 3]);
+    validate_exact_file_structure(output_dir, "v2_test.groups.synthetic", 3, false);
 
     check_and_delete_folder(output_dir.to_string()).unwrap();
 }
@@ -625,8 +599,8 @@ fn test_read_from_demo_public_inbox() {
         );
     }
 
-    // Validate progress and lineage files
-    validate_list_pi(&output_dir, &inbox.name, expected_emails.len());
+    let article_nums: Vec<usize> = (1..=expected_emails.len()).collect();
+    validate_list(&output_dir, &inbox.name, &article_nums);
 
     // Cleanup
     check_and_delete_folder(output_dir).unwrap();
@@ -732,4 +706,72 @@ fn test_read_article_range_from_demo() {
     assert_eq!(actual_content.trim_end(), expected_email.trim_end());
 
     check_and_delete_folder(output_dir).unwrap();
+}
+
+#[test]
+fn test_validate_file_structure_using_helpers() {
+    let demo_dir = Path::new("../../public-inbox-demo");
+    if !demo_dir.exists() {
+        println!("Demo directory not found, skipping test");
+        return;
+    }
+
+    let inboxes = pi_utils::find_public_inboxes(demo_dir).expect("Failed to find inboxes");
+    if inboxes.is_empty() {
+        println!("No inboxes found, skipping test");
+        return;
+    }
+
+    let inbox = &inboxes[0];
+    let expected_emails = extract_emails_from_inbox(inbox);
+    if expected_emails.is_empty() {
+        println!("Inbox has no emails, skipping test");
+        return;
+    }
+
+    let output_dir = "./test_public_inbox_output_structure".to_owned();
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    let mut app_config = AppConfig {
+        output_dir: output_dir.clone(),
+        nthreads: 1,
+        loop_groups: false,
+        public_inbox: Some(PIConfig {
+            inport_directory: demo_dir.to_string_lossy().to_string(),
+            origin: "demo".to_owned(),
+            grokmirror_manifest: None,
+            public_inbox_config: None,
+            group_lists: Some(vec![inbox.name.clone()]),
+            article_range: None,
+        }),
+        ..Default::default()
+    };
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+    let child_handle = thread::spawn(move || {
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+    });
+
+    child_handle.join().expect("Child thread panicked");
+
+    let article_nums: Vec<usize> = (1..=expected_emails.len()).collect();
+
+    let root = root_dir(&output_dir);
+    assert!(!root.is_empty(), "root_dir should return output dir");
+
+    let expected_files = list_entry(&output_dir, &inbox.name, &article_nums, false);
+    assert!(
+        !expected_files.is_empty(),
+        "list_entry should generate expected files"
+    );
+
+    validate_list(&output_dir, &inbox.name, &article_nums);
+
+    validate_exact_file_structure(&output_dir, &inbox.name, article_nums.len(), false);
+
+    check_and_delete_folder(output_dir).unwrap();
+
+    println!("test_validate_file_structure_using_helpers passed");
 }

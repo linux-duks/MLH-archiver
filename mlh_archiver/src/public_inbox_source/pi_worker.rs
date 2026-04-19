@@ -344,7 +344,22 @@ impl PIWorker {
                     Err(_) => {
                         writer
                             .log_error(&commit_id.to_string(), "No 'm' blob found in commit tree");
-                        log::warn!("W{}: Commit {} missing 'm' blob", self.id, commit_id);
+                        let subject = match commit.message() {
+                            Ok(msg) => msg.summary().to_string(),
+                            Err(_) => "<no message>".to_string(),
+                        };
+                        let tree_str = match commit.tree_id() {
+                            Ok(tid) => tid.to_string(),
+                            Err(_) => "<unknown>".to_string(),
+                        };
+                        log::debug!(
+                            "W{}: Commit {} missing 'm' blob - subject: '{}', parents: {}, tree: {}",
+                            self.id,
+                            commit_id,
+                            subject,
+                            commit.parent_ids().count(),
+                            tree_str,
+                        );
                         next_email_num += 1;
                     }
                 }

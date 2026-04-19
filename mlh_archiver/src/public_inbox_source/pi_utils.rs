@@ -80,6 +80,54 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
     Ok(inboxes)
 }
 
+/// Checks if a git repository's alternates paths (if any) are accessible.
+///
+/// Reads `objects/info/alternates` if it exists and verifies that each listed
+/// path exists on the filesystem. This prevents accepting repos that depend on
+/// external object stores that are no longer available.
+///
+/// # Arguments
+///
+/// * `dir` - The git repository directory to check
+///
+/// # Returns
+///
+/// * `true` if no alternates file exists, or all alternates paths are accessible
+/// * `false` if alternates file exists but any path is missing
+fn has_valid_alternates(dir: &Path) -> bool {
+    let alternates_path = dir.join("objects/info/alternates");
+    if !alternates_path.is_file() {
+        return true; // No alternates = nothing to validate
+    }
+    if let Ok(content) = std::fs::read_to_string(&alternates_path) {
+        for line in content.lines() {
+            let alt = line.trim();
+            if !alt.is_empty() && !std::path::Path::new(alt).exists() {
+                log::debug!("Repo at {:?} has broken alternates path: {}", dir, alt);
+                return false;
+            }
+        }
+    }
+    true
+}
+
+/// Attempts to open a directory as a gix repository to verify it is functional.
+///
+/// This is a stricter validation than file-based checks. It ensures gix can
+/// actually read the repository, including resolving alternates and pack files.
+///
+/// # Arguments
+///
+/// * `dir` - The directory to validate
+///
+/// # Returns
+///
+/// * `true` if gix::open succeeds
+/// * `false` if gix::open fails
+fn is_gix_openable(dir: &Path) -> bool {
+    gix::open(dir).is_ok()
+}
+
 /// Check if a directory is a git repository (has HEAD and objects).
 ///
 /// This function performs a basic check to determine if a directory is a git
@@ -154,6 +202,8 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
             if epoch_name.ends_with(".git")
                 && is_git_repo(&epoch_path)
                 && has_master_ref(&epoch_path)
+                && has_valid_alternates(&epoch_path)
+                && is_gix_openable(&epoch_path)
             {
                 return Ok(Some(epoch_path));
             }
@@ -214,14 +264,17 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     // and optionally an all.git that chains them via git alternates.
     let git_dir = dir.join("git");
     if git_dir.is_dir() {
-        // First, try to find an epoch repo with master ref and objects
-        if let Some(epoch_repo) = find_epoch_repo_with_master(&git_dir)?
-            && has_objects(&epoch_repo)
-        {
+        // Check if there's at least one valid epoch repo to confirm this is a real V2 inbox
+        let has_valid_epoch = find_epoch_repo_with_master(&git_dir)?
+            .as_ref()
+            .map(|r| has_objects(r))
+            .unwrap_or(false);
+
+        if has_valid_epoch {
             return Ok(Some(PublicInbox {
                 name,
                 version: "V2".to_string(),
-                git_dir: epoch_repo,
+                git_dir,
             }));
         }
 
@@ -457,6 +510,24 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
         }
 
         if !is_git_repo(&path) || !has_master_ref(&path) {
+            continue;
+        }
+
+        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
+            log::debug!(
+                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
+                name,
+                path
+            );
+            continue;
+        }
+
+        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
+            log::debug!(
+                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
+                name,
+                path
+            );
             continue;
         }
 
