@@ -221,7 +221,10 @@ fn run_test_mode(
 
     let position = article_pos.unwrap_or(1);
 
-    println!("Testing fetch from list '{}', article position {}", inbox.name, position);
+    println!(
+        "Testing fetch from list '{}', article position {}",
+        inbox.name, position
+    );
     fetch_single_commit(inbox, position)
 }
 
@@ -254,7 +257,11 @@ fn fetch_single_commit(inbox: &PublicInbox, position: usize) -> anyhow::Result<(
         .collect();
 
     if position == 0 || position > all_commit_ids.len() {
-        anyhow::bail!("Position {} out of range (total commits: {})", position, all_commit_ids.len());
+        anyhow::bail!(
+            "Position {} out of range (total commits: {})",
+            position,
+            all_commit_ids.len()
+        );
     }
 
     let commit_info = &all_commit_ids[position - 1];

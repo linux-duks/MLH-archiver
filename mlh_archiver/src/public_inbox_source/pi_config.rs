@@ -24,7 +24,7 @@ impl PIConfig {
             // TODO: need new error variant for missing import directory
             return Err(ConfigError::MissingHostname);
         }
-        
+
         // Check if import directory exists and is a directory
         let path = std::path::Path::new(&self.inport_directory);
         if !path.exists() {
@@ -36,24 +36,28 @@ impl PIConfig {
         if !path.is_dir() {
             return Err(ConfigError::Io(std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
-                format!("Import directory is not a directory: {}", self.inport_directory),
+                format!(
+                    "Import directory is not a directory: {}",
+                    self.inport_directory
+                ),
             )));
         }
-        
+
         if self.origin.is_empty() {
             // TODO: need new error variant for missing origin
             return Err(ConfigError::MissingHostname);
         }
-        
+
         // If group_lists is provided, ensure it's not empty
         if let Some(lists) = &self.group_lists
-            && lists.is_empty() {
-                return Err(ConfigError::ListSelectionEmpty);
-            }
-        
+            && lists.is_empty()
+        {
+            return Err(ConfigError::ListSelectionEmpty);
+        }
+
         // TODO: validate article_range format using parse_sequence
         // For now, just ignore
-        
+
         Ok(())
     }
 }

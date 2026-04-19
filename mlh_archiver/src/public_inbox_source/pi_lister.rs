@@ -14,18 +14,29 @@ pub fn retrieve_lists(pi_config: PIConfig) -> crate::Result<Vec<String>> {
     return match find_public_inboxes(&path) {
         Ok(list) => {
             // Filter out incomplete repositories
-            let valid_list: Vec<_> = list.clone()
+            let valid_list: Vec<_> = list
+                .clone()
                 .into_iter()
                 .filter(|inbox| !inbox.version.contains("incomplete"))
                 .collect();
-            
-            log::debug!("Found {} public-inboxes ({} valid)", list.len(), valid_list.len());
-            
+
+            log::debug!(
+                "Found {} public-inboxes ({} valid)",
+                list.len(),
+                valid_list.len()
+            );
+
             if valid_list.is_empty() {
-                log::warn!("No valid public-inboxes found in {}", pi_config.clone().inport_directory);
+                log::warn!(
+                    "No valid public-inboxes found in {}",
+                    pi_config.clone().inport_directory
+                );
             }
-            
-            Ok(valid_list.iter().map(|l| l.name.clone()).collect::<Vec<String>>())
+
+            Ok(valid_list
+                .iter()
+                .map(|l| l.name.clone())
+                .collect::<Vec<String>>())
         }
         Err(e) => Err(e),
     };
