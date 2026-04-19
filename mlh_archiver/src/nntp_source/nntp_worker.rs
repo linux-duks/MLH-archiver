@@ -84,6 +84,10 @@ impl NNTPWorker {
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
     ) -> NNTPWorker {
+        // wait a bit to connect. This prevents multiple connections starting at once
+        #[cfg(not(test))]
+        std::thread::sleep(Duration::from_secs(id as u64));
+
         let nntp_stream = connect_to_nntp_server(
             &nntp_config.hostname,
             nntp_config.port,
@@ -108,6 +112,10 @@ impl Worker for NNTPWorker {
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
     ) -> crate::Result<()> {
+        // wait a bit to start(to prevent multiple connections starting at once)
+        #[cfg(not(test))]
+        std::thread::sleep(Duration::from_secs(self.id as u64));
+
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // Check shutdown flag at start of each iteration
