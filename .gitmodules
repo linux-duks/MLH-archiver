@@ -1,3 +1,6 @@
 [submodule "rust-nntp"]
 	path = mlh_archiver/rust-nntp
 	url = git@github.com:auyer/rust-nntp.git
+[submodule "mlh_archiver/tests/public-inbox"]
+	path = mlh_archiver/tests/test_public_inbox/public-inbox
+	url = git@github.com:auyer/public-inbox.git
