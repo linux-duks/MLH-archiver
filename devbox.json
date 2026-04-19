@@ -59,7 +59,7 @@
 				"make debug-analysis"
 			],
 			"peek": [
-				"uv run --project scripts scripts/peek_files.py \"$@\""
+				"uv run --project scripts/peek_parquet scripts/peek_parquet/peek_files.py \"$@\""
 			],
 			"check_nntp": [
 				"cargo run --release --bin check_nntp -- \"$@\""

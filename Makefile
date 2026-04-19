@@ -101,3 +101,6 @@ clean:
 	$(MAKE) -C scripts clean
 	$(MAKE) -C mlh_archiver clean
 
+.PHONY: peek
+peek:
+	$(MAKE) -C scripts peek

@@ -231,6 +231,7 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 | `make debug-parser` | Run parser in debug mode |
 | `make debug-anonymizer` | Run anonymizer in debug mode |
 | `make debug-analysis` | Run analysis in debug mode |
+| `make peek PEEK_PATH=dataset_dir` |  Get basic Statistics about a parquet dataset|
 
 **Archiver Test Coverage:**
 
@@ -276,8 +277,11 @@ Quick inspection tool for Parquet files and directories located in [`scripts/pee
 # Using devbox
 devbox run peek <path>
 
+# Using make 
+make peek PEEK_PATH=<path>
+
 # Using uv directly
-uv run scripts/peek_files.py <path>
+uv run scripts/peek_parquet/peek_files.py <path>
 ```
 
 **Features:**

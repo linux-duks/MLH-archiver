@@ -9,9 +9,5 @@ dependencies = [
 
 # this is still unefective in uv
 [project.scripts]
-peek-files = "src/peek_files:main"
+peek-files = "peek_files:main"
 
-[dependency-groups]
-dev = [
-    "coverage[toml]>=7.0",
-]

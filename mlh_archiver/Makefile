@@ -21,7 +21,7 @@ RUST_DOCKER_IMAGE = docker.io/rust:1.94-slim
 # ------------------------------------------------------------------------------
 .PHONY: build
 build:
-	@if command -v cargox >/dev/null 2>&1; then \
+	@if command -v cargo >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
 		cargo build --release; \
 	else \
