@@ -18,8 +18,9 @@ use std::path::PathBuf;
 ///
 /// # Example
 ///
-/// ```
-/// use crate::public_inbox_source::{pi_config::PIConfig, pi_lister::retrieve_lists};
+/// ```rust,no_run
+/// use mlh_archiver::public_inbox_source::pi_config::PIConfig;
+/// use mlh_archiver::public_inbox_source::pi_lister::retrieve_lists;
 ///
 /// let config = PIConfig {
 ///     inport_directory: "/path/to/inboxes".to_string(),
