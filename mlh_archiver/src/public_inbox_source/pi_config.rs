@@ -8,12 +8,10 @@ use crate::errors::ConfigError;
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct PIConfig {
     /// (optional) if specified, will use grokmirror to identify the lists available
-    pub inport_directory: String,
+    pub import_directory: String,
     /// The origin of the public inbox (e.g., the base URL or identifier).
     /// TODO: can we check in the public-inbox metadata ?
     pub origin: String,
-    /// Optional path to a grokmirror manifest file for discovering available inboxes.
-    pub grokmirror_manifest: Option<String>,
     /// Optional path to a public inbox config file for listing available inboxes.
     /// TODO: use public inbox config file if exists to list the available
     /// inboxes from config instead of listing the directories
@@ -33,7 +31,7 @@ impl PIConfig {
     ///
     /// Checks that the required fields are present and valid.
     /// Currently validates:
-    /// - `inport_directory` is not empty and exists as a directory
+    /// - `import_directory` is not empty and exists as a directory
     /// - `origin` is not empty
     /// - `group_lists` is not empty if provided
     ///
@@ -42,21 +40,21 @@ impl PIConfig {
     /// - `Err(ConfigError)` if the configuration is invalid
     ///
     /// # Errors
-    /// - `ConfigError::MissingHostname` if `inport_directory` or `origin` is empty
+    /// - `ConfigError::MissingHostname` if `import_directory` or `origin` is empty
     /// - `ConfigError::Io` if the import directory does not exist or is not a directory
     /// - `ConfigError::ListSelectionEmpty` if `group_lists` is provided but empty
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.inport_directory.is_empty() {
+        if self.import_directory.is_empty() {
             // TODO: need new error variant for missing import directory
             return Err(ConfigError::MissingHostname);
         }
 
         // Check if import directory exists and is a directory
-        let path = std::path::Path::new(&self.inport_directory);
+        let path = std::path::Path::new(&self.import_directory);
         if !path.exists() {
             return Err(ConfigError::Io(std::io::Error::new(
                 std::io::ErrorKind::NotFound,
-                format!("Import directory does not exist: {}", self.inport_directory),
+                format!("Import directory does not exist: {}", self.import_directory),
             )));
         }
         if !path.is_dir() {
@@ -64,7 +62,7 @@ impl PIConfig {
                 std::io::ErrorKind::InvalidInput,
                 format!(
                     "Import directory is not a directory: {}",
-                    self.inport_directory
+                    self.import_directory
                 ),
             )));
         }

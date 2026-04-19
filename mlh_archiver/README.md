@@ -1,6 +1,9 @@
 # MLH Archiver
 
-A multi-threaded Rust application for archiving mailing list emails from NNTP (Network News Transfer Protocol) servers to local storage.
+A multi-threaded Rust application for archiving mailing list emails from a few different sources.
+
+- NNTP (Network News Transfer Protocol) servers.
+- Public-Inbox Local Git Repositories
 
 ## Overview
 
@@ -163,6 +166,22 @@ nntp:
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
 | `loop_groups` | boolean | Continuously check for new articles (default: true) |
 
+#### Public-Inbox Options (under `public_inbox:` block)
+
+If using a large number of public-inbox repositores, we recommend cloning them with [Grokmirror](https://github.com/mricon/grokmirror).
+We have our complete guide available in the [linux-duks/Public-Inbox-Stack](https://github.com/linux-duks/Public-Inbox-Stack). If using only for this, follow the mirroring steps only.
+
+It is expected that
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `import_directory` | string | **Required.** The parent folder of all mailing lists|
+| `origin` | string | **Required**. server hostname were the lists were cloned from |
+| `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
+| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
+
+
 #### NNTP Options (under `nntp:` block)
 
 | Option | Type | Description |
@@ -185,6 +204,7 @@ nntp:
 ```
 
 **Supported formats:**
+
 - Single numbers: `"100"`
 - Ranges: `"1-50"`
 - Comma-separated: `"1,5,10"`
@@ -193,6 +213,7 @@ nntp:
 **Memory efficiency:** Range parsing is lazy - the range string is stored and parsed per mailing list, avoiding memory issues with large ranges.
 
 **Use cases:**
+
 - Retry failed articles: `article_range: "42,108,256"`
 - Fetch specific date ranges (if you know article numbers)
 - Test runs with small samples: `article_range: "1-10"`
@@ -243,11 +264,13 @@ cargo test
 ### Test Coverage
 
 **Unit Tests** (`cargo test --lib`):
+
 - Range parsing (`range_inputs.rs`)
 - Configuration loading and validation
 - Error types
 
 **Integration Tests** (`cargo test --test test_nntp`):
+
 - Full list download from mock NNTP server
 - Single article by range (`"5"`)
 - Article range (`"1-3"`)
@@ -274,6 +297,7 @@ cargo doc --document-private-items --open
 ```
 
 This generates comprehensive documentation including:
+
 - All public and private items
 - Function signatures with parameters and return values
 - Struct and enum field descriptions
@@ -335,11 +359,13 @@ To add a new email source (e.g., ListArchiveX, IMAP, local mbox), follow these s
 ### ArchiveWriter — The Reusable Storage Interface
 
 **All worker implementations MUST use [`ArchiveWriter`](src/archive_writer/) for:**
+
 - Writing fetched emails to disk (`.eml` files)
 - Tracking progress (`__progress.yaml` YAML)
 - Logging errors for unavailable articles (`__errors.csv` CSV)
 
 The `ArchiveWriter` provides a consistent storage interface so that:
+
 1. Progress is tracked uniformly across all sources
 2. Resume from last position works the same way regardless of source
 3. File layout is consistent across all implementations
@@ -507,6 +533,7 @@ impl Worker for ListArchiveXWorker {
 ```
 
 **Key requirements:**
+
 - Store `shutdown_flag: Arc<AtomicBool>` for graceful shutdown
 - Check shutdown flag at:
   - Start of each task iteration

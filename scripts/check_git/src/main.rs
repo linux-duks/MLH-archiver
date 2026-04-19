@@ -568,7 +568,7 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
     yaml.push_str("loop_groups: false\n\n");
     yaml.push_str("public_inbox:\n");
     yaml.push_str(&format!(
-        "  inport_directory: \"{}\"\n",
+        "  import_directory: \"{}\"\n",
         inbox_dir.display()
     ));
     yaml.push_str(&format!("  origin: \"{}\"\n", origin));
