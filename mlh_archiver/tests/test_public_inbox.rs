@@ -275,8 +275,8 @@ fn build_test_pi_image() -> GenericImage {
     GenericBuildableImage::new("test_public_inbox", "latest")
         .with_dockerfile("./tests/test_public_inbox/Containerfile")
         .with_file("./tests/test_public_inbox", ".")
+        .with_file("./tests/test_public_inbox/public-inbox", "./public-inbox")
         .with_file("./tests/test_nntp_server/fixtures", "./fixtures")
-        .with_file("../public-inbox", "./public-inbox")
         .build_image()
         .unwrap()
 }
