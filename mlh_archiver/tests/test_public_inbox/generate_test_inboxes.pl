@@ -122,6 +122,63 @@ my $ibx_empty = PublicInbox::TestCommon::create_inbox(
 
 say "  Created empty at $empty_dir";
 
+# Create a multi-epoch V2 inbox with 3 epochs (12 emails total)
+say "Creating multi-epoch V2 inbox with 3 epochs";
+my $multi_epoch_dir = File::Spec->catdir($out_dir, "v2_multi_epoch.list");
+my $ibx_multi_epoch = PublicInbox::TestCommon::create_inbox(
+    "v2_multi_epoch.list",
+    version => 2,
+    tmpdir => $multi_epoch_dir,
+    rotate_bytes => 1000,  # Very low threshold to force epoch rotation
+    sub {
+        my ($importer, $ibx) = @_;
+        
+        # Create 12 emails with distinct content for testing
+        for my $i (1..12) {
+            my $eml = PublicInbox::Eml->new(
+                "From: tester\@example.org\n" .
+                "Subject: Multi-epoch test email $i\n" .
+                "Message-ID: <multi-$i\@example.org>\n" .
+                "Date: " . scalar(localtime) . "\n" .
+                "\n" .
+                "This is email $i from the multi-epoch test inbox.\n" .
+                "Epoch: " . (($i-1)/4) . " (0-based)\n"
+            );
+            $importer->add($eml);
+        }
+    }
+);
+
+say "  Created multi-epoch at $multi_epoch_dir";
+
+# Create an all.git alternates-based V2 inbox
+say "Creating all.git alternates-based V2 inbox";
+my $alternates_dir = File::Spec->catdir($out_dir, "v2_all_git_alternates");
+my $ibx_alternates = PublicInbox::TestCommon::create_inbox(
+    "v2_all_git_alternates",
+    version => 2,
+    tmpdir => $alternates_dir,
+    # Create a standard inbox first, then we'll set up alternates manually
+    sub {
+        my ($importer, $ibx) = @_;
+        
+        # Create a few emails to populate the initial structure
+        for my $i (1..5) {
+            my $eml = PublicInbox::Eml->new(
+                "From: tester\@example.org\n" .
+                "Subject: Alternates test email $i\n" .
+                "Message-ID: <alternate-$i\@example.org>\n" .
+                "Date: " . scalar(localtime) . "\n" .
+                "\n" .
+                "This is an alternate test email $i.\n"
+            );
+            $importer->add($eml);
+        }
+    }
+);
+
+say "  Created alternates-based at $alternates_dir";
+
 say "\nTest data generation complete in $out_dir";
 say "Inboxes created:";
 foreach my $group_name (sort keys %groups) {
@@ -130,3 +187,5 @@ foreach my $group_name (sort keys %groups) {
 }
 say "  - v2_combined (combined V2)";
 say "  - v2_empty (empty V2)";
+say "  - v2_multi_epoch.list (multi-epoch V2)";
+say "  - v2_all_git_alternates (all.git alternates V2)";
