@@ -5,10 +5,7 @@ use opentelemetry_sdk::{
     metrics::{MeterProviderBuilder, PeriodicReader, SdkMeterProvider},
     trace::{RandomIdGenerator, Sampler, SdkTracerProvider},
 };
-use opentelemetry_semantic_conventions::{
-    SCHEMA_URL,
-    attribute::SERVICE_VERSION,
-};
+use opentelemetry_semantic_conventions::{SCHEMA_URL, attribute::SERVICE_VERSION};
 use tracing_core::Level;
 use tracing_opentelemetry::{MetricsLayer, OpenTelemetryLayer};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};

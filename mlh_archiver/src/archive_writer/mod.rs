@@ -143,8 +143,7 @@ impl ArchiveWriter {
     ///
     /// * `email_id` - Email/article number
     /// * `lines` - Raw email lines (can be any iterable collection of strings)
-
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self, lines)))]
     pub fn archive_email<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
     where
         I: IntoIterator<Item = L> + std::fmt::Debug,

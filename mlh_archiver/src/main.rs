@@ -4,16 +4,16 @@
 #[cfg(not(feature = "otel"))]
 use env_logger::Env;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
     Arc,
+    atomic::{AtomicBool, Ordering},
 };
 
 use mlh_archiver::config;
 
+use mlh_archiver::Result;
 #[cfg(feature = "otel")]
 use mlh_archiver::otel;
 use mlh_archiver::start;
-use mlh_archiver::Result;
 
 fn main() -> Result<()> {
     #[cfg(feature = "otel")]

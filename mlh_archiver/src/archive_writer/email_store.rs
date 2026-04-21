@@ -40,8 +40,6 @@ impl EmailStore {
     ///
     /// * `email_id` - email number
     /// * `lines` - Raw email lines (written without added newlines)
-    
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn write<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
     where
         I: IntoIterator<Item = L> + std::fmt::Debug,

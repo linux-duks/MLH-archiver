@@ -47,8 +47,6 @@ impl ProgressTracker {
     /// Also falls back to reading a plain number from the file.
     /// If no file exists, initializes one with `0` to mark the list
     /// as discovered.
-    
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn last_processed_id(&self) -> Option<String> {
         match crate::file_utils::read_yaml::<ReadStatus>(self.output_path.to_str().unwrap()) {
             Ok(status) => Some(status.last_email),
@@ -68,8 +66,6 @@ impl ProgressTracker {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::write_yaml(
             self.output_path.to_str().unwrap(),

@@ -37,8 +37,7 @@ use nntp::NNTPStream;
 /// stream.quit()?;
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
-
-#[cfg_attr(feature = "otel", tracing::instrument)]
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn connect_to_nntp_server(
     hostname: &str,
     port: Option<u16>,
@@ -109,8 +108,7 @@ pub fn server_address(hostname: &str, port: Option<u16>) -> String {
 /// println!("Articles: {} to {}", group.low, group.high);
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
-
-#[cfg_attr(feature = "otel", tracing::instrument)]
+#[cfg_attr(feature = "otel", tracing::instrument(skip(nntp_stream)))]
 pub fn get_group_info(
     nntp_stream: &mut NNTPStream,
     group_name: &str,
@@ -144,8 +142,7 @@ pub fn get_group_info(
 /// println!("Available groups: {}", groups.len());
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
-
-#[cfg_attr(feature = "otel", tracing::instrument)]
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn retrieve_lists_with_connection(
     hostname: &str,
     port: Option<u16>,
@@ -178,8 +175,7 @@ pub fn retrieve_lists_with_connection(
 ///
 /// * `Ok(Vec<(String, nntp::NewsGroup)>)` - Pair of group name and info
 /// * `Err(...)` - Connection or protocol error
-
-#[cfg_attr(feature = "otel", tracing::instrument)]
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn retrieve_groups_info(
     hostname: &str,
     port: Option<u16>,

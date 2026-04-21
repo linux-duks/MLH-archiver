@@ -53,7 +53,7 @@ use crate::public_inbox_source::pi_worker::PIWorker;
 /// 2. Moved to a thread via [`Scheduler`](crate::scheduler::Scheduler)
 /// 3. Runs until channel closes or shutdown is requested
 /// 4. Dropped when thread completes
-pub trait Worker: Send + std::fmt::Debug {
+pub trait Worker: Send {
     /// Processes mailing lists received via channel until completion or shutdown.
     ///
     /// This is the main entry point for email fetching. Implementations should:
@@ -124,7 +124,6 @@ pub trait Worker: Send + std::fmt::Debug {
 /// ```
 ///
 /// Each call to `receiver.recv()` delivers the task to exactly one worker.
-#[derive(std::fmt::Debug)]
 pub struct WorkerGroup {
     pub tasks: Vec<String>,
     pub workers: Vec<Box<dyn Worker>>,
@@ -148,7 +147,6 @@ pub struct WorkerGroup {
 ///
 /// The manager itself is not thread-safe. It is used only during
 /// initialization in the main thread before workers are moved to threads.
-#[derive(std::fmt::Debug)]
 pub struct WorkerManager {
     groups: Vec<WorkerGroup>,
 }
@@ -188,8 +186,6 @@ impl WorkerManager {
     /// Panics if `get_run_mode_config()` returns `None` for a run mode
     /// that was returned by `get_run_modes()`. This should not happen
     /// in normal operation.
-
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn create_workers(
         &mut self,
         run_mode: RunMode,

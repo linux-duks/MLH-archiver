@@ -25,7 +25,7 @@ struct ProcessEpochResult {
 
 /// A worker that processes public inbox email archives.
 ///
-/// This struct represents a worker that consumes inbox names from a channel and processes
+/// This struct represents a worker that consumes inbox names frpodmanhannel and processes
 /// the emails contained within those inboxes. It handles both V1 and V2 public inbox
 /// formats, supports resuming from a specific email, and can filter emails by article range.
 #[derive(std::fmt::Debug)]
@@ -84,8 +84,6 @@ impl Worker for PIWorker {
     ///
     /// * `Ok(())` - If the worker exits cleanly (shutdown requested or channel closed)
     /// * `Err` - If an error occurs while processing an inbox (logged but doesn't stop the worker)
-
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn consumme_list(
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
@@ -136,7 +134,7 @@ impl Worker for PIWorker {
     /// * `Ok(())` - If the email was successfully retrieved and archived
     /// * `Err` - If the inbox is not found, the index is out of bounds, or an error occurs
 
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         let writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
@@ -224,7 +222,7 @@ impl PIWorker {
     /// * `Ok(usize)` - The number of emails successfully processed
     /// * `Err` - If the inbox is not found or an error occurs during processing
 
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn process_inbox(&self, list_name: &str) -> crate::Result<usize> {
         log::info!(
             "W{}: Starting processing emails from {}",
@@ -369,7 +367,7 @@ impl PIWorker {
     ///
     /// * `Ok(ProcessEpochResult)` - Results including emails processed and updated counters
     /// * `Err` - If an error occurs during processing
-    #[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(repo, writer, self)))]
     fn process_epoch(
         &self,
         repo: &git2::Repository,

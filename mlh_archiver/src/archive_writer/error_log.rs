@@ -43,8 +43,6 @@ impl ErrorLogger {
     ///
     /// * `email_id` - email number that failed
     /// * `error` - Error message
-    
-    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn log(&self, email_id: &str, error: &str) {
         let line = format!("{email_id},{error}");
         if let Err(e) = crate::file_utils::append_line_to_file(&self.output_path, &line) {
