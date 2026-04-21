@@ -1,19 +1,29 @@
 #![allow(clippy::needless_return)]
 
+#[cfg(not(feature = "otel"))]
+#[cfg(not(feature = "otel"))]
 use env_logger::Env;
 use std::sync::{
-    Arc,
     atomic::{AtomicBool, Ordering},
+    Arc,
 };
 
-use mlh_archiver::Result;
 use mlh_archiver::config;
+
+#[cfg(feature = "otel")]
+use mlh_archiver::otel;
 use mlh_archiver::start;
+use mlh_archiver::Result;
 
 fn main() -> Result<()> {
-    let env = Env::default().filter_or("RUST_LOG", "info");
+    #[cfg(feature = "otel")]
+    let _guard = otel::init_tracing_subscriber();
 
-    env_logger::init_from_env(env);
+    #[cfg(not(feature = "otel"))]
+    {
+        let env = Env::default().filter_or("RUST_LOG", "info");
+        env_logger::init_from_env(env);
+    }
 
     let mut app_config = match config::read_config() {
         Ok(cfg) => cfg,

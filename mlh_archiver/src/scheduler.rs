@@ -43,6 +43,7 @@ const CHANNEL_CAPACITY: usize = 10;
 /// 1. Signal handler sets the flag
 /// 2. Workers detect flag and exit gracefully
 /// 3. Producer threads detect closed channels and exit
+#[derive(std::fmt::Debug)]
 pub struct Scheduler<'a> {
     app_config: &'a AppConfig,
     loop_groups: bool,
@@ -106,6 +107,8 @@ impl<'a> Scheduler<'a> {
     ///
     /// * `Ok(())` on successful completion
     /// * `Err(...)` if any thread panics during join
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn run(&mut self) -> crate::Result<()> {
         // Collect thread handles
         let mut handles = Vec::new();
@@ -189,6 +192,8 @@ impl<'a> Scheduler<'a> {
     /// # Returns
     ///
     /// Vector of thread join handles.
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn spawn_workers_to_consumme_list(
         &self,
         workers: Vec<Box<dyn Worker>>,
@@ -230,6 +235,8 @@ impl<'a> Scheduler<'a> {
     /// # Returns
     ///
     /// Vector of thread join handles.
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn spawn_worker_to_read_email_by_index(
         &self,
         workers: Vec<Box<dyn Worker>>,
@@ -297,6 +304,8 @@ impl<'a> Scheduler<'a> {
     ///
     /// The sender is dropped when the thread exits, signaling workers
     /// that no more tasks will arrive.
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn spawn_producer_for_consume_list(
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
@@ -352,6 +361,7 @@ impl<'a> Scheduler<'a> {
     /// # Error Handling
     ///
     /// If range parsing fails, logs an error and drops the sender.
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn spawn_producer_for_read_email_by_index(
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,

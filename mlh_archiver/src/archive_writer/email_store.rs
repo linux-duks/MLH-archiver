@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 /// let store = EmailStore::new(Path::new("./output"), "test.list");
 /// store.write("42", &["From: user@example.com".to_string()]).unwrap();
 /// ```
+#[derive(std::fmt::Debug)]
 pub struct EmailStore {
     output_path: PathBuf,
 }
@@ -39,9 +40,11 @@ impl EmailStore {
     ///
     /// * `email_id` - email number
     /// * `lines` - Raw email lines (written without added newlines)
+    
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn write<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
     where
-        I: IntoIterator<Item = L>,
+        I: IntoIterator<Item = L> + std::fmt::Debug,
         L: AsRef<str>,
     {
         let file_path = self.output_path.join(format!("{email_id}.eml"));

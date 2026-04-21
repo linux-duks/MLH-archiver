@@ -29,6 +29,7 @@ struct ProcessEpochResult {
 /// This struct represents a worker that consumes inbox names from a channel and processes
 /// the emails contained within those inboxes. It handles both V1 and V2 public inbox
 /// formats, supports resuming from a specific email, and can filter emails by article range.
+#[derive(std::fmt::Debug)]
 pub struct PIWorker {
     /// Unique identifier for this worker instance
     id: u8,
@@ -87,6 +88,7 @@ impl PIWorker {
     ///
     /// * `Ok(ProcessEpochResult)` - Results including emails processed and updated counters
     /// * `Err` - If an error occurs during processing
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
     fn process_epoch(
         &self,
         repo: &git2::Repository,
@@ -107,14 +109,15 @@ impl PIWorker {
         if let Some(target_sha) = skip_until_sha {
             // Try to resolve short SHA to full OID
             if let Ok(object) = repo.revparse_single(target_sha)
-                && let Some(commit) = object.as_commit() {
-                    // Use push_range to only walk commits after the target SHA
-                    let full_sha = commit.id().to_string();
-                    revwalk.push_range(&format!("{}..HEAD", full_sha))?;
-                    found_resume_sha = true;
-                }
+                && let Some(commit) = object.as_commit()
+            {
+                // Use push_range to only walk commits after the target SHA
+                let full_sha = commit.id().to_string();
+                revwalk.push_range(&format!("{}..HEAD", full_sha))?;
+                found_resume_sha = true;
+            }
         }
-        
+
         if !found_resume_sha {
             revwalk.push_head()?;
         }
@@ -142,7 +145,7 @@ impl PIWorker {
             }
 
             // Extract and archive the email from this commit
-                let commit = repo.find_commit(commit_id)?;
+            let commit = repo.find_commit(commit_id)?;
             match extract_email_from_commit(repo, &commit) {
                 Ok((commit_hash, raw_email)) => {
                     let email_id = format_email_id(next_email_num, &epoch.epoch_name, &commit_hash);
@@ -151,9 +154,11 @@ impl PIWorker {
                     next_email_num += 1;
                 }
                 Err(_) => {
-                    writer
-                        .log_error(&commit_id.to_string(), "No 'm' blob found in commit tree");
-                    let subject = commit.message().map(|msg| msg.to_string()).unwrap_or_else(|| "<no message>".to_string());
+                    writer.log_error(&commit_id.to_string(), "No 'm' blob found in commit tree");
+                    let subject = commit
+                        .message()
+                        .map(|msg| msg.to_string())
+                        .unwrap_or_else(|| "<no message>".to_string());
                     let tree_id = commit.tree_id();
                     let tree_str = format!("{}", tree_id);
                     log::debug!(
@@ -203,6 +208,8 @@ impl Worker for PIWorker {
     ///
     /// * `Ok(())` - If the worker exits cleanly (shutdown requested or channel closed)
     /// * `Err` - If an error occurs while processing an inbox (logged but doesn't stop the worker)
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn consumme_list(
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
@@ -245,6 +252,8 @@ impl Worker for PIWorker {
     ///
     /// * `Ok(())` - If the email was successfully retrieved and archived
     /// * `Err` - If the inbox is not found, the index is out of bounds, or an error occurs
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         let writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
@@ -331,6 +340,8 @@ impl PIWorker {
     ///
     /// * `Ok(usize)` - The number of emails successfully processed
     /// * `Err` - If the inbox is not found or an error occurs during processing
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn process_inbox(&self, list_name: &str) -> crate::Result<usize> {
         log::info!(
             "W{}: Starting processing emails from {}",
