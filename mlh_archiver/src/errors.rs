@@ -59,60 +59,10 @@ pub enum Error {
     Config(#[from] ConfigError),
 }
 
-impl From<gix::Error> for Error {
-    fn from(err: gix::Error) -> Self {
+impl From<git2::Error> for Error {
+    fn from(err: git2::Error) -> Self {
         Error::Git(err.to_string())
     }
-}
-
-impl From<gix::open::Error> for Error {
-    fn from(err: gix::open::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::refs::file::find::existing::Error> for Error {
-    fn from(err: gix::refs::file::find::existing::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::objs::decode::Error> for Error {
-    fn from(err: gix::objs::decode::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::object::find::existing::with_conversion::Error> for Error {
-    fn from(err: gix::object::find::existing::with_conversion::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::object::find::existing::Error> for Error {
-    fn from(err: gix::object::find::existing::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::revision::walk::Error> for Error {
-    fn from(err: gix::revision::walk::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-impl From<gix::date::Error> for Error {
-    fn from(err: gix::date::Error) -> Self {
-        Error::Git(err.to_string())
-    }
-}
-
-/// Converts any gix error to our Error type.
-#[macro_export]
-macro_rules! git_error {
-    ($expr:expr) => {
-        $expr.map_err(|e: gix::Error| mlh_archiver::Error::Git(e.to_string()))
-    };
 }
 
 /// Configuration-related errors.

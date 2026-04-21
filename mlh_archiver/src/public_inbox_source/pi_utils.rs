@@ -2,9 +2,6 @@ use crate::errors;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use gix::bstr::ByteSlice;
-use gix::revision::walk::Info;
-
 /// Represents a detected public-inbox directory.
 ///
 /// This struct contains information about a public inbox that has been discovered
@@ -111,9 +108,9 @@ fn has_valid_alternates(dir: &Path) -> bool {
     true
 }
 
-/// Attempts to open a directory as a gix repository to verify it is functional.
+/// Attempts to open a directory as a git2 repository to verify it is functional.
 ///
-/// This is a stricter validation than file-based checks. It ensures gix can
+/// This is a stricter validation than file-based checks. It ensures git2 can
 /// actually read the repository, including resolving alternates and pack files.
 ///
 /// # Arguments
@@ -122,10 +119,10 @@ fn has_valid_alternates(dir: &Path) -> bool {
 ///
 /// # Returns
 ///
-/// * `true` if gix::open succeeds
-/// * `false` if gix::open fails
-fn is_gix_openable(dir: &Path) -> bool {
-    gix::open(dir).is_ok()
+/// * `true` if git2::Repository::open succeeds
+/// * `false` if git2::Repository::open fails
+fn is_git2_openable(dir: &Path) -> bool {
+    git2::Repository::open(dir).is_ok()
 }
 
 /// Check if a directory is a git repository (has HEAD and objects).
@@ -203,7 +200,7 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
                 && is_git_repo(&epoch_path)
                 && has_master_ref(&epoch_path)
                 && has_valid_alternates(&epoch_path)
-                && is_gix_openable(&epoch_path)
+                && is_git2_openable(&epoch_path)
             {
                 return Ok(Some(epoch_path));
             }
@@ -253,7 +250,7 @@ fn has_objects(dir: &Path) -> bool {
 /// * `Ok(Some(PublicInbox))` - Information about the detected public inbox
 /// * `Ok(None)` - The directory does not appear to be a public inbox
 /// * `Err` - If an I/O error occurs while reading files
-fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
+pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     let name = dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -389,24 +386,22 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
 ///
 /// # Returns
 ///
-/// * `Ok(Info)` - Information about the commit at the specified position
+/// * `Ok(git2::Oid)` - The object ID of the commit at the specified position
 /// * `Err` - If the position is out of bounds or an error occurs during revision walking
-pub fn get_commit_at_position<'a>(
-    repo: &'a gix::Repository,
+pub fn get_commit_at_position(
+    repo: &git2::Repository,
     position: usize,
-) -> crate::Result<Info<'a>> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
+) -> crate::Result<git2::Oid> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
-    let walk = repo.rev_walk([head_id]);
-    let iter = walk.all().map_err(|e| anyhow::anyhow!(e))?;
-    for (i, info) in iter.enumerate() {
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    for (i, commit_id) in revwalk.flatten().enumerate() {
         if i == position {
-            return Ok(info.map_err(|e| anyhow::anyhow!(e))?);
+            return Ok(commit_id);
         }
     }
     Err(crate::errors::Error::Config(
@@ -429,18 +424,16 @@ pub fn get_commit_at_position<'a>(
 /// * `Ok((String, String))` - A tuple of (commit_hash, raw_email_content)
 /// * `Err` - If no 'm' blob is found in the commit tree or an error occurs
 pub fn extract_email_from_commit(
-    repo: &gix::Repository,
-    commit: &gix::Commit,
+    repo: &git2::Repository,
+    commit: &git2::Commit,
 ) -> crate::Result<(String, String)> {
-    let commit_ref = commit.decode()?;
-    let tree_id = commit_ref.tree();
+    let tree_id = commit.tree_id();
     let tree = repo.find_tree(tree_id)?;
 
     let blob_oid = tree
         .iter()
-        .find_map(|e| e.ok())
-        .filter(|e| e.filename().as_bytes() == b"m")
-        .map(|e| e.object_id());
+        .find(|entry| entry.name() == Some("m"))
+        .map(|entry| entry.id());
 
     match blob_oid {
         Some(blob_oid) => {
@@ -468,89 +461,10 @@ pub fn extract_email_from_commit(
 ///
 /// * `Ok(String)` - The raw content of the blob as a UTF-8 string
 /// * `Err` - If the blob cannot be found or read
-pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate::Result<String> {
+pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::Result<String> {
     let blob = repo.find_blob(blob_oid)?;
-    let raw_email = String::from_utf8_lossy(&blob.data).to_string();
-    return Ok(raw_email);
-}
-
-/// Finds all epoch repositories within a V2 public inbox's git/ directory.
-///
-/// This function scans the git/ directory of a V2 public inbox for all epoch
-/// repositories (directories ending in .git that are valid git repositories
-/// with a master ref). It returns them sorted with numeric epochs first,
-/// followed by the "all" epoch last.
-///
-/// # Arguments
-///
-/// * `git_dir` - The git directory of the public inbox to search
-///
-/// # Returns
-///
-/// * `Ok(Vec<EpochRepo>)` - A vector of epoch repositories, sorted appropriately
-/// * `Err` - If an I/O error occurs while reading the directory
-pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
-    let mut epochs = Vec::new();
-
-    if !git_dir.is_dir() {
-        return Ok(epochs);
-    }
-
-    for entry in std::fs::read_dir(git_dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
-        }
-
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-
-        if !name.ends_with(".git") {
-            continue;
-        }
-
-        if !is_git_repo(&path) || !has_master_ref(&path) {
-            continue;
-        }
-
-        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
-            log::debug!(
-                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
-                name,
-                path
-            );
-            continue;
-        }
-
-        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
-            log::debug!(
-                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
-                name,
-                path
-            );
-            continue;
-        }
-
-        let epoch_name = name.strip_suffix(".git").unwrap_or(name).to_string();
-        epochs.push(EpochRepo {
-            epoch_name,
-            git_dir: path,
-        });
-    }
-
-    epochs.sort_by(|a, b| {
-        let a_is_all = a.epoch_name == "all";
-        let b_is_all = b.epoch_name == "all";
-        if a_is_all && !b_is_all {
-            return std::cmp::Ordering::Greater;
-        }
-        if !a_is_all && b_is_all {
-            return std::cmp::Ordering::Less;
-        }
-        a.epoch_name.cmp(&b.epoch_name)
-    });
-
-    Ok(epochs)
+    let raw_email = String::from_utf8_lossy(blob.content()).to_string();
+    Ok(raw_email)
 }
 
 /// Counts the total number of commits in a repository from refs/heads/master.
@@ -566,19 +480,15 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
 ///
 /// * `Ok(usize)` - The total number of commits in the repository
 /// * `Err` - If an error occurs during revision walking
-pub fn count_commits(repo: &gix::Repository) -> crate::Result<usize> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
+pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
-    let count = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .count();
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    let count = revwalk.count();
 
     Ok(count)
 }
@@ -675,22 +585,87 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
 ///
 /// # Returns
 ///
-/// * `Ok(Vec<gix::ObjectId>)` - A vector of commit object IDs, newest first
+/// * `Ok(Vec<git2::Oid>)` - A vector of commit object IDs, newest first
 /// * `Err` - If an error occurs during revision walking
-pub fn collect_all_commits(repo: &gix::Repository) -> crate::Result<Vec<gix::ObjectId>> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
+pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::Oid>> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
-    let commits: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .map(|info| info.id)
-        .collect();
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    let commits: Vec<_> = revwalk.flatten().collect();
 
     Ok(commits)
+}
+
+/// Finds all epoch repositories within a V2 public inbox's git/ directory.
+///
+/// This function scans the git/ directory of a V2 public inbox for all epoch
+/// repositories (directories ending in .git that are valid git repositories
+/// with a master ref). It returns them sorted with numeric epochs first,
+/// followed by the "all" epoch last.
+///
+/// # Arguments
+///
+/// * `git_dir` - The git directory of the public inbox to search
+///
+/// # Returns
+///
+/// * `Ok(Vec<EpochRepo>)` - A vector of epoch repositories, sorted appropriately
+/// * `Err` - If an I/O error occurs while reading the directory
+pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
+    let mut epochs = Vec::new();
+
+    if !git_dir.is_dir() {
+        return Ok(epochs);
+    }
+
+    for entry in std::fs::read_dir(git_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        if !name.ends_with(".git") {
+            continue;
+        }
+
+        if !is_git_repo(&path) || !has_master_ref(&path) {
+            continue;
+        }
+
+        if !has_valid_alternates(&path) || !is_git2_openable(&path) {
+            log::debug!(
+                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by git2",
+                name,
+                path
+            );
+            continue;
+        }
+
+        let epoch_name = name.strip_suffix(".git").unwrap_or(name).to_string();
+        epochs.push(EpochRepo {
+            epoch_name,
+            git_dir: path,
+        });
+    }
+
+    epochs.sort_by(|a, b| {
+        let a_is_all = a.epoch_name == "all";
+        let b_is_all = b.epoch_name == "all";
+        if a_is_all && !b_is_all {
+            return std::cmp::Ordering::Greater;
+        }
+        if !a_is_all && b_is_all {
+            return std::cmp::Ordering::Less;
+        }
+        a.epoch_name.cmp(&b.epoch_name)
+    });
+
+    Ok(epochs)
 }
