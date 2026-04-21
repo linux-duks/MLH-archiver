@@ -38,6 +38,7 @@ use std::time::Duration;
 /// Progress is managed by [`ArchiveWriter`]:
 /// - `__progress.yaml` - Last successfully fetched article ID
 /// - `__errors.csv` - Log of unavailable articles
+#[derive(std::fmt::Debug)]
 pub struct NNTPWorker {
     id: u8,
     nntp_config: NntpConfig,
@@ -108,6 +109,7 @@ impl NNTPWorker {
 }
 
 impl Worker for NNTPWorker {
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn consumme_list(
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
@@ -233,6 +235,7 @@ impl Worker for NNTPWorker {
         }
     }
 
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         let writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
@@ -280,6 +283,8 @@ impl NNTPWorker {
     /// - Creates/updates `__progress.yaml` YAML file via writer
     /// - Writes fetched emails as `.eml` files via writer
     /// - Logs unavailable articles to `__errors.csv` file via writer
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn handle_group(
         &self,
         list_name: String,
@@ -367,7 +372,9 @@ impl NNTPWorker {
     /// # Shutdown Behavior
     ///
     /// If shutdown is requested during fetching, returns the count of
-    /// emails fetched so far without error.
+    /// emails fetched so far without error
+
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     fn read_new_mails(
         &self,
         list_name: String,

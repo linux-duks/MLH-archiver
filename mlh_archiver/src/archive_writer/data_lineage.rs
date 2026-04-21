@@ -71,6 +71,7 @@ pub(crate) struct DataLineage {
     pub(crate) archiver_build_info: String,
 }
 
+#[derive(std::fmt::Debug)]
 pub struct DataLineageWriter {
     output_path: PathBuf,
     list_name: String,
@@ -98,6 +99,7 @@ impl DataLineageWriter {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
+    #[cfg_attr(feature = "otel", tracing::instrument)]
     pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::append_yaml_to_file(
             self.output_path.to_str().unwrap(),

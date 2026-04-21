@@ -54,6 +54,8 @@ impl fmt::Display for PublicInbox {
 ///
 /// * `Ok(Vec<PublicInbox>)` - A vector of discovered public inboxes, sorted by name
 /// * `Err` - If an I/O error occurs while reading the directory
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> {
     let mut inboxes = Vec::new();
 
@@ -92,6 +94,7 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
 ///
 /// * `true` — this function no longer gates repo acceptance; it only provides
 ///   diagnostics. Use `is_git2_openable` to determine usability.
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn log_broken_alternates(dir: &Path) {
     let alternates_path = dir.join("objects/info/alternates");
     if !alternates_path.is_file() {
@@ -137,6 +140,8 @@ fn is_git2_openable(dir: &Path) -> bool {
 ///
 /// * `true` if the directory appears to be a git repository
 /// * `false` otherwise
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn is_git_repo(dir: &Path) -> bool {
     dir.join("HEAD").is_file() && dir.join("objects").is_dir()
 }
@@ -155,6 +160,8 @@ fn is_git_repo(dir: &Path) -> bool {
 ///
 /// * `true` if the repository has a master ref
 /// * `false` otherwise
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn has_master_ref(dir: &Path) -> bool {
     if dir.join("refs/heads/master").is_file() {
         return true;
@@ -185,6 +192,8 @@ fn has_master_ref(dir: &Path) -> bool {
 /// * `Ok(Some(PathBuf))` - Path to an epoch repository with master ref
 /// * `Ok(None)` - No epoch repository with master ref was found
 /// * `Err` - If an I/O error occurs while reading the directory
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>> {
     for entry in std::fs::read_dir(git_dir)? {
         let entry = entry?;
@@ -220,6 +229,8 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
 ///
 /// * `true` if the repository has objects
 /// * `false` if the objects directory is empty or doesn't exist
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn has_objects(dir: &Path) -> bool {
     let objects_dir = dir.join("objects");
     if !objects_dir.is_dir() {
@@ -248,6 +259,7 @@ fn has_objects(dir: &Path) -> bool {
 /// * `Ok(Some(PublicInbox))` - Information about the detected public inbox
 /// * `Ok(None)` - The directory does not appear to be a public inbox
 /// * `Err` - If an I/O error occurs while reading files
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     let name = dir
         .file_name()
@@ -389,6 +401,7 @@ pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
 ///
 /// * `Ok(git2::Oid)` - The object ID of the commit at the specified position
 /// * `Err` - If the position is out of bounds or an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn get_commit_at_position(
     repo: &git2::Repository,
     position: usize,
@@ -424,6 +437,8 @@ pub fn get_commit_at_position(
 ///
 /// * `Ok((String, String))` - A tuple of (commit_hash, raw_email_content)
 /// * `Err` - If no 'm' blob is found in the commit tree or an error occurs
+
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn extract_email_from_commit(
     repo: &git2::Repository,
     commit: &git2::Commit,
@@ -462,6 +477,7 @@ pub fn extract_email_from_commit(
 ///
 /// * `Ok(String)` - The raw content of the blob as a UTF-8 string
 /// * `Err` - If the blob cannot be found or read
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::Result<String> {
     let blob = repo.find_blob(blob_oid)?;
     let raw_email = String::from_utf8_lossy(blob.content()).to_string();
@@ -481,6 +497,7 @@ pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::R
 ///
 /// * `Ok(usize)` - The total number of commits in the repository
 /// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
     let head_id = repo
         .refname_to_id("refs/heads/master")
@@ -512,6 +529,8 @@ pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
 /// # Returns
 ///
 /// * `String` - The formatted email ID
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
     let padded = format!("{:010}", email_num);
     format!("{}-e{}-{}", padded, epoch_name, commit_sha)
@@ -546,6 +565,8 @@ pub struct ParsedEmailId {
 ///
 /// * `Some(ParsedEmailId)` - The parsed components if the format matches
 /// * `None` - If the format doesn't match the expected pattern
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
     let parts: Vec<&str> = id.splitn(3, '-').collect();
     if parts.len() != 3 {
@@ -583,6 +604,7 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
 ///
 /// * `Ok(Vec<git2::Oid>)` - A vector of commit object IDs, newest first
 /// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::Oid>> {
     let head_id = repo
         .refname_to_id("refs/heads/master")
