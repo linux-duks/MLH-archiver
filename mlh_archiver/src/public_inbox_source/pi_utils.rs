@@ -664,7 +664,13 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
         if !a_is_all && b_is_all {
             return std::cmp::Ordering::Less;
         }
-        a.epoch_name.cmp(&b.epoch_name)
+        // Numeric sort for numeric epoch names
+        let a_num = a.epoch_name.parse::<usize>();
+        let b_num = b.epoch_name.parse::<usize>();
+        match (a_num, b_num) {
+            (Ok(a), Ok(b)) => a.cmp(&b),
+            _ => a.epoch_name.cmp(&b.epoch_name),
+        }
     });
 
     Ok(epochs)

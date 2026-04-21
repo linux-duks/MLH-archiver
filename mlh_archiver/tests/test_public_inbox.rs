@@ -780,3 +780,128 @@ fn test_validate_file_structure_using_helpers() {
 
     println!("test_validate_file_structure_using_helpers passed");
 }
+
+// =============================================================================
+// Multi-Epoch Integration Tests
+// =============================================================================
+
+#[test]
+fn test_multi_epoch_all_emails() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: None,
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_all",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_multi_epoch_all";
+    let list_dir = format!("{}/v2_multi_epoch.list", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 12, "Expected 12 .eml files, found {}", eml_count);
+
+    assert!(Path::new(&list_dir).exists());
+    assert!(Path::new(&format!("{}/__progress.yaml", list_dir)).exists());
+    assert!(Path::new(&format!("{}/__lineage.yaml", list_dir)).exists());
+
+    validate_list(
+        output_dir,
+        "v2_multi_epoch.list",
+        &(1..=12).collect::<Vec<usize>>(),
+    );
+    validate_exact_file_structure(output_dir, "v2_multi_epoch.list", 12, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+#[test]
+fn test_multi_epoch_article_range() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: Some("5-8".to_owned()), // All in epoch 1
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_range",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_multi_epoch_range";
+    let list_dir = format!("{}/v2_multi_epoch.list", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 4, "Expected 4 .eml files (5-8 inclusive), found {}", eml_count);
+
+    validate_list(output_dir, "v2_multi_epoch.list", &[5, 6, 7, 8]);
+    validate_exact_file_structure(output_dir, "v2_multi_epoch.list", 4, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+#[test]
+fn test_multi_epoch_resume() {
+    // Phase 1: Process first 4 emails (epoch 0)
+    let _found_files1 = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: Some("1-4".to_owned()), // Only first 4 emails
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_resume_phase1",
+    );
+    
+    // Phase 2: Resume without range (should start from epoch 1)
+    let _found_files2 = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: None, // No range - should resume
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_resume_phase2",
+    );
+    
+    // Verify all 12 emails are now present
+    let list_dir = "./test_public_inbox_output_pi_multi_epoch_resume_phase2/v2_multi_epoch.list";
+    let eml_count = count_eml_files(list_dir);
+    assert_eq!(eml_count, 12, "Expected 12 .eml files after resume, found {}", eml_count);
+    
+    validate_list("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", &(1..=12).collect::<Vec<usize>>());
+    validate_exact_file_structure("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", 12, false);
+    
+    // Cleanup
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string()).unwrap();
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string()).unwrap();
+}
