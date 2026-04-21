@@ -109,7 +109,7 @@ impl NNTPWorker {
 }
 
 impl Worker for NNTPWorker {
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(receiver, self)))]
     fn consumme_list(
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
@@ -279,7 +279,7 @@ impl NNTPWorker {
     /// - Writes fetched emails as `.eml` files via writer
     /// - Logs unavailable articles to `__errors.csv` file via writer
 
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(writer, self)))]
     pub fn handle_group(
         &self,
         list_name: String,
@@ -369,7 +369,7 @@ impl NNTPWorker {
     /// If shutdown is requested during fetching, returns the count of
     /// emails fetched so far without error
 
-    #[cfg_attr(feature = "otel", tracing::instrument)]
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(writer, self)))]
     fn read_new_mails(
         &self,
         list_name: String,
@@ -416,6 +416,7 @@ impl NNTPWorker {
         Ok(num_emails_read)
     }
 
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn get_raw_article_by_number_retryable(
         &self,
         mail_num: isize,

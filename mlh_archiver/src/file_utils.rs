@@ -33,10 +33,9 @@ use std::{
 /// - Creates parent directories if they don't exist
 /// - Truncates existing file
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn write_lines_file<I, L>(file_path: &Path, lines: I) -> io::Result<()>
 where
-    I: IntoIterator<Item = L> + std::fmt::Debug,
+    I: IntoIterator<Item = L>,
     L: AsRef<str>,
 {
     // Create or open (truncate) a file for writing
@@ -72,7 +71,6 @@ where
 /// * `Ok(())` on success
 /// * `Err(io::Error)` on failure
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn append_line_to_file(file_path: &Path, line: &str) -> io::Result<()> {
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {
@@ -110,7 +108,6 @@ pub fn append_line_to_file(file_path: &Path, line: &str) -> io::Result<()> {
 /// * `Ok(usize)` - The parsed number
 /// * `Err(io::Error)` - File not found, unreadable, or no valid number
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
     // Attempt to read the file's content into a string.
     let content = fs::read_to_string(path)?;
@@ -149,10 +146,9 @@ pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
 /// - Creates parent directories if needed
 /// - Appends to file (does not truncate)
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn write_yaml<T>(file_name: &str, value: &T) -> io::Result<()>
 where
-    T: ?Sized + ser::Serialize + std::fmt::Debug,
+    T: ?Sized + ser::Serialize,
 {
     // check if parent folder need to be created first
     let file_path = Path::new(file_name);
@@ -212,7 +208,6 @@ where
 /// // msg: second
 /// ```
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn append_yaml_to_file<T>(file_name: &str, value: &T) -> io::Result<()>
 where
     T: ?Sized + ser::Serialize + std::fmt::Debug,
@@ -250,7 +245,6 @@ where
 /// * `Ok(T)` - Deserialized value
 /// * `Err(io::Error)` - File not found, unreadable, or invalid YAML
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn read_yaml<T>(file_name: &str) -> io::Result<T>
 where
     T: DeserializeOwned,
@@ -280,7 +274,6 @@ where
 /// - Creates folder and all parent directories if they don't exist
 /// - Logs debug/warn messages about folder existence
 
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn check_or_create_folder(folder_path: String) -> io::Result<()> {
     let p = Path::new(&folder_path);
     if p.exists() {

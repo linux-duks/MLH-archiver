@@ -70,7 +70,6 @@ use worker::WorkerManager;
 /// let shutdown_flag = Arc::new(AtomicBool::new(false));
 /// start(&mut app_config, shutdown_flag).unwrap();
 /// ```
-#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn start(
     app_config: &mut config::AppConfig,
     shutdown_flag: Arc<AtomicBool>,
