@@ -8,7 +8,7 @@ anyhow = "1.0.102"
 chrono = "0.4"
 clap = { version = "4.6", features = ["derive"] }
 env_logger = "0.11"
-gix = "0.81.0"
 inquire = { version = "0.9", default-features = false, features = ["termion"] }
 log = "0.4"
+git2 = { version = "0.20.4", features = ["vendored-libgit2"] }
 mlh_archiver = { path = "../../mlh_archiver" }

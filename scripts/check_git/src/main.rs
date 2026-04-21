@@ -1,17 +1,15 @@
 use std::path::{Path, PathBuf};
 
-/// A public-inbox email reader using gitoxide (gix).
+/// A public-inbox email reader using libgit2.
 /// Scans a directory for public-inbox subdirectories and reads the last N emails from each.
 use chrono::DateTime;
 use clap::Parser;
-use gix::bstr::ByteSlice;
 use inquire::{Confirm, MultiSelect, Select, Text};
 
-use gix::revision::walk::Info;
 use mlh_archiver::public_inbox_source::pi_utils::*;
 
 fn main() {
-    let args = Args::parse_from(gix::env::args_os());
+    let args = Args::parse_from(std::env::args_os());
 
     // Initialize logging
     let log_level = if args.verbose { "debug" } else { "info" };
@@ -235,37 +233,21 @@ fn fetch_single_commit(inbox: &PublicInbox, position: usize) -> anyhow::Result<(
         anyhow::bail!("Incomplete repository: {}", inbox.version);
     }
 
-    let mut repo = gix::open(&inbox.git_dir)?;
-    repo.object_cache_size(50_000_000);
+    let repo = git2::Repository::open(&inbox.git_dir)?;
+    let total_commits = count_commits_from_repo(&repo)?;
 
-    // Resolve refs/heads/master to get HEAD commit
-    let head_ref = repo
-        .refs
-        .find("refs/heads/master")
-        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    // Walk all commits from HEAD (newest first)
-    let all_commit_ids: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    if position == 0 || position > all_commit_ids.len() {
+    if position == 0 || position > total_commits {
         anyhow::bail!(
             "Position {} out of range (total commits: {})",
             position,
-            all_commit_ids.len()
+            total_commits
         );
     }
 
-    let commit_info = &all_commit_ids[position - 1];
-    view_commit(&repo, commit_info, position)
+    let commit_id = get_commit_at_position(&repo, position - 1)
+        .map_err(|e| anyhow::anyhow!("Failed to get commit at position: {}", e))?;
+    let commit = repo.find_commit(commit_id)?;
+    view_commit(&repo, &commit, position)
 }
 
 /// Count total commits in a public inbox repository.
@@ -275,28 +257,14 @@ fn count_commits(inbox: &PublicInbox) -> anyhow::Result<usize> {
         return Ok(0);
     }
 
-    let mut repo = gix::open(&inbox.git_dir)?;
-    repo.object_cache_size(50_000_000);
+    let repo = git2::Repository::open(&inbox.git_dir)?;
+    count_commits_from_repo(&repo)
+}
 
-    // Resolve refs/heads/master to get HEAD commit
-    let head_ref = repo
-        .refs
-        .find("refs/heads/master")
-        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    // Walk all commits from HEAD (newest first)
-    let all_commit_ids: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .collect();
-
-    Ok(all_commit_ids.len())
+/// Count commits using an already-opened repository.
+fn count_commits_from_repo(repo: &git2::Repository) -> anyhow::Result<usize> {
+    mlh_archiver::public_inbox_source::pi_utils::count_commits(repo)
+        .map_err(|e| anyhow::anyhow!("Failed to count commits: {}", e))
 }
 
 /// Opens a public-inbox git repo, reads the most recent emails,
@@ -308,29 +276,10 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
         return Ok(0);
     }
 
-    let repo = gix::open(&inbox.git_dir)?;
+    let repo = git2::Repository::open(&inbox.git_dir)?;
 
-    // Enable object cache for better performance
-    let mut repo = repo;
-    repo.object_cache_size(50_000_000); // 50MB cache
-
-    // Resolve refs/heads/master to get the HEAD commit
-    let head_ref = repo
-        .refs
-        .find("refs/heads/master")
-        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    // Walk all commits from HEAD (tip/newest first)
-    let all_commit_ids: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .collect();
+    let all_commit_ids = collect_all_commits(&repo)
+        .map_err(|e| anyhow::anyhow!("Failed to collect commits: {}", e))?;
 
     if all_commit_ids.is_empty() {
         return Ok(0);
@@ -341,48 +290,34 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
 
     let mut email_count = 0;
 
-    for info in commits_to_process {
-        let commit = repo.find_commit(info.id)?;
-        let commit_ref = commit.decode()?;
+    for commit_id in commits_to_process {
+        let commit = repo.find_commit(commit_id)?;
+        let author = commit.author();
+        let subject = commit.message().unwrap_or("");
 
-        let author = commit_ref.author()?;
-        let author_time = author.time()?;
-        let subject = commit_ref.message.to_str_lossy().to_string();
+        let (commit_hash, raw_email) = match extract_email_from_commit(&repo, &commit) {
+            Ok(result) => result,
+            Err(_) => continue,
+        };
 
-        // Get the tree and find the "m" entry (message file)
-        let tree_id = commit_ref.tree();
-        let tree = repo.find_tree(tree_id)?;
+        // Print immediately
+        let timestamp = DateTime::from_timestamp(author.when().seconds(), 0)
+            .map(|dt| dt.to_rfc3339())
+            .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
 
-        let blob_oid = tree
-            .iter()
-            .find_map(|e| e.ok())
-            .filter(|e| e.filename().as_bytes() == b"m")
-            .map(|e| e.object_id());
-
-        if let Some(blob_oid) = blob_oid {
-            let blob = repo.find_blob(blob_oid)?;
-            let raw_email = String::from_utf8_lossy(&blob.data).to_string();
-
-            // Print immediately
-            let timestamp = DateTime::from_timestamp(author_time.seconds, 0)
-                .map(|dt| dt.to_rfc3339())
-                .unwrap_or_else(|| format!("timestamp={}", author_time.seconds));
-
-            email_count += 1;
-            println!("  --- Email {email_count} ---");
-            println!("  Subject: {}", subject.lines().next().unwrap_or(""));
-            println!("  Author:  {} <{}>", author.name, author.email);
-            println!("  Date:    {timestamp}");
-            println!("  Commit:  {}", info.id.to_hex());
-            println!("  Raw email:");
-            for line in raw_email.lines() {
-                println!("    {line}");
-            }
-            println!();
+        email_count += 1;
+        println!("  --- Email {email_count} ---");
+        println!("  Subject: {}", subject.lines().next().unwrap_or(""));
+        println!("  Author:  {} <{}>", author.name().unwrap_or(""), author.email().unwrap_or(""));
+        println!("  Date:    {timestamp}");
+        println!("  Commit:  {}", commit_hash);
+        println!("  Raw email:");
+        for line in raw_email.lines() {
+            println!("    {line}");
         }
+        println!();
     }
 
-    // repo dropped here; entire inbox freed from memory
     Ok(email_count)
 }
 
@@ -394,26 +329,10 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let mut repo = gix::open(&inbox.git_dir)?;
-    repo.object_cache_size(50_000_000); // 50MB cache
+    let repo = git2::Repository::open(&inbox.git_dir)?;
 
-    // Resolve refs/heads/master to get HEAD commit
-    let head_ref = repo
-        .refs
-        .find("refs/heads/master")
-        .map_err(|_| anyhow::anyhow!("refs/heads/master not found"))?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    // Collect all commit IDs (newest first)
-    let all_commit_ids: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .collect();
+    let all_commit_ids = collect_all_commits(&repo)
+        .map_err(|e| anyhow::anyhow!("Failed to collect commits: {}", e))?;
 
     let total_commits = all_commit_ids.len();
     if total_commits == 0 {
@@ -435,22 +354,20 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
 
         // Fetch commit details for this page
         let mut commit_details = Vec::new();
-        for (i, info) in page_commits.iter().enumerate() {
-            let commit = repo.find_commit(info.id)?;
-            let commit_ref = commit.decode()?;
-            let author = commit_ref.author()?;
-            let author_time = author.time()?;
-            let subject = commit_ref.message.to_str_lossy().to_string();
+        for (i, commit_id) in page_commits.iter().enumerate() {
+            let commit = repo.find_commit(*commit_id)?;
+            let author = commit.author();
+            let subject = commit.message().unwrap_or("");
             let subject_preview = subject.lines().next().unwrap_or("").to_string();
-            let date = DateTime::from_timestamp(author_time.seconds, 0)
+            let date = DateTime::from_timestamp(author.when().seconds(), 0)
                 .map(|dt| dt.format("%Y-%m-%d").to_string())
-                .unwrap_or_else(|| format!("timestamp={}", author_time.seconds));
+                .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
 
             commit_details.push(format!(
                 "{:4} | {} | {} | {}",
                 start + i + 1, // position (1-indexed)
                 date,
-                author.name.to_str_lossy(),
+                author.name().unwrap_or(""),
                 truncate_subject(&subject_preview, 50)
             ));
         }
@@ -494,8 +411,9 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                 for selected in selections {
                     if let Some(index) = commit_details.iter().position(|c| c == &selected) {
                         let commit_idx = start + index;
-                        let commit_info = &all_commit_ids[commit_idx];
-                        view_commit(&repo, commit_info, commit_idx + 1)?;
+                        let commit_id = all_commit_ids[commit_idx];
+                        let commit = repo.find_commit(commit_id)?;
+                        view_commit(&repo, &commit, commit_idx + 1)?;
                     }
                 }
             }
@@ -506,8 +424,9 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                 if let Ok(num) = commit_num.parse::<usize>() {
                     if num >= 1 && num <= total_commits {
                         let commit_idx = num - 1;
-                        let commit_info = &all_commit_ids[commit_idx];
-                        view_commit(&repo, commit_info, num)?;
+                        let commit_id = all_commit_ids[commit_idx];
+                        let commit = repo.find_commit(commit_id)?;
+                        view_commit(&repo, &commit, num)?;
                     } else {
                         println!(
                             "Invalid commit number. Must be between 1 and {}.",
@@ -599,46 +518,37 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
 
 /// View a single commit in detail (including email content)
 fn view_commit(
-    repo: &gix::Repository,
-    commit_info: &Info<'_>,
+    repo: &git2::Repository,
+    commit: &git2::Commit,
     position: usize,
 ) -> anyhow::Result<()> {
-    let commit = repo.find_commit(commit_info.id)?;
-    let commit_ref = commit.decode()?;
-    let author = commit_ref.author()?;
-    let author_time = author.time()?;
-    let subject = commit_ref.message.to_str_lossy().to_string();
+    let author = commit.author();
+    let subject = commit.message().unwrap_or("");
 
-    let date = DateTime::from_timestamp(author_time.seconds, 0)
+    let date = DateTime::from_timestamp(author.when().seconds(), 0)
         .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| format!("timestamp={}", author_time.seconds));
+        .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
 
     println!("\n📧 Commit #{}", position);
     println!("─────────────────────────────────────");
     println!("Subject: {}", subject.lines().next().unwrap_or(""));
-    println!("Author:  {} <{}>", author.name, author.email);
+    println!("Author:  {} <{}>", author.name().unwrap_or(""), author.email().unwrap_or(""));
     println!("Date:    {}", date);
-    println!("Commit:  {}", commit_info.id.to_hex());
+    println!("Commit:  {}", commit.id());
 
-    // Get the tree and find the "m" entry (message file)
-    let tree_id = commit_ref.tree();
-    let tree = repo.find_tree(tree_id)?;
-
-    let blob_oid = tree
-        .iter()
-        .find_map(|e| e.ok())
-        .filter(|e| e.filename().as_bytes() == b"m")
-        .map(|e| e.object_id());
-
-    if let Some(blob_oid) = blob_oid {
-        let blob = repo.find_blob(blob_oid)?;
-        let raw_email = String::from_utf8_lossy(&blob.data);
-        println!("─────────────────────────────────────");
-        for line in raw_email.lines() {
-            println!("{}", line);
+    let (commit_hash, raw_email) = match extract_email_from_commit(repo, commit) {
+        Ok(result) => result,
+        Err(_) => {
+            println!("No 'm' file found in commit tree");
+            println!("─────────────────────────────────────\n");
+            return Ok(());
         }
-    } else {
-        println!("No 'm' file found in commit tree");
+    };
+
+    println!("Commit:  {}", commit_hash);
+    println!("─────────────────────────────────────");
+    for line in raw_email.lines() {
+        println!("{}", line);
     }
     println!("─────────────────────────────────────\n");
     Ok(())

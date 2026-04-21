@@ -4,7 +4,6 @@ use std::process::Command;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 
-use gix::bstr::ByteSlice;
 use mlh_archiver::config::AppConfig;
 use mlh_archiver::public_inbox_source::pi_config::PIConfig;
 use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
@@ -436,43 +435,41 @@ fn test_pi_article_range() {
 // Demo-based Integration Tests
 // =============================================================================
 
-/// Extract raw email content from a public inbox using gix directly.
+/// Extract raw email content from a public inbox using git2 directly.
 /// Returns a vector of (commit_hash, raw_email) in order from newest to oldest.
 fn extract_emails_from_inbox(inbox: &PublicInbox) -> Vec<(String, String)> {
-    let repo = gix::open(&inbox.git_dir).expect("Failed to open git repo");
-    let head_ref = repo.refs.find("refs/heads/master").expect("No master ref");
-    let head_id = head_ref
-        .target
-        .try_id()
-        .expect("refs/heads/master does not point to an object")
-        .to_owned();
+    let repo = git2::Repository::open(&inbox.git_dir).expect("Failed to open git repo");
+    let head_ref = repo.head().expect("No HEAD ref");
+    let head_id = head_ref.target().expect("HEAD does not point to an object");
 
-    let walk = repo.rev_walk([head_id]);
-    let iter = walk.all().expect("rev walk failed");
+    let mut revwalk = repo.revwalk().expect("Failed to create revwalk");
+    revwalk.push(head_id).expect("Failed to push head");
+    
+    let mut commits = Vec::new();
+    for oid in revwalk.flatten() {
+        commits.push(oid);
+    }
 
     let mut emails = Vec::new();
-    for info in iter {
-        let info = info.expect("commit info error");
-        let commit = repo.find_commit(info.id).expect("find commit");
-        let commit_ref = commit.decode().expect("decode commit");
-        let tree_id = commit_ref.tree();
+    for commit_id in commits {
+        let commit = repo.find_commit(commit_id).expect("find commit");
+        let tree_id = commit.tree_id();
         let tree = repo.find_tree(tree_id).expect("find tree");
 
         let blob_oid = tree
             .iter()
-            .find_map(|e| e.ok())
-            .filter(|e| e.filename().as_bytes() == b"m")
-            .map(|e| e.object_id());
+            .find(|e| e.name() == Some("m"))
+            .map(|e| e.id());
 
         match blob_oid {
             Some(blob_oid) => {
                 let blob = repo.find_blob(blob_oid).expect("find blob");
-                let raw_email = String::from_utf8_lossy(&blob.data).to_string();
-                emails.push((info.id.to_string(), raw_email));
+                let raw_email = String::from_utf8_lossy(blob.content()).to_string();
+                emails.push((commit_id.to_string(), raw_email));
             }
             None => {
                 // Skip commits without m blob (should not happen in valid public inbox)
-                println!("Warning: commit {} missing 'm' blob", info.id);
+                println!("Warning: commit {} missing 'm' blob", commit_id);
             }
         }
     }
