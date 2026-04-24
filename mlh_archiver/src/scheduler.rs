@@ -3,9 +3,12 @@ use crate::range_inputs::parse_sequence;
 use crate::worker::{Worker, WorkerGroup};
 use crossbeam_channel::bounded;
 use std::thread::{self, JoinHandle};
+
+#[cfg(not(test))]
 use std::time::Duration;
 
 // intervals in seconds
+#[cfg(not(test))]
 const INTERVAL_BETWEEN_RESCANS: usize = 60 * 60; // 1h
 
 /// Channel capacity per worker group
@@ -129,6 +132,8 @@ impl<'a> Scheduler<'a> {
                     log::warn!(
                         "Multiple lists selected in Range Mode. This is likely a mistake..."
                     );
+
+                    #[cfg(not(test))]
                     thread::sleep(Duration::from_millis(100));
                 }
                 let worker_handles = self.spawn_worker_to_read_email_by_index(workers, receiver);
@@ -206,9 +211,6 @@ impl<'a> Scheduler<'a> {
                 }
             });
             worker_handles.push(handle);
-
-            // Space out thread creation (to prevent multiple connections opening at once)
-            std::thread::sleep(Duration::from_secs(2));
         }
         return worker_handles;
     }
@@ -258,7 +260,7 @@ impl<'a> Scheduler<'a> {
                         list_name.to_string(),
                         index
                             .parse::<usize>()
-                            .expect("Task index shoud parse into a usize"),
+                            .expect("Task index should parse into a usize"),
                     ) {
                         Ok(_) => {
                             log::debug!("Worker thread finished");
@@ -272,6 +274,7 @@ impl<'a> Scheduler<'a> {
             worker_handles.push(handle);
 
             // Space out thread creation (to prevent multiple connections opening at once)
+            #[cfg(not(test))]
             std::thread::sleep(Duration::from_secs(2));
         }
         return worker_handles;
@@ -322,6 +325,7 @@ impl<'a> Scheduler<'a> {
                 log::debug!("All tasks sent, waiting for rescan interval...");
 
                 // Sleep between rescans
+                #[cfg(not(test))]
                 std::thread::sleep(Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64));
             }
         })

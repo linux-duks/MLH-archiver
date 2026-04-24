@@ -21,7 +21,7 @@ use std::{
 /// # Arguments
 ///
 /// * `file_path` - Path to the output file
-/// * `lines` - Slice of strings to write (without newlines)
+/// * `lines` - Iterator over lines to write (without newlines)
 ///
 /// # Returns
 ///
@@ -32,7 +32,11 @@ use std::{
 ///
 /// - Creates parent directories if they don't exist
 /// - Truncates existing file
-pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
+pub fn write_lines_file<I, L>(file_path: &Path, lines: I) -> io::Result<()>
+where
+    I: IntoIterator<Item = L>,
+    L: AsRef<str>,
+{
     // Create or open (truncate) a file for writing
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {
@@ -41,9 +45,9 @@ pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
     let file = File::create(file_path)?;
     let mut file = LineWriter::new(file);
 
-    lines
-        .iter()
-        .for_each(|line| write!(file, "{}", line.as_str()).expect("Cannot write to file"));
+    for line in lines {
+        write!(file, "{}", line.as_ref())?;
+    }
 
     file.flush()?;
 

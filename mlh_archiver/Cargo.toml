@@ -1,8 +1,11 @@
 [package]
 name = "mlh_archiver"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 build = "build.rs"
+
+
+default-run = "mlh_archiver"
 
 [dependencies]
 anyhow = "1.0"
@@ -28,6 +31,7 @@ nntp = { path = "./rust-nntp" }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2.0"
+gix = "0.81.0"
 
 [dev-dependencies]
 testcontainers = { version =  "0.27" , features = ["blocking"] }

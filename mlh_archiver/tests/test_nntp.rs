@@ -3,7 +3,8 @@ use std::path::Path;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 use testcontainers::{
-    GenericBuildableImage, core::WaitFor, runners::SyncBuilder, runners::SyncRunner,
+    Container, GenericBuildableImage, GenericImage, core::WaitFor, runners::SyncBuilder,
+    runners::SyncRunner,
 };
 
 use mlh_archiver::config::AppConfig;
@@ -31,6 +32,62 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
     Ok(())
 }
 
+/// Builds the test NNTP server Docker image.
+fn build_test_nntp_image() -> GenericImage {
+    println!("loading test_nntp_server/Containerfile");
+    GenericBuildableImage::new("test_nntp_server", "latest")
+        .with_dockerfile("./tests/test_nntp_server/Containerfile")
+        .with_file("./tests/test_nntp_server", ".")
+        .build_image()
+        .unwrap()
+}
+
+/// Starts the test NNTP server container.
+/// Returns (container, host_port) tuple.
+fn start_test_nntp_container(image: GenericImage) -> (Container<GenericImage>, u16) {
+    let container = image
+        .with_wait_for(WaitFor::message_on_stdout("Serving on port :8119"))
+        .start()
+        .unwrap();
+    let host_port = container.get_host_port_ipv4(8119).unwrap();
+    (container, host_port)
+}
+
+/// Runs an NNTP archiver test with a custom configuration builder.
+/// Returns the list of files created in the output directory.
+fn run_nntp_test_with_config<F>(config_builder: F, test_name: &str) -> Vec<String>
+where
+    F: FnOnce(u16) -> AppConfig,
+{
+    let image = build_test_nntp_image();
+    let (container, host_port) = start_test_nntp_container(image);
+
+    let output_dir = format!("./test_nntp_output_{}", test_name);
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    let mut app_config = config_builder(host_port);
+    app_config.output_dir = output_dir.clone();
+
+    println!("Starting worker for {}", test_name);
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let test_name_owned = test_name.to_string();
+
+    let child_handle = thread::spawn(move || {
+        println!("Child thread started for {}.", test_name_owned);
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+        println!("Child thread stopped for {}.", test_name_owned);
+    });
+
+    println!("waiting server thread to finish for {}", test_name);
+    child_handle.join().expect("Child thread panicked");
+    container.stop().unwrap();
+    container.rm().unwrap();
+
+    println!("Loading list of files for {}", test_name);
+    file_list_dir(output_dir.clone())
+}
+
 /// Validates the content of a `__progress.yaml` file.
 ///
 /// Reads the YAML file and verifies:
@@ -43,12 +100,17 @@ fn validate_progress_file(path: &str, expected_last_email: usize) {
         "Progress file should contain 'last_email' field: {}",
         path
     );
-    // Parse the last_email value from the YAML
-    let last_email: usize = content
-        .lines()
-        .find(|line| line.trim().starts_with("last_email:"))
-        .and_then(|line| line.split(':').nth(1)?.trim().parse().ok())
-        .expect("Should parse last_email value");
+    // Parse the YAML content properly using serde_yaml
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).expect("Failed to parse YAML content");
+    let last_email_str = yaml_value
+        .get("last_email")
+        .expect("YAML should have last_email field")
+        .as_str()
+        .expect("last_email should be a string");
+    let last_email: usize = last_email_str
+        .parse()
+        .expect("Failed to parse last_email as usize");
     assert_eq!(
         last_email, expected_last_email,
         "Progress file {} should have last_email={}",
@@ -101,8 +163,10 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
 
     // Verify email_index values match expected
     for &email_index in expected_email_indices {
+        let unquoted = format!("email_index: {}", email_index);
+        let quoted = format!("email_index: '{}'", email_index);
         assert!(
-            content.contains(&format!("email_index: {}", email_index)),
+            content.contains(&unquoted) || content.contains(&quoted),
             "Lineage file should contain email_index={}: {}",
             email_index,
             path
@@ -189,68 +253,33 @@ fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
 
 #[test]
 fn test_read_from_local_nntp_server() {
-    println!("loading Containerfile");
-    let image = GenericBuildableImage::new("test_nntp_server", "latest")
-        .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nntp_server", "./test_nntp_server")
-        .build_image()
-        .unwrap();
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*".to_owned()]),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "default",
+    );
 
-    // Use the built image in containers
-    let container = image
-        // check log from server
-        .with_wait_for(WaitFor::message_on_stdout("Serving on port :8119"))
-        .start()
-        .unwrap();
+    let output_dir = "./test_nntp_output_default";
 
-    // check if correct port is exmposed
-    let host_port = container.get_host_port_ipv4(8119).unwrap();
-    let output_dir = "./test_output".to_owned();
-
-    println!("server container running on host port: {}", host_port);
-    let mut app_config = AppConfig {
-        output_dir: output_dir.clone(),
-        nthreads: 1,
-        loop_groups: false,
-        nntp: Some(NntpConfig {
-            hostname: "localhost".to_owned(),
-            port: Some(host_port),
-            group_lists: Some(vec!["*".to_owned()]),
-            ..NntpConfig::default()
-        }),
-    };
-
-    check_and_delete_folder(output_dir.clone()).unwrap();
-
-    println!("Starting worker");
-
-    // Create shutdown flag for the test
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-
-    let child_handle = thread::spawn(move || {
-        println!("Child thread started.");
-        let result = start(&mut app_config, shutdown_flag);
-        assert!(result.is_ok());
-
-        println!("Child thread stopped.");
-    });
-
-    println!("waiting server thread to finish");
-    child_handle.join().expect("Child thread panicked");
-    container.stop().unwrap();
-    container.rm().unwrap();
-
-    println!("Loading list of files");
-    let mut found_files = file_list_dir(output_dir.clone());
+    let mut found_files = found_files;
     let mut expected_files = [
-        root_dir("./test_output"),
-        list_entry("./test_output", "test.groups.foo", &[1, 2], false),
-        list_entry("./test_output", "test.groups.bar", &[1, 2], false),
-        list_entry("./test_output", "test.groups.empty", &[], false),
-        // __progress.yaml is created for empty lists in handle_group via last_processed_id()
-        vec!["./test_output/test.groups.empty/__progress.yaml".to_string()],
+        root_dir(output_dir),
+        list_entry(output_dir, "test.groups.foo", &[1, 2], false),
+        list_entry(output_dir, "test.groups.bar", &[1, 2], false),
         list_entry(
-            "./test_output",
+            output_dir,
             "test.groups.synthetic",
             &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
             false,
@@ -262,91 +291,55 @@ fn test_read_from_local_nntp_server() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage file content
-    validate_list("./test_output", "test.groups.foo", &[1, 2]);
-    validate_list("./test_output", "test.groups.bar", &[1, 2]);
-    // empty list: __progress.yaml created via last_processed_id() even with 0 articles
-    validate_progress_file("./test_output/test.groups.empty/__progress.yaml", 0);
+    validate_list(output_dir, "test.groups.foo", &[1, 2]);
+    validate_list(output_dir, "test.groups.bar", &[1, 2]);
     validate_list(
-        "./test_output",
+        output_dir,
         "test.groups.synthetic",
         &[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
     );
 
-    check_and_delete_folder(output_dir).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
 }
 
 // =============================================================================
 // Range Variation Integration Tests
 // =============================================================================
 
-/// Helper function to run the archiver with a specific article range
-/// Returns the list of files created
-fn run_archiver_with_range(article_range: Option<String>, test_name: String) -> Vec<String> {
-    println!("loading Containerfile for {}", test_name);
-    let image = GenericBuildableImage::new("test_nntp_server", "latest")
-        .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nntp_server", "./test_nntp_server")
-        .build_image()
-        .unwrap();
-
-    // Use the built image in containers
-    let container = image
-        .with_wait_for(WaitFor::message_on_stdout("Serving on port :8119"))
-        .start()
-        .unwrap();
-
-    let host_port = container.get_host_port_ipv4(8119).unwrap();
-    let output_dir = format!("./test_output_{}", test_name);
-
-    println!("server container running on host port: {}", host_port);
-    let mut app_config = AppConfig {
-        output_dir: output_dir.clone(),
-        nthreads: 1,
-        loop_groups: false,
-        nntp: Some(NntpConfig {
-            hostname: "localhost".to_owned(),
-            port: Some(host_port),
-            group_lists: Some(vec!["*".to_owned()]),
-            article_range,
-            ..NntpConfig::default()
-        }),
-    };
-
-    check_and_delete_folder(output_dir.clone()).unwrap();
-
-    println!("Starting worker for {}", test_name);
-
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-
-    let test_name_clone = test_name.clone();
-    let child_handle = thread::spawn(move || {
-        println!("Child thread started for {}.", test_name_clone);
-        let result = start(&mut app_config, shutdown_flag);
-        assert!(result.is_ok());
-        println!("Child thread stopped for {}.", test_name_clone);
-    });
-
-    println!("waiting server thread to finish for {}", test_name);
-    child_handle.join().expect("Child thread panicked");
-    container.stop().unwrap();
-    container.rm().unwrap();
-
-    println!("Loading list of files for {}", test_name);
-    file_list_dir(output_dir.clone())
-}
-
 #[test]
 fn test_read_single_article_by_range() {
-    let found_files = run_archiver_with_range(Some("5".to_string()), "single".to_string());
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*".to_owned()]),
+                    article_range: Some("5".to_owned()),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "single",
+    );
 
     // Only article 5 should be fetched (only exists in synthetic list)
     // Other lists will have __errors.csv files because article 5 doesn't exist
     let mut expected_files = [
-        root_dir("./test_output_single"),
-        list_entry("./test_output_single", "test.groups.foo", &[], true),
-        list_entry("./test_output_single", "test.groups.bar", &[], true),
-        list_entry("./test_output_single", "test.groups.empty", &[], true),
-        list_entry("./test_output_single", "test.groups.synthetic", &[5], false),
+        root_dir("./test_nntp_output_single"),
+        list_entry("./test_nntp_output_single", "test.groups.foo", &[], true),
+        list_entry("./test_nntp_output_single", "test.groups.bar", &[], true),
+        list_entry("./test_nntp_output_single", "test.groups.empty", &[], true),
+        list_entry(
+            "./test_nntp_output_single",
+            "test.groups.synthetic",
+            &[5],
+            false,
+        ),
     ]
     .concat();
     let mut found_files = found_files;
@@ -355,28 +348,45 @@ fn test_read_single_article_by_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_single", "test.groups.foo", &[]);
-    validate_list("./test_output_single", "test.groups.bar", &[]);
-    validate_list("./test_output_single", "test.groups.empty", &[]);
-    validate_list("./test_output_single", "test.groups.synthetic", &[5]);
+    validate_list("./test_nntp_output_single", "test.groups.foo", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.bar", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_single", "test.groups.synthetic", &[5]);
 
-    check_and_delete_folder("./test_output_single".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_single".to_string()).unwrap();
 }
 
 #[test]
 fn test_read_article_range() {
-    let found_files = run_archiver_with_range(Some("1-3".to_string()), "range".to_string());
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*".to_owned()]),
+                    article_range: Some("1-3".to_owned()),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "range",
+    );
 
     // Articles 1, 2, 3 should be fetched from each list
     // foo has 2 articles (1, 2), bar has 2 (1, 2), synthetic has 3 (1, 2, 3)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_range"),
-        list_entry("./test_output_range", "test.groups.foo", &[1, 2], true),
-        list_entry("./test_output_range", "test.groups.bar", &[1, 2], true),
-        list_entry("./test_output_range", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_range"),
+        list_entry("./test_nntp_output_range", "test.groups.foo", &[1, 2], true),
+        list_entry("./test_nntp_output_range", "test.groups.bar", &[1, 2], true),
+        list_entry("./test_nntp_output_range", "test.groups.empty", &[], true),
         list_entry(
-            "./test_output_range",
+            "./test_nntp_output_range",
             "test.groups.synthetic",
             &[1, 2, 3],
             false,
@@ -389,28 +399,54 @@ fn test_read_article_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_range", "test.groups.foo", &[1, 2]);
-    validate_list("./test_output_range", "test.groups.bar", &[1, 2]);
-    validate_list("./test_output_range", "test.groups.empty", &[]);
-    validate_list("./test_output_range", "test.groups.synthetic", &[1, 2, 3]);
+    validate_list("./test_nntp_output_range", "test.groups.foo", &[1, 2]);
+    validate_list("./test_nntp_output_range", "test.groups.bar", &[1, 2]);
+    validate_list("./test_nntp_output_range", "test.groups.empty", &[]);
+    validate_list(
+        "./test_nntp_output_range",
+        "test.groups.synthetic",
+        &[1, 2, 3],
+    );
 
-    check_and_delete_folder("./test_output_range".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_range".to_string()).unwrap();
 }
 
 #[test]
 fn test_read_multiple_articles_by_range() {
-    let found_files = run_archiver_with_range(Some("1,5,10".to_string()), "multiple".to_string());
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*".to_owned()]),
+                    article_range: Some("1,5,10".to_owned()),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "multiple",
+    );
 
     // Articles 1, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 3 (1, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_multiple"),
-        list_entry("./test_output_multiple", "test.groups.foo", &[1], true),
-        list_entry("./test_output_multiple", "test.groups.bar", &[1], true),
-        list_entry("./test_output_multiple", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_multiple"),
+        list_entry("./test_nntp_output_multiple", "test.groups.foo", &[1], true),
+        list_entry("./test_nntp_output_multiple", "test.groups.bar", &[1], true),
         list_entry(
-            "./test_output_multiple",
+            "./test_nntp_output_multiple",
+            "test.groups.empty",
+            &[],
+            true,
+        ),
+        list_entry(
+            "./test_nntp_output_multiple",
             "test.groups.synthetic",
             &[1, 5, 10],
             false,
@@ -423,32 +459,49 @@ fn test_read_multiple_articles_by_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_multiple", "test.groups.foo", &[1]);
-    validate_list("./test_output_multiple", "test.groups.bar", &[1]);
-    validate_list("./test_output_multiple", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_multiple", "test.groups.foo", &[1]);
+    validate_list("./test_nntp_output_multiple", "test.groups.bar", &[1]);
+    validate_list("./test_nntp_output_multiple", "test.groups.empty", &[]);
     validate_list(
-        "./test_output_multiple",
+        "./test_nntp_output_multiple",
         "test.groups.synthetic",
         &[1, 5, 10],
     );
 
-    check_and_delete_folder("./test_output_multiple".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_multiple".to_string()).unwrap();
 }
 
 #[test]
 fn test_read_mixed_range() {
-    let found_files = run_archiver_with_range(Some("1,3-5,10".to_string()), "mixed".to_string());
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*".to_owned()]),
+                    article_range: Some("1,3-5,10".to_owned()),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "mixed",
+    );
 
     // Articles 1, 3, 4, 5, 10 should be fetched from each list
     // foo has 1 article (1), bar has 1 (1), synthetic has 5 (1, 3, 4, 5, 10)
     // Lists with unavailable articles will also have __errors.csv files
     let mut expected_files = [
-        root_dir("./test_output_mixed"),
-        list_entry("./test_output_mixed", "test.groups.foo", &[1], true),
-        list_entry("./test_output_mixed", "test.groups.bar", &[1], true),
-        list_entry("./test_output_mixed", "test.groups.empty", &[], true),
+        root_dir("./test_nntp_output_mixed"),
+        list_entry("./test_nntp_output_mixed", "test.groups.foo", &[1], true),
+        list_entry("./test_nntp_output_mixed", "test.groups.bar", &[1], true),
+        list_entry("./test_nntp_output_mixed", "test.groups.empty", &[], true),
         list_entry(
-            "./test_output_mixed",
+            "./test_nntp_output_mixed",
             "test.groups.synthetic",
             &[1, 3, 4, 5, 10],
             false,
@@ -461,16 +514,16 @@ fn test_read_mixed_range() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_mixed", "test.groups.foo", &[1]);
-    validate_list("./test_output_mixed", "test.groups.bar", &[1]);
-    validate_list("./test_output_mixed", "test.groups.empty", &[]);
+    validate_list("./test_nntp_output_mixed", "test.groups.foo", &[1]);
+    validate_list("./test_nntp_output_mixed", "test.groups.bar", &[1]);
+    validate_list("./test_nntp_output_mixed", "test.groups.empty", &[]);
     validate_list(
-        "./test_output_mixed",
+        "./test_nntp_output_mixed",
         "test.groups.synthetic",
         &[1, 3, 4, 5, 10],
     );
 
-    check_and_delete_folder("./test_output_mixed".to_string()).unwrap();
+    check_and_delete_folder("./test_nntp_output_mixed".to_string()).unwrap();
 }
 
 // =============================================================================
@@ -479,59 +532,30 @@ fn test_read_mixed_range() {
 
 #[test]
 fn test_read_from_local_nntp_server_with_auth() {
-    println!("loading Containerfile for auth test");
-    let image = GenericBuildableImage::new("test_nntp_server", "latest")
-        .with_dockerfile("./tests/Containerfile")
-        .with_file("./tests/test_nntp_server", "./test_nntp_server")
-        .build_image()
-        .unwrap();
+    let found_files = run_nntp_test_with_config(
+        |host_port| {
+            AppConfig {
+                output_dir: "".to_string(), // will be overwritten by helper
+                nthreads: 1,
+                loop_groups: false,
+                nntp: Some(NntpConfig {
+                    hostname: "localhost".to_owned(),
+                    port: Some(host_port),
+                    group_lists: Some(vec!["*.foo".to_owned()]),
+                    username: Some("foo".to_owned()),
+                    password: Some("bar".to_owned()),
+                    ..NntpConfig::default()
+                }),
+                ..Default::default()
+            }
+        },
+        "auth",
+    );
 
-    let container = image
-        .with_wait_for(WaitFor::message_on_stdout("Serving on port :8119"))
-        .start()
-        .unwrap();
-
-    let host_port = container.get_host_port_ipv4(8119).unwrap();
-    let output_dir = "./test_output_auth".to_owned();
-
-    println!("server container running on host port: {}", host_port);
-    let mut app_config = AppConfig {
-        output_dir: output_dir.clone(),
-        nthreads: 1,
-        loop_groups: false,
-        nntp: Some(NntpConfig {
-            hostname: "localhost".to_owned(),
-            port: Some(host_port),
-            group_lists: Some(vec!["*.foo".to_owned()]),
-            username: Some("foo".to_owned()),
-            password: Some("bar".to_owned()),
-            ..NntpConfig::default()
-        }),
-    };
-
-    check_and_delete_folder(output_dir.clone()).unwrap();
-
-    println!("Starting worker with auth");
-
-    let shutdown_flag = Arc::new(AtomicBool::new(false));
-
-    let child_handle = thread::spawn(move || {
-        println!("Child thread started (auth test).");
-        let result = start(&mut app_config, shutdown_flag);
-        assert!(result.is_ok());
-        println!("Child thread stopped (auth test).");
-    });
-
-    println!("waiting server thread to finish (auth test)");
-    child_handle.join().expect("Child thread panicked");
-    container.stop().unwrap();
-    container.rm().unwrap();
-
-    println!("Loading list of files (auth test)");
-    let mut found_files = file_list_dir(output_dir.clone());
+    let mut found_files = found_files;
     let mut expected_files = [
-        root_dir("./test_output_auth"),
-        list_entry("./test_output_auth", "test.groups.foo", &[1, 2], false),
+        root_dir("./test_nntp_output_auth"),
+        list_entry("./test_nntp_output_auth", "test.groups.foo", &[1, 2], false),
     ]
     .concat();
     found_files.sort();
@@ -539,7 +563,7 @@ fn test_read_from_local_nntp_server_with_auth() {
     assert_eq!(found_files, expected_files);
 
     // Validate progress and lineage
-    validate_list("./test_output_auth", "test.groups.foo", &[1, 2]);
+    validate_list("./test_nntp_output_auth", "test.groups.foo", &[1, 2]);
 
-    check_and_delete_folder(output_dir).unwrap();
+    check_and_delete_folder("./test_nntp_output_auth".to_string()).unwrap();
 }

@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 /// Progress state for a mailing list.
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct ReadStatus {
-    pub(crate) last_email: usize,
+    pub(crate) last_email: String,
 }
 
 /// Tracks the last processed email ID for a mailing list.
@@ -46,18 +46,16 @@ impl ProgressTracker {
     /// Also falls back to reading a plain number from the file.
     /// If no file exists, initializes one with `0` to mark the list
     /// as discovered.
-    pub fn last_processed_id(&self) -> usize {
+    pub fn last_processed_id(&self) -> Option<String> {
         match crate::file_utils::read_yaml::<ReadStatus>(self.output_path.to_str().unwrap()) {
-            Ok(status) => status.last_email,
-            Err(_) => {
-                let last_email_number =
-                    crate::file_utils::try_read_number(&self.output_path).unwrap_or(0);
-                // Initialize the file with the initial state if it doesn't exist.
-                // This marks the list as discovered and enables resume tracking.
-                if last_email_number == 0 {
-                    let _ = self.update(0);
-                }
-                last_email_number
+            Ok(status) => Some(status.last_email),
+            Err(e) => {
+                log::warn!(
+                    "Unable to find last_processed_id for {} : {}",
+                    self.output_path.to_str().expect("output_path should exist"),
+                    e
+                );
+                None
             }
         }
     }
@@ -67,10 +65,12 @@ impl ProgressTracker {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    pub fn update(&self, id: usize) -> crate::Result<()> {
+    pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::write_yaml(
             self.output_path.to_str().unwrap(),
-            &ReadStatus { last_email: id },
+            &ReadStatus {
+                last_email: id.to_string(),
+            },
         )
         .map_err(crate::errors::Error::Io)
     }

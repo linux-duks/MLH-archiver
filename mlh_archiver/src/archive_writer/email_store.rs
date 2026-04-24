@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 /// use mlh_archiver::archive_writer::EmailStore;
 ///
 /// let store = EmailStore::new(Path::new("./output"), "test.list");
-/// store.write(42, &["From: user@example.com".to_string()]).unwrap();
+/// store.write("42", &["From: user@example.com".to_string()]).unwrap();
 /// ```
 pub struct EmailStore {
     output_path: PathBuf,
@@ -39,7 +39,11 @@ impl EmailStore {
     ///
     /// * `email_id` - email number
     /// * `lines` - Raw email lines (written without added newlines)
-    pub fn write(&self, email_id: usize, lines: &[String]) -> crate::Result<()> {
+    pub fn write<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
+    where
+        I: IntoIterator<Item = L>,
+        L: AsRef<str>,
+    {
         let file_path = self.output_path.join(format!("{email_id}.eml"));
         crate::file_utils::write_lines_file(&file_path, lines).map_err(crate::errors::Error::Io)
     }

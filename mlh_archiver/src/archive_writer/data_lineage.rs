@@ -41,7 +41,7 @@ static BUILD_INFO: LazyLock<Arc<str>> = LazyLock::new(|| {
     format!(
         "Archiver v='{}' commit='{}' dirty='{}' build_time_utc='{}' target='{}' rustc='{}'",
         built_info::PKG_VERSION,
-        built_info::GIT_VERSION.unwrap_or("unkown"),
+        built_info::GIT_VERSION.unwrap_or("unknown"),
         match built_info::GIT_DIRTY {
             Some(true) => "true",
             Some(false) => "false",
@@ -58,7 +58,7 @@ static BUILD_INFO: LazyLock<Arc<str>> = LazyLock::new(|| {
 #[derive(Serialize, Deserialize, Debug)]
 pub(crate) struct DataLineage {
     /// email id/file_name
-    pub(crate) email_index: usize,
+    pub(crate) email_index: String,
     /// mailing list name
     pub(crate) list_name: String,
     /// name of the RunMode
@@ -98,11 +98,11 @@ impl DataLineageWriter {
     /// # Arguments
     ///
     /// * `id` - email ID that was just processed
-    pub fn update(&self, id: usize) -> crate::Result<()> {
+    pub fn update(&self, id: &str) -> crate::Result<()> {
         crate::file_utils::append_yaml_to_file(
             self.output_path.to_str().unwrap(),
             &DataLineage {
-                email_index: id,
+                email_index: id.to_string(),
                 list_name: self.list_name.clone(),
                 source_type: self.run_mode.clone(),
                 archiver_build_info: (*self.build_info).to_string(),

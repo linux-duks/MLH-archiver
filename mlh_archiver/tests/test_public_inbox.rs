@@ -1,0 +1,785 @@
+use std::io;
+use std::path::Path;
+use std::process::Command;
+use std::sync::{Arc, atomic::AtomicBool};
+use std::{fs, thread, vec};
+
+use gix::bstr::ByteSlice;
+use mlh_archiver::config::AppConfig;
+use mlh_archiver::public_inbox_source::pi_config::PIConfig;
+use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
+use mlh_archiver::start;
+use testcontainers::{
+    Container, GenericBuildableImage, GenericImage, core::WaitFor, runners::SyncBuilder,
+    runners::SyncRunner,
+};
+use walkdir::WalkDir;
+
+fn file_list_dir(path: String) -> Vec<String> {
+    let mut file_list = vec![];
+
+    for file in WalkDir::new(path).into_iter().filter_map(|file| file.ok()) {
+        println!("{}", file.path().display());
+        file_list.push(file.path().display().to_string());
+    }
+
+    file_list
+}
+
+pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
+    let p = Path::new(&folder_path);
+    if p.exists() {
+        println!("Clearing output dir");
+        fs::remove_dir_all(&folder_path).unwrap();
+    }
+    Ok(())
+}
+
+/// Validates the content of a `__progress.yaml` file.
+///
+/// Reads the YAML file and verifies:
+/// - The file exists and contains `last_email` field
+/// - The `last_email` value matches the expected maximum article ID
+///   Supports both plain numeric IDs and formatted IDs (e.g., "123-e2-abc")
+fn validate_progress_file(path: &str, expected_last_email: usize) {
+    let content = fs::read_to_string(path).expect("Progress file should exist");
+    assert!(
+        content.contains("last_email:"),
+        "Progress file should contain 'last_email' field: {}",
+        path
+    );
+    let yaml_value: serde_yaml::Value =
+        serde_yaml::from_str(&content).expect("Failed to parse YAML content");
+    let last_email_str = yaml_value
+        .get("last_email")
+        .expect("YAML should have last_email field")
+        .as_str()
+        .expect("last_email should be a string");
+
+    let actual_email_num = if let Some(parsed) = parse_email_id(last_email_str) {
+        parsed.email_num
+    } else {
+        last_email_str
+            .parse()
+            .expect("Failed to parse last_email as numeric")
+    };
+
+    assert_eq!(
+        actual_email_num, expected_last_email,
+        "Progress file {} should have email_num={}, got {}",
+        path, expected_last_email, actual_email_num
+    );
+}
+
+/// Validates the content of a `__lineage.yaml` file.
+///
+/// Reads the multi-document YAML file and verifies:
+/// - The file exists and contains expected number of lineage entries
+/// - Each entry has: email_index, list_name, source_type, timestamp, archiver_build_info
+/// - The email_index values match the expected article IDs (in order)
+///   Supports both plain numeric indices and formatted IDs (e.g., "listname/2")
+fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_indices: &[usize]) {
+    let content = fs::read_to_string(path).expect("Lineage file should exist");
+
+    assert!(
+        content.contains("source_type:"),
+        "Lineage file should contain 'source_type' field: {}",
+        path
+    );
+    assert!(
+        content.contains("PublicInbox"),
+        "Lineage file source_type should contain 'PublicInbox': {}",
+        path
+    );
+
+    assert!(
+        content.contains(expected_list_name),
+        "Lineage file should have list_name={}: {}",
+        expected_list_name,
+        path
+    );
+
+    assert!(
+        content.contains("timestamp:"),
+        "Lineage file should contain 'timestamp' field: {}",
+        path
+    );
+
+    assert!(
+        content.contains("archiver_build_info:"),
+        "Lineage file should contain 'archiver_build_info' field: {}",
+        path
+    );
+
+    let entry_count = content.matches("email_index:").count();
+    assert_eq!(
+        entry_count,
+        expected_email_indices.len(),
+        "Lineage file should have {} entries, found {}: {}",
+        expected_email_indices.len(),
+        entry_count,
+        path
+    );
+
+    for &email_index in expected_email_indices {
+        let search = "email_index:".to_string();
+        let mut found = false;
+        for line in content.lines() {
+            if line.contains(&search) && line.contains(&email_index.to_string()) {
+                found = true;
+                break;
+            }
+        }
+        assert!(
+            found,
+            "Lineage file should contain email_index={}: {}",
+            email_index, path
+        );
+    }
+}
+
+// =============================================================================
+// Expected file list helpers
+// =============================================================================
+
+/// Returns the root output directory path as a single-element vector.
+fn root_dir(dir: &str) -> Vec<String> {
+    vec![dir.to_string()]
+}
+
+/// Generates all expected file paths for a single mailing list.
+///
+/// Always includes:
+/// - The list directory
+///
+/// Conditionally includes:
+/// - `__progress.yaml` — if `articles` is non-empty (created by `archive_email`)
+/// - `__lineage.yaml` — if `articles` is non-empty
+/// - `{N}.eml` — for each N in `articles`
+/// - `__errors.csv` — if `has_errors` is true
+fn list_entry(dir: &str, list_name: &str, articles: &[usize], has_errors: bool) -> Vec<String> {
+    let mut files = vec![format!("{}/{}", dir, list_name)];
+
+    // Progress and lineage files only exist when at least one article was fetched
+    if !articles.is_empty() {
+        files.push(format!("{}/{}/__progress.yaml", dir, list_name));
+        files.push(format!("{}/{}/__lineage.yaml", dir, list_name));
+    }
+
+    // Article files
+    for &n in articles {
+        files.push(format!("{}/{}/{}.eml", dir, list_name, n));
+    }
+
+    // Errors file
+    if has_errors {
+        files.push(format!("{}/{}/__errors.csv", dir, list_name));
+    }
+
+    files
+}
+
+/// Validates both progress and lineage files for a mailing list.
+///
+/// Checks `__progress.yaml` has the expected `last_email` value,
+/// and `__lineage.yaml` contains the expected article indices.
+/// Skips all validation for empty article lists (no files created).
+fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
+    if articles.is_empty() {
+        return;
+    }
+    let max_article = *articles.iter().max().unwrap_or(&0);
+    validate_progress_file(
+        &format!("{}/{}/__progress.yaml", dir, list_name),
+        max_article,
+    );
+    validate_lineage_file(
+        &format!("{}/{}/__lineage.yaml", dir, list_name),
+        list_name,
+        articles,
+    );
+}
+
+/// Validates that the output directory contains exactly the expected files.
+///
+/// Compares the actual files found against the expected files generated
+/// by `list_entry`. This ensures no extra files and no missing files.
+fn validate_exact_file_structure(
+    output_dir: &str,
+    list_name: &str,
+    expected_article_count: usize,
+    has_errors: bool,
+) {
+    let list_dir = format!("{}/{}", output_dir, list_name);
+    assert!(
+        Path::new(&list_dir).is_dir(),
+        "Expected directory missing: {}",
+        list_dir
+    );
+
+    let actual_eml_count = count_eml_files(&list_dir);
+    assert_eq!(
+        actual_eml_count, expected_article_count,
+        "Expected {} .eml files, found {}",
+        expected_article_count, actual_eml_count
+    );
+
+    if expected_article_count > 0 {
+        let progress_path = format!("{}/__progress.yaml", list_dir);
+        let lineage_path = format!("{}/__lineage.yaml", list_dir);
+        assert!(
+            Path::new(&progress_path).is_file(),
+            "Missing: {}",
+            progress_path
+        );
+        assert!(
+            Path::new(&lineage_path).is_file(),
+            "Missing: {}",
+            lineage_path
+        );
+    }
+
+    if has_errors {
+        let errors_path = format!("{}/__errors.csv", list_dir);
+        assert!(
+            Path::new(&errors_path).is_file(),
+            "Missing: {}",
+            errors_path
+        );
+    }
+
+    let actual_files: Vec<String> = WalkDir::new(&list_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .map(|e| e.path().display().to_string())
+        .collect();
+
+    let expected_file_count = expected_article_count + 2 + if has_errors { 1 } else { 0 };
+    assert_eq!(
+        actual_files.len(),
+        expected_file_count,
+        "Expected {} total files, found {}",
+        expected_file_count,
+        actual_files.len()
+    );
+}
+
+// =============================================================================
+// Container-based test infrastructure
+// =============================================================================
+
+/// Builds the test public inbox Docker image.
+fn build_test_pi_image() -> GenericImage {
+    println!("loading test_public_inbox/Containerfile");
+    GenericBuildableImage::new("test_public_inbox", "latest")
+        .with_dockerfile("./tests/test_public_inbox/Containerfile")
+        .with_file("./tests/test_public_inbox", ".")
+        .with_file("./tests/test_public_inbox/public-inbox", "./public-inbox")
+        .with_file("./tests/test_nntp_server/fixtures", "./fixtures")
+        .build_image()
+        .unwrap()
+}
+
+/// Extracts test data from a running container to a local directory.
+/// Returns the path to the extracted test data.
+fn extract_test_data_from_container(container: &Container<GenericImage>, dest_dir: &str) {
+    let container_id = container.id();
+    let output = Command::new("docker")
+        .args(["cp", &format!("{}:/test-data", container_id), dest_dir])
+        .output()
+        .expect("Failed to copy test data from container");
+    if !output.status.success() {
+        panic!(
+            "Failed to extract test data: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+/// Runs a public inbox archiver test with a custom configuration builder.
+/// Returns the list of files created in the output directory.
+fn run_pi_test_with_config<F>(config_builder: F, test_name: &str) -> Vec<String>
+where
+    F: FnOnce(&str) -> AppConfig,
+{
+    let image = build_test_pi_image();
+    let container = image.with_wait_for(WaitFor::seconds(1)).start().unwrap();
+
+    let test_data_dir = format!("./test_pi_data_{}", test_name);
+    check_and_delete_folder(test_data_dir.clone()).unwrap();
+    extract_test_data_from_container(&container, &test_data_dir);
+
+    let output_dir = format!("./test_public_inbox_output_pi_{}", test_name);
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    let test_data_path = test_data_dir.clone();
+    let mut app_config = config_builder(&test_data_path);
+    app_config.output_dir = output_dir.clone();
+
+    println!("Starting worker for {}", test_name);
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let test_name_owned = test_name.to_string();
+
+    let child_handle = thread::spawn(move || {
+        println!("Child thread started for {}.", test_name_owned);
+        let result = start(&mut app_config, shutdown_flag);
+        if let Err(ref e) = result {
+            println!("Error in archiver: {:?}", e);
+        }
+        assert!(result.is_ok());
+        println!("Child thread stopped for {}.", test_name_owned);
+    });
+
+    println!("waiting server thread to finish for {}", test_name);
+    child_handle.join().expect("Child thread panicked");
+    container.stop().unwrap();
+    container.rm().unwrap();
+
+    // Cleanup test data
+    check_and_delete_folder(test_data_dir.clone()).unwrap();
+
+    println!("Loading list of files for {}", test_name);
+    file_list_dir(output_dir.clone())
+}
+
+// =============================================================================
+// Container-based Integration Tests
+// =============================================================================
+
+/// Counts .eml files in a directory.
+fn count_eml_files(dir: &str) -> usize {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "eml")
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+#[test]
+fn test_read_from_synthetic_public_inbox() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
+                article_range: None,
+            }),
+            ..Default::default()
+        },
+        "synthetic",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_synthetic";
+    let list_dir = format!("{}/v2_test.groups.synthetic", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 12, "Expected 12 .eml files, found {}", eml_count);
+
+    assert!(Path::new(&list_dir).exists());
+    assert!(Path::new(&format!("{}/__progress.yaml", list_dir)).exists());
+    assert!(Path::new(&format!("{}/__lineage.yaml", list_dir)).exists());
+
+    validate_list(
+        output_dir,
+        "v2_test.groups.synthetic",
+        &(1..=12).collect::<Vec<usize>>(),
+    );
+    validate_exact_file_structure(output_dir, "v2_test.groups.synthetic", 12, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+#[test]
+fn test_pi_article_range() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
+                article_range: Some("1-3".to_owned()),
+            }),
+            ..Default::default()
+        },
+        "range",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_range";
+    let list_dir = format!("{}/v2_test.groups.synthetic", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 3, "Expected 3 .eml files, found {}", eml_count);
+
+    validate_list(output_dir, "v2_test.groups.synthetic", &[1, 2, 3]);
+    validate_exact_file_structure(output_dir, "v2_test.groups.synthetic", 3, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+// =============================================================================
+// Demo-based Integration Tests
+// =============================================================================
+
+/// Extract raw email content from a public inbox using gix directly.
+/// Returns a vector of (commit_hash, raw_email) in order from newest to oldest.
+fn extract_emails_from_inbox(inbox: &PublicInbox) -> Vec<(String, String)> {
+    let repo = gix::open(&inbox.git_dir).expect("Failed to open git repo");
+    let head_ref = repo.refs.find("refs/heads/master").expect("No master ref");
+    let head_id = head_ref
+        .target
+        .try_id()
+        .expect("refs/heads/master does not point to an object")
+        .to_owned();
+
+    let walk = repo.rev_walk([head_id]);
+    let iter = walk.all().expect("rev walk failed");
+
+    let mut emails = Vec::new();
+    for info in iter {
+        let info = info.expect("commit info error");
+        let commit = repo.find_commit(info.id).expect("find commit");
+        let commit_ref = commit.decode().expect("decode commit");
+        let tree_id = commit_ref.tree();
+        let tree = repo.find_tree(tree_id).expect("find tree");
+
+        let blob_oid = tree
+            .iter()
+            .find_map(|e| e.ok())
+            .filter(|e| e.filename().as_bytes() == b"m")
+            .map(|e| e.object_id());
+
+        match blob_oid {
+            Some(blob_oid) => {
+                let blob = repo.find_blob(blob_oid).expect("find blob");
+                let raw_email = String::from_utf8_lossy(&blob.data).to_string();
+                emails.push((info.id.to_string(), raw_email));
+            }
+            None => {
+                // Skip commits without m blob (should not happen in valid public inbox)
+                println!("Warning: commit {} missing 'm' blob", info.id);
+            }
+        }
+    }
+
+    emails
+}
+
+#[test]
+fn test_read_from_demo_public_inbox() {
+    let demo_dir = Path::new("../../public-inbox-demo");
+    if !demo_dir.exists() {
+        println!("Demo directory not found, skipping test");
+        return;
+    }
+
+    // Find all public inboxes in demo directory
+    let inboxes = pi_utils::find_public_inboxes(demo_dir).expect("Failed to find inboxes");
+    assert!(
+        !inboxes.is_empty(),
+        "No public inboxes found in demo directory"
+    );
+
+    // Pick the first inbox for testing
+    let inbox = &inboxes[0];
+    println!(
+        "Testing with inbox: {} (version: {})",
+        inbox.name, inbox.version
+    );
+
+    // Extract expected emails
+    let expected_emails = extract_emails_from_inbox(inbox);
+    assert!(!expected_emails.is_empty(), "Inbox has no emails");
+
+    // Create temporary output directory
+    let output_dir = "./test_public_inbox_output_demo".to_owned();
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    // Configure archiver for this single inbox
+    let mut app_config = AppConfig {
+        output_dir: output_dir.clone(),
+        nthreads: 1,
+        loop_groups: false,
+        public_inbox: Some(PIConfig {
+            import_directory: demo_dir.to_string_lossy().to_string(),
+            origin: "demo".to_owned(),
+            public_inbox_config: None,
+            group_lists: Some(vec![inbox.name.clone()]), // Only this inbox
+            article_range: None,
+        }),
+        ..Default::default()
+    };
+
+    println!("Starting archiver with public inbox source");
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+    let child_handle = thread::spawn(move || {
+        println!("Child thread started.");
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+        println!("Child thread stopped.");
+    });
+
+    child_handle.join().expect("Child thread panicked");
+
+    // Validate output
+    let list_output_dir = format!("{}/{}", output_dir, inbox.name);
+    assert!(
+        Path::new(&list_output_dir).exists(),
+        "Output directory for inbox not created"
+    );
+
+    // Check that we have the right number of email files
+    let found_files: Vec<String> = WalkDir::new(&list_output_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "eml")
+                .unwrap_or(false)
+        })
+        .map(|e| e.path().display().to_string())
+        .collect();
+
+    assert_eq!(
+        found_files.len(),
+        expected_emails.len(),
+        "Expected {} .eml files, found {}",
+        expected_emails.len(),
+        found_files.len()
+    );
+
+    // Build a map of email files: parse filename to get article number, then verify content
+    let mut email_files: Vec<(usize, String)> = Vec::new();
+    for file_path in &found_files {
+        let filename = Path::new(file_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .expect("Invalid filename");
+
+        if let Some(parsed) = parse_email_id(filename) {
+            email_files.push((parsed.email_num, file_path.clone()));
+        } else {
+            panic!("Unexpected email filename format: {}", filename);
+        }
+    }
+
+    email_files.sort_by_key(|(num, _)| *num);
+
+    assert_eq!(
+        email_files.len(),
+        expected_emails.len(),
+        "Could not parse all email filenames"
+    );
+
+    // Verify content matches expected for each article
+    for (position, (_expected_commit_hash, expected_raw_email)) in
+        expected_emails.iter().enumerate()
+    {
+        let article_num = position + 1; // 1-indexed
+        let (_, email_file) = email_files
+            .iter()
+            .find(|(num, _)| *num == article_num)
+            .unwrap_or_else(|| panic!("Email file for article {} not found", article_num));
+
+        let actual_content = fs::read_to_string(email_file).expect("Failed to read email file");
+        assert_eq!(
+            actual_content.trim_end(),
+            expected_raw_email.trim_end(),
+            "Email content mismatch for article {}",
+            article_num
+        );
+    }
+
+    let article_nums: Vec<usize> = (1..=expected_emails.len()).collect();
+    validate_list(&output_dir, &inbox.name, &article_nums);
+
+    // Cleanup
+    check_and_delete_folder(output_dir).unwrap();
+
+    println!("Test passed for inbox {}", inbox.name);
+}
+
+/// Test article range functionality
+#[test]
+fn test_read_article_range_from_demo() {
+    let demo_dir = Path::new("../../public-inbox-demo");
+    if !demo_dir.exists() {
+        println!("Demo directory not found, skipping test");
+        return;
+    }
+
+    let inboxes = pi_utils::find_public_inboxes(demo_dir).expect("Failed to find inboxes");
+    if inboxes.is_empty() {
+        println!("No inboxes found, skipping test");
+        return;
+    }
+
+    let inbox = &inboxes[0];
+    let expected_emails = extract_emails_from_inbox(inbox);
+    if expected_emails.len() < 3 {
+        println!("Inbox has less than 3 emails, skipping range test");
+        return;
+    }
+
+    // Test fetching only article 2 (second newest)
+    let output_dir = "./test_public_inbox_output_range".to_owned();
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    let mut app_config = AppConfig {
+        output_dir: output_dir.clone(),
+        nthreads: 1,
+        loop_groups: false,
+        public_inbox: Some(PIConfig {
+            import_directory: demo_dir.to_string_lossy().to_string(),
+            origin: "demo".to_owned(),
+            public_inbox_config: None,
+            group_lists: Some(vec![inbox.name.clone()]),
+            article_range: Some("2".to_owned()), // Only article 2
+        }),
+        ..Default::default()
+    };
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+    let child_handle = thread::spawn(move || {
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+    });
+
+    child_handle.join().expect("Child thread panicked");
+
+    // Should have only article 2
+    let list_output_dir = format!("{}/{}", output_dir, inbox.name);
+
+    // Find all .eml files and parse their article numbers
+    let eml_files: Vec<usize> = WalkDir::new(&list_output_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "eml")
+                .unwrap_or(false)
+        })
+        .filter_map(|e| {
+            let filename = e.path().file_stem().and_then(|s| s.to_str())?;
+            parse_email_id(filename).map(|p| p.email_num)
+        })
+        .collect();
+
+    assert!(!eml_files.contains(&1), "Article 1 should not be fetched");
+    assert!(eml_files.contains(&2), "Article 2 should be fetched");
+    assert!(!eml_files.contains(&3), "Article 3 should not be fetched");
+
+    // Verify content matches expected email at position 1 (0-indexed)
+    let expected_email = &expected_emails[1].1;
+    let email_file = WalkDir::new(&list_output_dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ext| ext == "eml")
+                .unwrap_or(false)
+        })
+        .find(|e| {
+            let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
+            parse_email_id(filename)
+                .map(|p| p.email_num == 2)
+                .unwrap_or(false)
+        })
+        .expect("Article 2 file not found");
+
+    let actual_content = fs::read_to_string(email_file.path()).unwrap();
+    assert_eq!(actual_content.trim_end(), expected_email.trim_end());
+
+    check_and_delete_folder(output_dir).unwrap();
+}
+
+#[test]
+fn test_validate_file_structure_using_helpers() {
+    let demo_dir = Path::new("../../public-inbox-demo");
+    if !demo_dir.exists() {
+        println!("Demo directory not found, skipping test");
+        return;
+    }
+
+    let inboxes = pi_utils::find_public_inboxes(demo_dir).expect("Failed to find inboxes");
+    if inboxes.is_empty() {
+        println!("No inboxes found, skipping test");
+        return;
+    }
+
+    let inbox = &inboxes[0];
+    let expected_emails = extract_emails_from_inbox(inbox);
+    if expected_emails.is_empty() {
+        println!("Inbox has no emails, skipping test");
+        return;
+    }
+
+    let output_dir = "./test_public_inbox_output_structure".to_owned();
+    check_and_delete_folder(output_dir.clone()).unwrap();
+
+    let mut app_config = AppConfig {
+        output_dir: output_dir.clone(),
+        nthreads: 1,
+        loop_groups: false,
+        public_inbox: Some(PIConfig {
+            import_directory: demo_dir.to_string_lossy().to_string(),
+            origin: "demo".to_owned(),
+            public_inbox_config: None,
+            group_lists: Some(vec![inbox.name.clone()]),
+            article_range: None,
+        }),
+        ..Default::default()
+    };
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+
+    let child_handle = thread::spawn(move || {
+        let result = start(&mut app_config, shutdown_flag);
+        assert!(result.is_ok());
+    });
+
+    child_handle.join().expect("Child thread panicked");
+
+    let article_nums: Vec<usize> = (1..=expected_emails.len()).collect();
+
+    let root = root_dir(&output_dir);
+    assert!(!root.is_empty(), "root_dir should return output dir");
+
+    let expected_files = list_entry(&output_dir, &inbox.name, &article_nums, false);
+    assert!(
+        !expected_files.is_empty(),
+        "list_entry should generate expected files"
+    );
+
+    validate_list(&output_dir, &inbox.name, &article_nums);
+
+    validate_exact_file_structure(&output_dir, &inbox.name, article_nums.len(), false);
+
+    check_and_delete_folder(output_dir).unwrap();
+
+    println!("test_validate_file_structure_using_helpers passed");
+}
