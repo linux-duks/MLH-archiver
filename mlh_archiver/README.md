@@ -698,6 +698,293 @@ Enable debug logging for troubleshooting:
 RUST_LOG=debug cargo run -- -c archiver_config.yaml
 ```
 
+## OpenTelemetry Tracing
+
+The archiver includes optional OpenTelemetry instrumentation via the `otel` Cargo feature. When enabled, it collects traces using the `tracing` crate and exports them to any OpenTelemetry-compatible backend.
+
+### Building and Running
+
+```bash
+# Build with tracing support
+cargo build --features=otel
+
+# Run with default endpoint (http://localhost:4318)
+cargo run --features=otel -- -c archiver_config.yaml
+
+# Run with a custom OTLP endpoint
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.example.com:4318 cargo run --features=otel -- -c archiver_config.yaml
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint URL | `http://localhost:4318` |
+| `RUST_LOG` | Log level (also affects trace verbosity) | `info` |
+
+### Quickstart with Jaeger
+
+The easiest way to visualize traces is to run Jaeger's all-in-one Docker image:
+
+```bash
+docker run --rm -d --name jaeger \
+  -e COLLECTOR_OTLP_ENABLED=true \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+```
+
+Then run the archiver:
+
+```bash
+cargo run --features=otel -- -c archiver_config.yaml
+```
+
+Open <http://localhost:16686> in your browser to view traces.
+
+### Compatible Backends
+
+OpenTelemetry is an open standard. Any OTLP HTTP-compatible backend works. For a simple local setup, we recommend [Jaeger](https://www.jaegertracing.io/).
+
+### Adding Tracing to New Code
+
+The `tracing` crate is used to instrument code. When the `otel` feature is enabled, `tracing` events and spans are automatically exported as OpenTelemetry traces.
+
+#### Using `#[instrument]`
+
+The simplest way to add tracing is the `#[instrument]` attribute:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn my_function() {
+    // Function body — a span is automatically created
+}
+```
+
+#### Creating Spans Manually
+
+For more control, create spans explicitly:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn process_list(list_name: &str) {
+    tracing::info!("processing list: {}", list_name);
+    // ...
+}
+```
+
+#### Adding Fields to Spans
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument(fields(list = %list_name)))]
+fn process_list(list_name: &str) {
+    // The `list` field appears in the span metadata
+}
+```
+
+#### Key Points
+
+- All existing `log::info!`, `log::debug!`, etc. calls are captured as OpenTelemetry log events within spans
+- Spans are exported synchronously via `SimpleSpanProcessor` — no async runtime is required
+- The `otel` module in `src/otel.rs` handles initialization. To add new exporters or layers, modify that file
+- When `otel` is not enabled, the application falls back to `env_logger` for console logging only
+
+## OpenTelemetry Tracing
+
+The archiver includes optional OpenTelemetry instrumentation via the `otel` Cargo feature. When enabled, it collects traces using the `tracing` crate and exports them to any OpenTelemetry-compatible backend.
+
+### Building and Running
+
+```bash
+# Build with tracing support
+cargo build --features=otel
+
+# Run with default endpoint (http://localhost:4318)
+cargo run --features=otel -- -c archiver_config.yaml
+
+# Run with a custom OTLP endpoint
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.example.com:4318 cargo run --features=otel -- -c archiver_config.yaml
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint URL | `http://localhost:4318` |
+| `RUST_LOG` | Log level (also affects trace verbosity) | `info` |
+
+### Quickstart with Jaeger
+
+The easiest way to visualize traces is to run Jaeger's all-in-one Docker image:
+
+```bash
+docker run --rm -d --name jaeger \
+  -e COLLECTOR_OTLP_ENABLED=true \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+```
+
+Then run the archiver:
+
+```bash
+cargo run --features=otel -- -c archiver_config.yaml
+```
+
+Open <http://localhost:16686> in your browser to view traces.
+
+### Compatible Backends
+
+OpenTelemetry is an open standard. Any OTLP HTTP-compatible backend works, including:
+
+- [Jaeger](https://www.jaegertracing.io/)
+- [Grafana Tempo](https://grafana.com/oss/tempo/)
+- [Honeycomb](https://www.honeycomb.io/)
+- [Datadog](https://www.datadoghq.com/)
+- [AWS X-Ray](https://aws.amazon.com/xray/)
+- [Zipkin](https://zipkin.io/) (via OTLP translation)
+
+### Adding Tracing to New Code
+
+The `tracing` crate is used to instrument code. When the `otel` feature is enabled, `tracing` events and spans are automatically exported as OpenTelemetry traces.
+
+#### Using `#[instrument]`
+
+The simplest way to add tracing is the `#[instrument]` attribute:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn my_function() {
+    // Function body — a span is automatically created
+}
+```
+
+#### Creating Spans Manually
+
+For more control, create spans explicitly:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn process_list(list_name: &str) {
+    tracing::info!("processing list: {}", list_name);
+    // ...
+}
+```
+
+#### Adding Fields to Spans
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument(fields(list = %list_name)))]
+fn process_list(list_name: &str) {
+    // The `list` field appears in the span metadata
+}
+```
+
+#### Key Points
+
+- All existing `log::info!`, `log::debug!`, etc. calls are captured as OpenTelemetry log events within spans
+- Spans are exported synchronously via `SimpleSpanProcessor` — no async runtime is required
+- The `otel` module in `src/otel.rs` handles initialization. To add new exporters or layers, modify that file
+- When `otel` is not enabled, the application falls back to `env_logger` for console logging only
+
+## OpenTelemetry Tracing
+
+The archiver includes optional OpenTelemetry instrumentation via the `otel` Cargo feature. When enabled, it collects traces using the `tracing` crate and exports them to any OpenTelemetry-compatible backend.
+
+### Building and Running
+
+```bash
+# Build with tracing support
+cargo build --features=otel
+
+# Run with default endpoint (http://localhost:4318)
+cargo run --features=otel -- -c archiver_config.yaml
+
+# Run with a custom OTLP endpoint
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.example.com:4318 cargo run --features=otel -- -c archiver_config.yaml
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint URL | `http://localhost:4318` |
+| `RUST_LOG` | Log level (also affects trace verbosity) | `info` |
+
+### Quickstart with Jaeger
+
+The easiest way to visualize traces is to run Jaeger's all-in-one Docker image:
+
+```bash
+docker run --rm -d --name jaeger \
+  -e COLLECTOR_OTLP_ENABLED=true \
+  -p 16686:16686 \
+  -p 4318:4318 \
+  jaegertracing/all-in-one:latest
+```
+
+Then run the archiver:
+
+```bash
+cargo run --features=otel -- -c archiver_config.yaml
+```
+
+Open <http://localhost:16686> in your browser to view traces.
+
+### Compatible Backends
+
+OpenTelemetry is an open standard. Any OTLP HTTP-compatible backend works, including:
+
+- [Jaeger](https://www.jaegertracing.io/)
+- [Grafana Tempo](https://grafana.com/oss/tempo/)
+- [Honeycomb](https://www.honeycomb.io/)
+- [Datadog](https://www.datadoghq.com/)
+- [AWS X-Ray](https://aws.amazon.com/xray/)
+- [Zipkin](https://zipkin.io/) (via OTLP translation)
+
+### Adding Tracing to New Code
+
+The `tracing` crate is used to instrument code. When the `otel` feature is enabled, `tracing` events and spans are automatically exported as OpenTelemetry traces.
+
+#### Using `#[instrument]`
+
+The simplest way to add tracing is the `#[instrument]` attribute:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn my_function() {
+    // Function body — a span is automatically created
+}
+```
+
+#### Creating Spans Manually
+
+For more control, create spans explicitly:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn process_list(list_name: &str) {
+    tracing::info!("processing list: {}", list_name);
+    // ...
+}
+```
+
+#### Adding Fields to Spans
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument(fields(list = %list_name)))]
+fn process_list(list_name: &str) {
+    // The `list` field appears in the span metadata
+}
+```
+
+#### Key Points
+
+- All existing `log::info!`, `log::debug!`, etc. calls are captured as OpenTelemetry log events within spans
+- Spans are exported synchronously via `SimpleSpanProcessor` — no async runtime is required
+- The `otel` module in `src/otel.rs` handles initialization. To add new exporters or layers, modify that file
+- When `otel` is not enabled, the application falls back to `env_logger` for console logging only
+
 ## License
 
 See the root [LICENSE](../LICENSE) file.

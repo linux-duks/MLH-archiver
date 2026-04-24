@@ -93,6 +93,7 @@ use std::path::Path;
 /// Instead of workers managing their own file I/O, `ArchiveWriter` provides
 /// a single interface that all workers use. This ensures consistent behavior
 /// across different source implementations (NNTP, IMAP, mbox, etc.).
+#[derive(std::fmt::Debug)]
 pub struct ArchiveWriter {
     progress: ProgressTracker,
     error_log: ErrorLogger,
@@ -142,9 +143,11 @@ impl ArchiveWriter {
     ///
     /// * `email_id` - Email/article number
     /// * `lines` - Raw email lines (can be any iterable collection of strings)
+
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self,lines)))]
     pub fn archive_email<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
     where
-        I: IntoIterator<Item = L>,
+        I: IntoIterator<Item = L> + std::fmt::Debug,
         L: AsRef<str>,
     {
         self.email_store.write(email_id, lines)?;

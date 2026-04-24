@@ -4,7 +4,6 @@ use std::process::Command;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 
-use gix::bstr::ByteSlice;
 use mlh_archiver::config::AppConfig;
 use mlh_archiver::public_inbox_source::pi_config::PIConfig;
 use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
@@ -436,43 +435,41 @@ fn test_pi_article_range() {
 // Demo-based Integration Tests
 // =============================================================================
 
-/// Extract raw email content from a public inbox using gix directly.
+/// Extract raw email content from a public inbox using git2 directly.
 /// Returns a vector of (commit_hash, raw_email) in order from newest to oldest.
 fn extract_emails_from_inbox(inbox: &PublicInbox) -> Vec<(String, String)> {
-    let repo = gix::open(&inbox.git_dir).expect("Failed to open git repo");
-    let head_ref = repo.refs.find("refs/heads/master").expect("No master ref");
-    let head_id = head_ref
-        .target
-        .try_id()
-        .expect("refs/heads/master does not point to an object")
-        .to_owned();
+    let repo = git2::Repository::open(&inbox.git_dir).expect("Failed to open git repo");
+    let head_ref = repo.head().expect("No HEAD ref");
+    let head_id = head_ref.target().expect("HEAD does not point to an object");
 
-    let walk = repo.rev_walk([head_id]);
-    let iter = walk.all().expect("rev walk failed");
+    let mut revwalk = repo.revwalk().expect("Failed to create revwalk");
+    revwalk.push(head_id).expect("Failed to push head");
+    
+    let mut commits = Vec::new();
+    for oid in revwalk.flatten() {
+        commits.push(oid);
+    }
 
     let mut emails = Vec::new();
-    for info in iter {
-        let info = info.expect("commit info error");
-        let commit = repo.find_commit(info.id).expect("find commit");
-        let commit_ref = commit.decode().expect("decode commit");
-        let tree_id = commit_ref.tree();
+    for commit_id in commits {
+        let commit = repo.find_commit(commit_id).expect("find commit");
+        let tree_id = commit.tree_id();
         let tree = repo.find_tree(tree_id).expect("find tree");
 
         let blob_oid = tree
             .iter()
-            .find_map(|e| e.ok())
-            .filter(|e| e.filename().as_bytes() == b"m")
-            .map(|e| e.object_id());
+            .find(|e| e.name() == Some("m"))
+            .map(|e| e.id());
 
         match blob_oid {
             Some(blob_oid) => {
                 let blob = repo.find_blob(blob_oid).expect("find blob");
-                let raw_email = String::from_utf8_lossy(&blob.data).to_string();
-                emails.push((info.id.to_string(), raw_email));
+                let raw_email = String::from_utf8_lossy(blob.content()).to_string();
+                emails.push((commit_id.to_string(), raw_email));
             }
             None => {
                 // Skip commits without m blob (should not happen in valid public inbox)
-                println!("Warning: commit {} missing 'm' blob", info.id);
+                println!("Warning: commit {} missing 'm' blob", commit_id);
             }
         }
     }
@@ -782,4 +779,129 @@ fn test_validate_file_structure_using_helpers() {
     check_and_delete_folder(output_dir).unwrap();
 
     println!("test_validate_file_structure_using_helpers passed");
+}
+
+// =============================================================================
+// Multi-Epoch Integration Tests
+// =============================================================================
+
+#[test]
+fn test_multi_epoch_all_emails() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: None,
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_all",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_multi_epoch_all";
+    let list_dir = format!("{}/v2_multi_epoch.list", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 12, "Expected 12 .eml files, found {}", eml_count);
+
+    assert!(Path::new(&list_dir).exists());
+    assert!(Path::new(&format!("{}/__progress.yaml", list_dir)).exists());
+    assert!(Path::new(&format!("{}/__lineage.yaml", list_dir)).exists());
+
+    validate_list(
+        output_dir,
+        "v2_multi_epoch.list",
+        &(1..=12).collect::<Vec<usize>>(),
+    );
+    validate_exact_file_structure(output_dir, "v2_multi_epoch.list", 12, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+#[test]
+fn test_multi_epoch_article_range() {
+    let _found_files = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: Some("5-8".to_owned()), // All in epoch 1
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_range",
+    );
+
+    let output_dir = "./test_public_inbox_output_pi_multi_epoch_range";
+    let list_dir = format!("{}/v2_multi_epoch.list", output_dir);
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(eml_count, 4, "Expected 4 .eml files (5-8 inclusive), found {}", eml_count);
+
+    validate_list(output_dir, "v2_multi_epoch.list", &[5, 6, 7, 8]);
+    validate_exact_file_structure(output_dir, "v2_multi_epoch.list", 4, false);
+
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+}
+
+#[test]
+fn test_multi_epoch_resume() {
+    // Phase 1: Process first 4 emails (epoch 0)
+    let _found_files1 = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: Some("1-4".to_owned()), // Only first 4 emails
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_resume_phase1",
+    );
+    
+    // Phase 2: Resume without range (should start from epoch 1)
+    let _found_files2 = run_pi_test_with_config(
+        |test_data_path| AppConfig {
+            output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: test_data_path.to_owned(),
+                origin: "synthetic".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
+                article_range: None, // No range - should resume
+            }),
+            ..Default::default()
+        },
+        "multi_epoch_resume_phase2",
+    );
+    
+    // Verify all 12 emails are now present
+    let list_dir = "./test_public_inbox_output_pi_multi_epoch_resume_phase2/v2_multi_epoch.list";
+    let eml_count = count_eml_files(list_dir);
+    assert_eq!(eml_count, 12, "Expected 12 .eml files after resume, found {}", eml_count);
+    
+    validate_list("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", &(1..=12).collect::<Vec<usize>>());
+    validate_exact_file_structure("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", 12, false);
+    
+    // Cleanup
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string()).unwrap();
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string()).unwrap();
 }

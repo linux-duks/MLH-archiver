@@ -31,11 +31,14 @@ pub mod range_inputs;
 pub mod scheduler;
 pub mod worker;
 
+#[cfg(feature = "otel")]
+pub mod otel;
+
 pub use errors::Result;
 
 use config::{RunMode, RunModeConfig};
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use worker::WorkerManager;
 
 /// Main entry point for the archiver application.
@@ -100,6 +103,7 @@ pub fn start(
                     let groups = public_inbox_source::pi_lister::retrieve_lists(pi_config.clone())?;
                     let groups = app_config.get_group_lists(groups, mode)?;
                     log::info!("made a selection of {} {:#?}", groups.len(), groups);
+
                     worker.create_workers(mode, groups, app_config, shutdown_flag.clone());
                 }
             }

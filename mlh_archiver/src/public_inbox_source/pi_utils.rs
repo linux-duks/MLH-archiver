@@ -2,9 +2,6 @@ use crate::errors;
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use gix::bstr::ByteSlice;
-use gix::revision::walk::Info;
-
 /// Represents a detected public-inbox directory.
 ///
 /// This struct contains information about a public inbox that has been discovered
@@ -57,6 +54,8 @@ impl fmt::Display for PublicInbox {
 ///
 /// * `Ok(Vec<PublicInbox>)` - A vector of discovered public inboxes, sorted by name
 /// * `Err` - If an I/O error occurs while reading the directory
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> {
     let mut inboxes = Vec::new();
 
@@ -94,6 +93,8 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
 ///
 /// * `true` if no alternates file exists, or all alternates paths are accessible
 /// * `false` if alternates file exists but any path is missing
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn has_valid_alternates(dir: &Path) -> bool {
     let alternates_path = dir.join("objects/info/alternates");
     if !alternates_path.is_file() {
@@ -111,9 +112,9 @@ fn has_valid_alternates(dir: &Path) -> bool {
     true
 }
 
-/// Attempts to open a directory as a gix repository to verify it is functional.
+/// Attempts to open a directory as a git2 repository to verify it is functional.
 ///
-/// This is a stricter validation than file-based checks. It ensures gix can
+/// This is a stricter validation than file-based checks. It ensures git2 can
 /// actually read the repository, including resolving alternates and pack files.
 ///
 /// # Arguments
@@ -122,10 +123,10 @@ fn has_valid_alternates(dir: &Path) -> bool {
 ///
 /// # Returns
 ///
-/// * `true` if gix::open succeeds
-/// * `false` if gix::open fails
-fn is_gix_openable(dir: &Path) -> bool {
-    gix::open(dir).is_ok()
+/// * `true` if git2::Repository::open succeeds
+/// * `false` if git2::Repository::open fails
+fn is_git2_openable(dir: &Path) -> bool {
+    git2::Repository::open(dir).is_ok()
 }
 
 /// Check if a directory is a git repository (has HEAD and objects).
@@ -141,6 +142,8 @@ fn is_gix_openable(dir: &Path) -> bool {
 ///
 /// * `true` if the directory appears to be a git repository
 /// * `false` otherwise
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn is_git_repo(dir: &Path) -> bool {
     dir.join("HEAD").is_file() && dir.join("objects").is_dir()
 }
@@ -159,6 +162,8 @@ fn is_git_repo(dir: &Path) -> bool {
 ///
 /// * `true` if the repository has a master ref
 /// * `false` otherwise
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn has_master_ref(dir: &Path) -> bool {
     if dir.join("refs/heads/master").is_file() {
         return true;
@@ -189,6 +194,8 @@ fn has_master_ref(dir: &Path) -> bool {
 /// * `Ok(Some(PathBuf))` - Path to an epoch repository with master ref
 /// * `Ok(None)` - No epoch repository with master ref was found
 /// * `Err` - If an I/O error occurs while reading the directory
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>> {
     for entry in std::fs::read_dir(git_dir)? {
         let entry = entry?;
@@ -203,7 +210,7 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
                 && is_git_repo(&epoch_path)
                 && has_master_ref(&epoch_path)
                 && has_valid_alternates(&epoch_path)
-                && is_gix_openable(&epoch_path)
+                && is_git2_openable(&epoch_path)
             {
                 return Ok(Some(epoch_path));
             }
@@ -225,6 +232,8 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
 ///
 /// * `true` if the repository has objects
 /// * `false` if the objects directory is empty or doesn't exist
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
 fn has_objects(dir: &Path) -> bool {
     let objects_dir = dir.join("objects");
     if !objects_dir.is_dir() {
@@ -253,7 +262,8 @@ fn has_objects(dir: &Path) -> bool {
 /// * `Ok(Some(PublicInbox))` - Information about the detected public inbox
 /// * `Ok(None)` - The directory does not appear to be a public inbox
 /// * `Err` - If an I/O error occurs while reading files
-fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
+#[cfg_attr(feature = "otel", tracing::instrument)]
+pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     let name = dir
         .file_name()
         .and_then(|n| n.to_str())
@@ -389,24 +399,23 @@ fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
 ///
 /// # Returns
 ///
-/// * `Ok(Info)` - Information about the commit at the specified position
+/// * `Ok(git2::Oid)` - The object ID of the commit at the specified position
 /// * `Err` - If the position is out of bounds or an error occurs during revision walking
-pub fn get_commit_at_position<'a>(
-    repo: &'a gix::Repository,
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
+pub fn get_commit_at_position(
+    repo: &git2::Repository,
     position: usize,
-) -> crate::Result<Info<'a>> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
+) -> crate::Result<git2::Oid> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
-    let walk = repo.rev_walk([head_id]);
-    let iter = walk.all().map_err(|e| anyhow::anyhow!(e))?;
-    for (i, info) in iter.enumerate() {
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    for (i, commit_id) in revwalk.flatten().enumerate() {
         if i == position {
-            return Ok(info.map_err(|e| anyhow::anyhow!(e))?);
+            return Ok(commit_id);
         }
     }
     Err(crate::errors::Error::Config(
@@ -428,19 +437,19 @@ pub fn get_commit_at_position<'a>(
 ///
 /// * `Ok((String, String))` - A tuple of (commit_hash, raw_email_content)
 /// * `Err` - If no 'm' blob is found in the commit tree or an error occurs
+
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn extract_email_from_commit(
-    repo: &gix::Repository,
-    commit: &gix::Commit,
+    repo: &git2::Repository,
+    commit: &git2::Commit,
 ) -> crate::Result<(String, String)> {
-    let commit_ref = commit.decode()?;
-    let tree_id = commit_ref.tree();
+    let tree_id = commit.tree_id();
     let tree = repo.find_tree(tree_id)?;
 
     let blob_oid = tree
         .iter()
-        .find_map(|e| e.ok())
-        .filter(|e| e.filename().as_bytes() == b"m")
-        .map(|e| e.object_id());
+        .find(|entry| entry.name() == Some("m"))
+        .map(|entry| entry.id());
 
     match blob_oid {
         Some(blob_oid) => {
@@ -468,10 +477,150 @@ pub fn extract_email_from_commit(
 ///
 /// * `Ok(String)` - The raw content of the blob as a UTF-8 string
 /// * `Err` - If the blob cannot be found or read
-pub fn read_by_blob_id(repo: &gix::Repository, blob_oid: gix::ObjectId) -> crate::Result<String> {
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
+pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::Result<String> {
     let blob = repo.find_blob(blob_oid)?;
-    let raw_email = String::from_utf8_lossy(&blob.data).to_string();
-    return Ok(raw_email);
+    let raw_email = String::from_utf8_lossy(blob.content()).to_string();
+    Ok(raw_email)
+}
+
+/// Counts the total number of commits in a repository from refs/heads/master.
+///
+/// This function counts all commits reachable from the master branch ref by
+/// performing a revision walk from HEAD and counting each commit encountered.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository to count commits in
+///
+/// # Returns
+///
+/// * `Ok(usize)` - The total number of commits in the repository
+/// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
+pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
+
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    let count = revwalk.count();
+
+    Ok(count)
+}
+
+/// Formats an email ID from its sequential number, epoch name, and commit SHA.
+///
+/// This function creates a standardized email ID format for public inbox
+/// archiving that includes sequential numbering, epoch identification, and
+/// a shortened commit SHA for traceability.
+///
+/// Format: "{padded_id}-e{epoch}-{short_sha}"
+/// Example: "0000000001-e1-d3ed66e"
+///
+/// # Arguments
+///
+/// * `email_num` - The sequential email number (will be zero-padded to 10 digits)
+/// * `epoch_name` - The name of the epoch (e.g., "0", "1", "all")
+/// * `commit_sha` - The full commit SHA (will be shortened to 7 characters)
+///
+/// # Returns
+///
+/// * `String` - The formatted email ID
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
+pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
+    let padded = format!("{:010}", email_num);
+    let short_sha = if commit_sha.len() >= 7 {
+        &commit_sha[..7]
+    } else {
+        commit_sha
+    };
+    format!("{}-e{}-{}", padded, epoch_name, short_sha)
+}
+
+/// Parsed components of a formatted email ID.
+///
+/// This struct represents the three components that make up a formatted public
+/// inbox email ID: the sequential number, epoch name, and shortened commit SHA.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ParsedEmailId {
+    /// The sequential email number (1-indexed)
+    pub email_num: usize,
+    /// The epoch name (e.g., "0", "1", "all")
+    pub epoch_name: String,
+    /// The shortened commit SHA (7 characters)
+    pub short_sha: String,
+}
+
+/// Parses a formatted email ID back into its components.
+///
+/// This function reverses the format_email_id function, extracting the
+/// sequential number, epoch name, and commit SHA from a formatted email ID.
+///
+/// Format: "{padded_id}-e{epoch}-{short_sha}"
+///
+/// # Arguments
+///
+/// * `id` - The formatted email ID string to parse
+///
+/// # Returns
+///
+/// * `Some(ParsedEmailId)` - The parsed components if the format matches
+/// * `None` - If the format doesn't match the expected pattern
+
+#[cfg_attr(feature = "otel", tracing::instrument)]
+pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
+    let parts: Vec<&str> = id.splitn(3, '-').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    let email_num = parts[0].parse::<usize>().ok()?;
+
+    let epoch_and_sha = parts[1];
+    if !epoch_and_sha.starts_with('e') {
+        return None;
+    }
+    let epoch_name = epoch_and_sha[1..].to_string();
+
+    let short_sha = parts[2].to_string();
+
+    Some(ParsedEmailId {
+        email_num,
+        epoch_name,
+        short_sha,
+    })
+}
+
+/// Collects all commit IDs from a repository, ordered from newest to oldest.
+///
+/// This function performs a revision walk from HEAD (refs/heads/master) and
+/// collects the object IDs of all commits in the repository, ordered from
+/// newest commit first to oldest commit last.
+///
+/// # Arguments
+///
+/// * `repo` - The git repository to collect commits from
+///
+/// # Returns
+///
+/// * `Ok(Vec<git2::Oid>)` - A vector of commit object IDs, newest first
+/// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
+pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::Oid>> {
+    let _head_id = repo
+        .refname_to_id("refs/heads/master")
+        .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
+
+    let mut revwalk = repo.revwalk()?;
+    revwalk.push_head()?;
+
+    let commits: Vec<_> = revwalk.flatten().collect();
+
+    Ok(commits)
 }
 
 /// Finds all epoch repositories within a V2 public inbox's git/ directory.
@@ -513,18 +662,9 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
             continue;
         }
 
-        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
+        if !has_valid_alternates(&path) || !is_git2_openable(&path) {
             log::debug!(
-                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
-                name,
-                path
-            );
-            continue;
-        }
-
-        if !has_valid_alternates(&path) || !is_gix_openable(&path) {
-            log::debug!(
-                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by gix",
+                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by git2",
                 name,
                 path
             );
@@ -547,150 +687,14 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
         if !a_is_all && b_is_all {
             return std::cmp::Ordering::Less;
         }
-        a.epoch_name.cmp(&b.epoch_name)
+        // Numeric sort for numeric epoch names
+        let a_num = a.epoch_name.parse::<usize>();
+        let b_num = b.epoch_name.parse::<usize>();
+        match (a_num, b_num) {
+            (Ok(a), Ok(b)) => a.cmp(&b),
+            _ => a.epoch_name.cmp(&b.epoch_name),
+        }
     });
 
     Ok(epochs)
-}
-
-/// Counts the total number of commits in a repository from refs/heads/master.
-///
-/// This function counts all commits reachable from the master branch ref by
-/// performing a revision walk from HEAD and counting each commit encountered.
-///
-/// # Arguments
-///
-/// * `repo` - The git repository to count commits in
-///
-/// # Returns
-///
-/// * `Ok(usize)` - The total number of commits in the repository
-/// * `Err` - If an error occurs during revision walking
-pub fn count_commits(repo: &gix::Repository) -> crate::Result<usize> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    let count = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .count();
-
-    Ok(count)
-}
-
-/// Formats an email ID from its sequential number, epoch name, and commit SHA.
-///
-/// This function creates a standardized email ID format for public inbox
-/// archiving that includes sequential numbering, epoch identification, and
-/// a shortened commit SHA for traceability.
-///
-/// Format: "{padded_id}-e{epoch}-{short_sha}"
-/// Example: "0000000001-e1-d3ed66e"
-///
-/// # Arguments
-///
-/// * `email_num` - The sequential email number (will be zero-padded to 10 digits)
-/// * `epoch_name` - The name of the epoch (e.g., "0", "1", "all")
-/// * `commit_sha` - The full commit SHA (will be shortened to 7 characters)
-///
-/// # Returns
-///
-/// * `String` - The formatted email ID
-pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
-    let padded = format!("{:010}", email_num);
-    let short_sha = if commit_sha.len() >= 7 {
-        &commit_sha[..7]
-    } else {
-        commit_sha
-    };
-    format!("{}-e{}-{}", padded, epoch_name, short_sha)
-}
-
-/// Parsed components of a formatted email ID.
-///
-/// This struct represents the three components that make up a formatted public
-/// inbox email ID: the sequential number, epoch name, and shortened commit SHA.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ParsedEmailId {
-    /// The sequential email number (1-indexed)
-    pub email_num: usize,
-    /// The epoch name (e.g., "0", "1", "all")
-    pub epoch_name: String,
-    /// The shortened commit SHA (7 characters)
-    pub short_sha: String,
-}
-
-/// Parses a formatted email ID back into its components.
-///
-/// This function reverses the format_email_id function, extracting the
-/// sequential number, epoch name, and commit SHA from a formatted email ID.
-///
-/// Format: "{padded_id}-e{epoch}-{short_sha}"
-///
-/// # Arguments
-///
-/// * `id` - The formatted email ID string to parse
-///
-/// # Returns
-///
-/// * `Some(ParsedEmailId)` - The parsed components if the format matches
-/// * `None` - If the format doesn't match the expected pattern
-pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
-    let parts: Vec<&str> = id.splitn(3, '-').collect();
-    if parts.len() != 3 {
-        return None;
-    }
-
-    let email_num = parts[0].parse::<usize>().ok()?;
-
-    let epoch_and_sha = parts[1];
-    if !epoch_and_sha.starts_with('e') {
-        return None;
-    }
-    let epoch_name = epoch_and_sha[1..].to_string();
-
-    let short_sha = parts[2].to_string();
-
-    Some(ParsedEmailId {
-        email_num,
-        epoch_name,
-        short_sha,
-    })
-}
-
-/// Collects all commit IDs from a repository, ordered from newest to oldest.
-///
-/// This function performs a revision walk from HEAD (refs/heads/master) and
-/// collects the object IDs of all commits in the repository, ordered from
-/// newest commit first to oldest commit last.
-///
-/// # Arguments
-///
-/// * `repo` - The git repository to collect commits from
-///
-/// # Returns
-///
-/// * `Ok(Vec<gix::ObjectId>)` - A vector of commit object IDs, newest first
-/// * `Err` - If an error occurs during revision walking
-pub fn collect_all_commits(repo: &gix::Repository) -> crate::Result<Vec<gix::ObjectId>> {
-    let head_ref = repo.refs.find("refs/heads/master")?;
-    let head_id = head_ref
-        .target
-        .try_id()
-        .ok_or_else(|| anyhow::anyhow!("refs/heads/master does not point to an object"))?
-        .to_owned();
-
-    let commits: Vec<_> = repo
-        .rev_walk([head_id])
-        .all()?
-        .filter_map(|r| r.ok())
-        .map(|info| info.id)
-        .collect();
-
-    Ok(commits)
 }
