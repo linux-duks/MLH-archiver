@@ -1,11 +1,12 @@
 use crate::config::AppConfig;
 use crate::range_inputs::parse_sequence;
-use crate::worker::{Worker, WorkerGroup};
+use crate::worker::{Worker, WorkerGroup, is_shutdown_requested};
 use crossbeam_channel::bounded;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread::{self, JoinHandle};
-
 #[cfg(not(test))]
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // intervals in seconds
 #[cfg(not(test))]
@@ -47,6 +48,7 @@ pub struct Scheduler<'a> {
     app_config: &'a AppConfig,
     loop_groups: bool,
     worker_groups: &'a mut Vec<WorkerGroup>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -70,11 +72,13 @@ impl<'a> Scheduler<'a> {
     pub fn new(
         app_config: &'a AppConfig,
         worker_groups: &'a mut Vec<WorkerGroup>,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> Scheduler<'a> {
         Scheduler {
             app_config,
             loop_groups: app_config.loop_groups,
             worker_groups,
+            shutdown_flag,
         }
     }
 
@@ -141,8 +145,12 @@ impl<'a> Scheduler<'a> {
                 handles.extend(worker_handles);
 
                 // Spawn producer thread that sends tasks
-                let producer_handle =
-                    Self::spawn_producer_for_read_email_by_index(sender, tasks, range_text);
+                let producer_handle = Self::spawn_producer_for_read_email_by_index(
+                    sender,
+                    tasks,
+                    range_text,
+                    self.shutdown_flag.clone(),
+                );
                 handles.push(producer_handle);
 
                 // read_email_by_index
@@ -155,8 +163,12 @@ impl<'a> Scheduler<'a> {
                 handles.extend(worker_handles);
 
                 // Spawn producer thread that sends tasks
-                let producer_handle =
-                    Self::spawn_producer_for_consume_list(sender, tasks, self.loop_groups);
+                let producer_handle = Self::spawn_producer_for_consume_list(
+                    sender,
+                    tasks,
+                    self.loop_groups,
+                    self.shutdown_flag.clone(),
+                );
                 handles.push(producer_handle);
             }
         }
@@ -275,7 +287,7 @@ impl<'a> Scheduler<'a> {
 
             // Space out thread creation (to prevent multiple connections opening at once)
             #[cfg(not(test))]
-            std::thread::sleep(Duration::from_secs(2));
+            interruptible_sleep(Duration::from_secs(5), &self.shutdown_flag);
         }
         return worker_handles;
     }
@@ -301,11 +313,16 @@ impl<'a> Scheduler<'a> {
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
         loop_groups: bool,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             // if in Looping mode: send tasks, then sleep and repeat
             // otherwise, send and drop the sender
             loop {
+                if is_shutdown_requested(&shutdown_flag) {
+                    log::info!("Shutdown requested, exiting...");
+                    return;
+                }
                 // Send all tasks
                 for task in &tasks {
                     if sender.send(task.clone()).is_err() {
@@ -326,7 +343,10 @@ impl<'a> Scheduler<'a> {
 
                 // Sleep between rescans
                 #[cfg(not(test))]
-                std::thread::sleep(Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64));
+                interruptible_sleep(
+                    Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64),
+                    &shutdown_flag,
+                );
             }
         })
     }
@@ -356,9 +376,14 @@ impl<'a> Scheduler<'a> {
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
         range_text: String,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             for task in &tasks {
+                if is_shutdown_requested(&shutdown_flag) {
+                    log::info!("Shutdown requested, exiting...");
+                    return;
+                }
                 // Parse range text for each task (memory efficient, lazy evaluation)
                 let range = match parse_sequence(&range_text) {
                     Ok(iter) => iter,
@@ -384,4 +409,24 @@ impl<'a> Scheduler<'a> {
             return;
         })
     }
+}
+
+/// Sleeps for the specified duration, but checks the shutdown_flag every 2s.
+/// Returns `true` if the full duration elapsed, `false` if shutdown was requested.
+#[cfg(not(test))]
+fn interruptible_sleep(duration: Duration, shutdown_flag: &Arc<AtomicBool>) -> bool {
+    let start = Instant::now();
+    let poll_interval = Duration::from_secs(2);
+
+    while start.elapsed() < duration {
+        if is_shutdown_requested(shutdown_flag) {
+            return false;
+        }
+
+        // Ensure we don't sleep past the remaining time
+        let time_left = duration.saturating_sub(start.elapsed());
+        thread::sleep(time_left.min(poll_interval));
+    }
+
+    true
 }

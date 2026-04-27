@@ -111,7 +111,8 @@ pub fn start(
 
     file_utils::check_or_create_folder(app_config.output_dir.clone())?;
 
-    let mut scheduler = scheduler::Scheduler::new(app_config, worker.get_groups());
+    let mut scheduler =
+        scheduler::Scheduler::new(app_config, worker.get_groups(), shutdown_flag.clone());
 
     scheduler.run()
 }
