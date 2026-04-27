@@ -376,34 +376,49 @@ impl PIWorker {
         let mut emails_processed = 0;
         let mut next_email_num = global_position + 1;
         let mut commit_count = 0;
-        let mut found_resume_sha = false;
 
-        // Set up revwalk with optional resume-from-SHA filtering
-        let mut revwalk = repo.revwalk()?;
-        if let Some(target_sha) = skip_until_sha {
-            // validate the hash exists
+        let resume_sha_full: Option<String> = if let Some(target_sha) = skip_until_sha {
             if let Ok(object) = repo.revparse_single(target_sha)
                 && let Some(commit) = object.as_commit()
             {
-                // Use push_range to only walk commits after the target SHA
-                let full_sha = commit.id().to_string();
-                revwalk.push_range(&format!("{}..HEAD", full_sha))?;
-                found_resume_sha = true;
+                Some(commit.id().to_string())
+            } else {
+                log::warn!(
+                    "configured to resume from {}, but commit not found in epoch {}",
+                    skip_until_sha.clone().unwrap_or("--empty--".to_string()),
+                    epoch.epoch_name
+                );
+                None
+            }
+        } else {
+            None
+        };
+
+        // First pass: count how many commits are newer than the resume SHA
+        // Among those, the first (newest) `new_commit_count` are new emails.
+        // The rest (older) were already processed in a previous run.
+        let mut total_before_resume: usize = 0;
+        {
+            let mut revwalk = repo.revwalk()?;
+            revwalk.push_head()?;
+            for commit_id in revwalk.flatten() {
+                if let Some(ref sha) = resume_sha_full {
+                    if commit_id.to_string() == *sha {
+                        break;
+                    }
+                }
+                total_before_resume += 1;
             }
         }
+        let old_non_resume = global_position.saturating_sub(1);
+        let new_commits = total_before_resume.saturating_sub(old_non_resume);
 
-        if !found_resume_sha {
-            log::warn!(
-                "configured to resume from {}, but commit not found in epoch {}",
-                skip_until_sha.clone().unwrap_or("--empty--".to_string()),
-                epoch.epoch_name
-            );
-            revwalk.push_head()?;
-        }
+        // Second pass: process only the new commits
+        let mut revwalk = repo.revwalk()?;
+        revwalk.push_head()?;
+        let mut processed_new = 0;
 
-        // Stream commits one-by-one instead of loading all into memory
         for commit_id in revwalk.flatten() {
-            // Check for shutdown request at each commit
             if crate::worker::is_shutdown_requested(shutdown_flag) {
                 log::info!(
                     "W{}: Shutdown requested during epoch {} processing",
@@ -413,21 +428,32 @@ impl PIWorker {
                 break;
             }
 
-            // global_position will be different than email id because of change of commits without
-            // content
-            let current_global_position = global_position + commit_count;
+            if let Some(ref sha) = resume_sha_full {
+                if commit_id.to_string() == *sha {
+                    break;
+                }
+            }
 
-            // Apply article range filter if configured
-            // TODO: move to other function
-            if let Some(positions) = article_range_positions
-                && !positions.contains(&current_global_position)
-            {
+            // Skip old (already processed) commits
+            if processed_new >= new_commits && total_before_resume > 0 {
+                // All remaining commits before the resume SHA are old
+                // We still need to count them for commit_count tracking
+                commit_count += 1;
                 continue;
             }
 
-            // Extract and archive the email from this commit
+            let current_global_position = global_position + commit_count;
+
+            if let Some(positions) = article_range_positions
+                && !positions.contains(&current_global_position)
+            {
+                commit_count += 1;
+                continue;
+            }
+
             let commit = repo.find_commit(commit_id)?;
             commit_count += 1;
+            processed_new += 1;
             match extract_email_from_commit(repo, &commit) {
                 Ok((commit_hash, raw_email)) => {
                     let email_id = format_email_id(next_email_num, &epoch.epoch_name, &commit_hash);
@@ -456,18 +482,7 @@ impl PIWorker {
                     }
                 }
             }
-            // increment email num with or without emails in commit
             next_email_num += 1;
-        }
-
-        // If we used push_range for resume, the SHA must exist.
-        // If not found, the repo is corrupted.
-        if skip_until_sha.is_some() && !found_resume_sha {
-            return Err(crate::errors::Error::Anyhow(anyhow::anyhow!(
-                "Resume SHA {:?} not found in epoch {}, repository may be corrupted",
-                skip_until_sha,
-                epoch.epoch_name
-            )));
         }
 
         Ok(ProcessEpochResult {

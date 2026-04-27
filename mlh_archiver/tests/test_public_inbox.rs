@@ -29,7 +29,7 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
     let p = Path::new(&folder_path);
     if p.exists() {
         println!("Clearing output dir");
-        fs::remove_dir_all(&folder_path).unwrap();
+        fs::remove_dir_all(&folder_path)?;
     }
     Ok(())
 }
@@ -920,4 +920,230 @@ fn test_multi_epoch_resume() {
         .unwrap();
     check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string())
         .unwrap();
+}
+
+// =============================================================================
+// Resume Integration Tests (local git repo, no container)
+// =============================================================================
+
+/// Creates a bare git repo (V1-style public inbox) with the given number of emails.
+fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: usize) {
+    std::fs::create_dir_all(inbox_dir).expect("create inbox_dir");
+    let abs_inbox_dir = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
+    let inbox_path = abs_inbox_dir.join(inbox_name);
+    std::fs::create_dir_all(&inbox_path).expect("create inbox_path");
+
+    // Create a bare repo
+    let bare_repo = git2::Repository::init_bare(&inbox_path).expect("init bare repo");
+
+    // Create a temporary working repo to make commits
+    let work_dir = abs_inbox_dir.join("work");
+    std::fs::remove_dir_all(&work_dir).ok();
+    let clone = git2::build::RepoBuilder::new()
+        .clone(inbox_path.to_str().unwrap(), &work_dir)
+        .expect("clone bare repo");
+
+    let sig = git2::Signature::now("Test User", "test@example.com").expect("create sig");
+
+    for i in 1..=email_count {
+        let email_content = format!(
+            "From: tester@example.org\n\
+             Subject: Test email {}\n\
+             Message-ID: <test-{}@example.org>\n\
+             Date: Mon, 01 Jan 2024 00:{:02}:00 +0000\n\
+             \n\
+             This is test email number {}.\n",
+            i, i, i % 60, i
+        );
+
+        let m_path = work_dir.join("m");
+        std::fs::write(&m_path, &email_content).expect("write email");
+
+        let mut index = clone.index().expect("get index");
+        index.add_path(Path::new("m")).expect("add path");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = clone.find_tree(tree_id).expect("find tree");
+
+        let parent_commit = clone.head().ok().and_then(|h| h.peel_to_commit().ok());
+
+        if let Some(parent) = parent_commit {
+            clone
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("email {}", i),
+                    &tree,
+                    &[&parent],
+                )
+                .expect("commit");
+        } else {
+            clone
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("email {}", i),
+                    &tree,
+                    &[],
+                )
+                .expect("commit");
+        }
+    }
+
+    // Push to bare repo
+    let mut remote = clone.find_remote("origin").expect("find remote");
+    remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
+
+    std::fs::remove_dir_all(&work_dir).ok();
+    drop(bare_repo);
+}
+
+/// Adds new emails to an existing bare git repo inbox.
+fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, count: usize) {
+    let abs_inbox_dir = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
+    let inbox_path = abs_inbox_dir.join(inbox_name);
+    let work_dir = abs_inbox_dir.join("work_add");
+    std::fs::remove_dir_all(&work_dir).ok();
+
+    let clone = git2::build::RepoBuilder::new()
+        .clone(inbox_path.to_str().unwrap(), &work_dir)
+        .expect("clone bare repo");
+
+    let sig = git2::Signature::now("Test User", "test@example.com").expect("create sig");
+
+    for i in start_num..start_num + count {
+        let email_content = format!(
+            "From: tester@example.org\n\
+             Subject: Test email {}\n\
+             Message-ID: <test-{}@example.org>\n\
+             Date: Mon, 01 Jan 2024 01:{:02}:00 +0000\n\
+             \n\
+             This is test email number {} (new).\n",
+            i, i, i % 60, i
+        );
+
+        let m_path = work_dir.join("m");
+        std::fs::write(&m_path, &email_content).expect("write email");
+
+        let mut index = clone.index().expect("get index");
+        index.add_path(Path::new("m")).expect("add path");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = clone.find_tree(tree_id).expect("find tree");
+
+        let parent_commit = clone.head().ok().and_then(|h| h.peel_to_commit().ok());
+
+        if let Some(parent) = parent_commit {
+            clone
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("email {}", i),
+                    &tree,
+                    &[&parent],
+                )
+                .expect("commit");
+        }
+    }
+
+    let mut remote = clone.find_remote("origin").expect("find remote");
+    remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
+
+    std::fs::remove_dir_all(&work_dir).ok();
+}
+
+/// Runs the archiver once against a local inbox directory.
+fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, inbox_name: &str) {
+    let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
+    let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
+        std::fs::create_dir_all(output_dir).expect("create output_dir");
+        std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
+    });
+    let mut app_config = AppConfig {
+        output_dir: abs_output.to_string_lossy().to_string(),
+        nthreads: 1,
+        loop_groups: false,
+        public_inbox: Some(PIConfig {
+            import_directory: abs_inbox.to_string_lossy().to_string(),
+            origin: "local-test".to_owned(),
+            public_inbox_config: None,
+            group_lists: Some(vec![inbox_name.to_owned()]),
+            article_range: None,
+        }),
+        ..Default::default()
+    };
+
+    let shutdown_flag = Arc::new(AtomicBool::new(false));
+    let child_handle = thread::spawn(move || {
+        let result = start(&mut app_config, shutdown_flag);
+        if let Err(ref e) = result {
+            eprintln!("Archiver error: {:?}", e);
+        }
+        assert!(result.is_ok(), "Archiver should succeed");
+    });
+    child_handle.join().expect("Child thread panicked");
+}
+
+#[test]
+fn test_resume_only_collects_new_emails() {
+    let inbox_dir = "./test_resume_inbox_data";
+    let output_dir = "./test_resume_output";
+
+    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+
+    let inbox_name = "test.resume.list";
+
+    // Phase 1: Create inbox with 10 emails, run archiver
+    create_v1_inbox_with_emails(inbox_dir, inbox_name, 10);
+    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+    let eml_count_1 = count_eml_files(&list_dir);
+    assert_eq!(eml_count_1, 10, "Phase 1: Expected 10 .eml files, found {}", eml_count_1);
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 10);
+
+    // Phase 2: Add 5 more emails (11-15), run archiver again
+    add_emails_to_inbox(inbox_dir, inbox_name, 11, 5);
+    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+
+    let eml_count_2 = count_eml_files(&list_dir);
+    assert_eq!(
+        eml_count_2, 15,
+        "Phase 2: Expected 15 total .eml files, found {}",
+        eml_count_2
+    );
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 15);
+
+    // Verify new emails (11-15) exist
+    for i in 11..=15 {
+        let found = WalkDir::new(&list_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .any(|e| {
+                let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                parse_email_id(filename).map(|p| p.email_num == i).unwrap_or(false)
+            });
+        assert!(found, "Phase 2: Email {} should exist after resume", i);
+    }
+
+    // Verify original emails (1-10) still exist
+    for i in 1..=10 {
+        let found = WalkDir::new(&list_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .any(|e| {
+                let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                parse_email_id(filename).map(|p| p.email_num == i).unwrap_or(false)
+            });
+        assert!(found, "Phase 2: Original email {} should still exist", i);
+    }
+
+    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
 }
