@@ -444,7 +444,7 @@ fn extract_emails_from_inbox(inbox: &PublicInbox) -> Vec<(String, String)> {
 
     let mut revwalk = repo.revwalk().expect("Failed to create revwalk");
     revwalk.push(head_id).expect("Failed to push head");
-    
+
     let mut commits = Vec::new();
     for oid in revwalk.flatten() {
         commits.push(oid);
@@ -456,10 +456,7 @@ fn extract_emails_from_inbox(inbox: &PublicInbox) -> Vec<(String, String)> {
         let tree_id = commit.tree_id();
         let tree = repo.find_tree(tree_id).expect("find tree");
 
-        let blob_oid = tree
-            .iter()
-            .find(|e| e.name() == Some("m"))
-            .map(|e| e.id());
+        let blob_oid = tree.iter().find(|e| e.name() == Some("m")).map(|e| e.id());
 
         match blob_oid {
             Some(blob_oid) => {
@@ -847,7 +844,11 @@ fn test_multi_epoch_article_range() {
     let list_dir = format!("{}/v2_multi_epoch.list", output_dir);
 
     let eml_count = count_eml_files(&list_dir);
-    assert_eq!(eml_count, 4, "Expected 4 .eml files (5-8 inclusive), found {}", eml_count);
+    assert_eq!(
+        eml_count, 4,
+        "Expected 4 .eml files (5-8 inclusive), found {}",
+        eml_count
+    );
 
     validate_list(output_dir, "v2_multi_epoch.list", &[5, 6, 7, 8]);
     validate_exact_file_structure(output_dir, "v2_multi_epoch.list", 4, false);
@@ -874,7 +875,7 @@ fn test_multi_epoch_resume() {
         },
         "multi_epoch_resume_phase1",
     );
-    
+
     // Phase 2: Resume without range (should start from epoch 1)
     let _found_files2 = run_pi_test_with_config(
         |test_data_path| AppConfig {
@@ -892,16 +893,31 @@ fn test_multi_epoch_resume() {
         },
         "multi_epoch_resume_phase2",
     );
-    
+
     // Verify all 12 emails are now present
     let list_dir = "./test_public_inbox_output_pi_multi_epoch_resume_phase2/v2_multi_epoch.list";
     let eml_count = count_eml_files(list_dir);
-    assert_eq!(eml_count, 12, "Expected 12 .eml files after resume, found {}", eml_count);
-    
-    validate_list("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", &(1..=12).collect::<Vec<usize>>());
-    validate_exact_file_structure("./test_public_inbox_output_pi_multi_epoch_resume_phase2", "v2_multi_epoch.list", 12, false);
-    
+    assert_eq!(
+        eml_count, 12,
+        "Expected 12 .eml files after resume, found {}",
+        eml_count
+    );
+
+    validate_list(
+        "./test_public_inbox_output_pi_multi_epoch_resume_phase2",
+        "v2_multi_epoch.list",
+        &(1..=12).collect::<Vec<usize>>(),
+    );
+    validate_exact_file_structure(
+        "./test_public_inbox_output_pi_multi_epoch_resume_phase2",
+        "v2_multi_epoch.list",
+        12,
+        false,
+    );
+
     // Cleanup
-    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string()).unwrap();
-    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string()).unwrap();
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string())
+        .unwrap();
+    check_and_delete_folder("./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string())
+        .unwrap();
 }

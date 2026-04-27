@@ -308,7 +308,11 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
         email_count += 1;
         println!("  --- Email {email_count} ---");
         println!("  Subject: {}", subject.lines().next().unwrap_or(""));
-        println!("  Author:  {} <{}>", author.name().unwrap_or(""), author.email().unwrap_or(""));
+        println!(
+            "  Author:  {} <{}>",
+            author.name().unwrap_or(""),
+            author.email().unwrap_or("")
+        );
         println!("  Date:    {timestamp}");
         println!("  Commit:  {}", commit_hash);
         println!("  Raw email:");
@@ -532,7 +536,11 @@ fn view_commit(
     println!("\n📧 Commit #{}", position);
     println!("─────────────────────────────────────");
     println!("Subject: {}", subject.lines().next().unwrap_or(""));
-    println!("Author:  {} <{}>", author.name().unwrap_or(""), author.email().unwrap_or(""));
+    println!(
+        "Author:  {} <{}>",
+        author.name().unwrap_or(""),
+        author.email().unwrap_or("")
+    );
     println!("Date:    {}", date);
     println!("Commit:  {}", commit.id());
 

@@ -252,7 +252,7 @@ impl PIWorker {
             epochs
         };
 
-        let mut email_count = 0;
+        let mut emails_processed = 0;
         let mut skip_until_epoch = None;
         let mut skip_until_sha = None;
         let mut global_position: usize = 0;
@@ -260,7 +260,7 @@ impl PIWorker {
         // If we have resume information, set up skipping to that point
         if let Some(ref parsed) = resume_info {
             skip_until_epoch = Some(parsed.epoch_name.clone());
-            skip_until_sha = Some(parsed.short_sha.clone());
+            skip_until_sha = Some(parsed.commit_sha.clone());
             global_position = parsed.email_num;
         }
 
@@ -310,9 +310,9 @@ impl PIWorker {
                     "W{}: Shutdown requested while processing {}, processed {} emails",
                     self.id,
                     list_name,
-                    email_count
+                    emails_processed
                 );
-                return Ok(email_count);
+                return Ok(emails_processed);
             }
 
             let repo = git2::Repository::open(&epoch.git_dir)?;
@@ -327,7 +327,7 @@ impl PIWorker {
                 &self.shutdown_flag,
             )?;
 
-            email_count += result.emails_processed;
+            emails_processed += result.emails_processed;
             global_position += result.commit_count;
 
             // Reset skipping flags after processing the first epoch
@@ -337,10 +337,10 @@ impl PIWorker {
         log::info!(
             "W{}: Processed {} emails from {}",
             self.id,
-            email_count,
+            emails_processed,
             list_name
         );
-        Ok(email_count)
+        Ok(emails_processed)
     }
 
     /// Process a single epoch, streaming commits and archiving emails.
@@ -373,7 +373,7 @@ impl PIWorker {
         global_position: usize,
         shutdown_flag: &Arc<AtomicBool>,
     ) -> crate::Result<ProcessEpochResult> {
-        let mut email_count = 0;
+        let mut emails_processed = 0;
         let mut next_email_num = global_position + 1;
         let mut commit_count = 0;
         let mut found_resume_sha = false;
@@ -413,6 +413,8 @@ impl PIWorker {
                 break;
             }
 
+            // global_position will be different than email id because of change of commits without
+            // content
             let current_global_position = global_position + commit_count;
 
             // Apply article range filter if configured
@@ -430,7 +432,7 @@ impl PIWorker {
                 Ok((commit_hash, raw_email)) => {
                     let email_id = format_email_id(next_email_num, &epoch.epoch_name, &commit_hash);
                     writer.archive_email(&email_id, [raw_email.as_str()])?;
-                    email_count += 1;
+                    emails_processed += 1;
                 }
                 Err(e) => {
                     writer.log_error(&commit_id.to_string(), format!("Error reading content for commit. Possibly missing 'm' blob in commit tree. Error: {}", e).as_str());
@@ -454,6 +456,7 @@ impl PIWorker {
                     }
                 }
             }
+            // increment email num with or without emails in commit
             next_email_num += 1;
         }
 
@@ -468,7 +471,7 @@ impl PIWorker {
         }
 
         Ok(ProcessEpochResult {
-            emails_processed: email_count,
+            emails_processed,
             commit_count,
         })
     }

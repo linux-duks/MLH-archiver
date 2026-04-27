@@ -499,7 +499,7 @@ pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
 /// archiving that includes sequential numbering, epoch identification, and
 /// a shortened commit SHA for traceability.
 ///
-/// Format: "{padded_id}-e{epoch}-{short_sha}"
+/// Format: "{padded_id}-e{epoch}-{commit_sha}"
 /// Example: "0000000001-e1-d3ed66e"
 ///
 /// # Arguments
@@ -513,12 +513,7 @@ pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
 /// * `String` - The formatted email ID
 pub fn format_email_id(email_num: usize, epoch_name: &str, commit_sha: &str) -> String {
     let padded = format!("{:010}", email_num);
-    let short_sha = if commit_sha.len() >= 7 {
-        &commit_sha[..7]
-    } else {
-        commit_sha
-    };
-    format!("{}-e{}-{}", padded, epoch_name, short_sha)
+    format!("{}-e{}-{}", padded, epoch_name, commit_sha)
 }
 
 /// Parsed components of a formatted email ID.
@@ -531,8 +526,8 @@ pub struct ParsedEmailId {
     pub email_num: usize,
     /// The epoch name (e.g., "0", "1", "all")
     pub epoch_name: String,
-    /// The shortened commit SHA (7 characters)
-    pub short_sha: String,
+    /// The commit SHA
+    pub commit_sha: String,
 }
 
 /// Parses a formatted email ID back into its components.
@@ -540,7 +535,7 @@ pub struct ParsedEmailId {
 /// This function reverses the format_email_id function, extracting the
 /// sequential number, epoch name, and commit SHA from a formatted email ID.
 ///
-/// Format: "{padded_id}-e{epoch}-{short_sha}"
+/// Format: "{padded_id}-e{epoch}-{commit_sha}"
 ///
 /// # Arguments
 ///
@@ -564,12 +559,12 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
     }
     let epoch_name = epoch_and_sha[1..].to_string();
 
-    let short_sha = parts[2].to_string();
+    let commit_sha = parts[2].to_string();
 
     Some(ParsedEmailId {
         email_num,
         epoch_name,
-        short_sha,
+        commit_sha,
     })
 }
 
