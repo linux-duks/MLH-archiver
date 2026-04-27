@@ -3,6 +3,7 @@ use crate::{
     public_inbox_source::{pi_config::PIConfig, pi_utils::*},
     worker,
 };
+use log::{Level, log_enabled};
 use std::collections::HashSet;
 use std::sync::{Arc, atomic::AtomicBool};
 
@@ -18,8 +19,6 @@ use std::path::Path;
 struct ProcessEpochResult {
     /// Number of emails successfully processed in this epoch
     emails_processed: usize,
-    /// Next email number to use (for sequential numbering)
-    next_email_num: usize,
     /// Total number of commits processed in this epoch
     commit_count: usize,
 }
@@ -66,125 +65,6 @@ impl PIWorker {
             shutdown_flag,
         };
     }
-
-    /// Process a single epoch, streaming commits and archiving emails.
-    ///
-    /// This function handles the core logic of processing one epoch of a public inbox,
-    /// including commit iteration, article range filtering, resume-from-SHA logic,
-    /// and email extraction and archiving.
-    ///
-    /// # Arguments
-    ///
-    /// * `repo` - The git repository for this epoch
-    /// * `epoch` - Information about the epoch being processed
-    /// * `writer` - Archive writer for storing processed emails
-    /// * `article_range_positions` - Optional set of positions to filter by article range
-    /// * `skip_until_sha` - Optional short SHA to skip commits until found
-    /// * `global_position` - Current global email position across all epochs
-    /// * `shutdown_flag` - Flag to check for shutdown requests
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(ProcessEpochResult)` - Results including emails processed and updated counters
-    /// * `Err` - If an error occurs during processing
-    fn process_epoch(
-        &self,
-        repo: &git2::Repository,
-        epoch: &EpochRepo,
-        writer: &ArchiveWriter,
-        article_range_positions: &Option<HashSet<usize>>,
-        skip_until_sha: &Option<String>,
-        global_position: usize,
-        shutdown_flag: &Arc<AtomicBool>,
-    ) -> crate::Result<ProcessEpochResult> {
-        let mut email_count = 0;
-        let mut next_email_num = global_position + 1;
-        let mut commit_count = 0;
-        let mut found_resume_sha = false;
-
-        // Set up revwalk with optional resume-from-SHA filtering
-        let mut revwalk = repo.revwalk()?;
-        if let Some(target_sha) = skip_until_sha {
-            // Try to resolve short SHA to full OID
-            if let Ok(object) = repo.revparse_single(target_sha)
-                && let Some(commit) = object.as_commit() {
-                    // Use push_range to only walk commits after the target SHA
-                    let full_sha = commit.id().to_string();
-                    revwalk.push_range(&format!("{}..HEAD", full_sha))?;
-                    found_resume_sha = true;
-                }
-        }
-        
-        if !found_resume_sha {
-            revwalk.push_head()?;
-        }
-
-        // Stream commits one-by-one instead of loading all into memory
-        for commit_id in revwalk.flatten() {
-            // Check for shutdown request
-            if crate::worker::is_shutdown_requested(shutdown_flag) {
-                log::info!(
-                    "W{}: Shutdown requested during epoch {} processing",
-                    self.id,
-                    epoch.epoch_name
-                );
-                break;
-            }
-
-            commit_count += 1;
-            let current_global_position = global_position + commit_count - 1;
-
-            // Apply article range filter if configured
-            if let Some(positions) = article_range_positions
-                && !positions.contains(&current_global_position)
-            {
-                continue;
-            }
-
-            // Extract and archive the email from this commit
-                let commit = repo.find_commit(commit_id)?;
-            match extract_email_from_commit(repo, &commit) {
-                Ok((commit_hash, raw_email)) => {
-                    let email_id = format_email_id(next_email_num, &epoch.epoch_name, &commit_hash);
-                    writer.archive_email(&email_id, [raw_email.as_str()])?;
-                    email_count += 1;
-                    next_email_num += 1;
-                }
-                Err(_) => {
-                    writer
-                        .log_error(&commit_id.to_string(), "No 'm' blob found in commit tree");
-                    let subject = commit.message().map(|msg| msg.to_string()).unwrap_or_else(|| "<no message>".to_string());
-                    let tree_id = commit.tree_id();
-                    let tree_str = format!("{}", tree_id);
-                    log::debug!(
-                        "W{}: Commit {} missing 'm' blob - subject: '{}', parents: {}, tree: {}",
-                        self.id,
-                        commit_id,
-                        subject,
-                        commit.parent_ids().count(),
-                        tree_str,
-                    );
-                    next_email_num += 1;
-                }
-            }
-        }
-
-        // If we used push_range for resume, the SHA must exist.
-        // If not found, the repo is corrupted.
-        if skip_until_sha.is_some() && !found_resume_sha {
-            return Err(crate::errors::Error::Anyhow(anyhow::anyhow!(
-                "Resume SHA {:?} not found in epoch {}, repository may be corrupted",
-                skip_until_sha,
-                epoch.epoch_name
-            )));
-        }
-
-        Ok(ProcessEpochResult {
-            emails_processed: email_count,
-            next_email_num,
-            commit_count,
-        })
-    }
 }
 
 impl Worker for PIWorker {
@@ -215,17 +95,24 @@ impl Worker for PIWorker {
             }
 
             log::info!("W{}: Reading new group from channel", self.id);
-            match receiver.recv() {
-                Ok(name) => {
-                    if let Err(e) = self.process_inbox(name.as_str()) {
-                        log::error!("W{}: Failed to process inbox {}: {}", self.id, name, e);
-                    }
-                }
+            let list_name = match receiver.recv() {
+                Ok(name) => name,
                 Err(crossbeam_channel::RecvError) => {
                     log::info!("W{}: Channel closed and empty, worker exiting", self.id);
                     return Ok(());
                 }
-            }
+            };
+            match self.process_inbox(list_name.as_str()) {
+                Ok(mail_count) => {
+                    log::info!(
+                        "W{}: completed a task with: {mail_count} emails saved",
+                        self.id
+                    );
+                }
+                Err(e) => {
+                    log::error!("W{}: Failed to process inbox {}: {}", self.id, list_name, e);
+                }
+            };
         }
     }
 
@@ -352,12 +239,13 @@ impl PIWorker {
         list_path.push(list_name);
         let inbox = detect_inbox(list_path.as_path())
             .expect("Detected inbox should be re-detected here")
-            .expect("and is hould exist");
+            .expect("and it should exist");
 
         let epochs = find_epochs(&inbox.git_dir)?;
+        // V1 repositories do not have epochs. The "all" epoch type fits well
         let mut epochs_to_use = if epochs.is_empty() {
             vec![EpochRepo {
-                epoch_name: "1".to_string(),
+                epoch_name: "all".to_string(),
                 git_dir: inbox.git_dir.clone(),
             }]
         } else {
@@ -365,7 +253,6 @@ impl PIWorker {
         };
 
         let mut email_count = 0;
-        let mut next_email_num = 1;
         let mut skip_until_epoch = None;
         let mut skip_until_sha = None;
         let mut global_position: usize = 0;
@@ -374,7 +261,6 @@ impl PIWorker {
         if let Some(ref parsed) = resume_info {
             skip_until_epoch = Some(parsed.epoch_name.clone());
             skip_until_sha = Some(parsed.short_sha.clone());
-            next_email_num = parsed.email_num + 1;
             global_position = parsed.email_num;
         }
 
@@ -398,6 +284,7 @@ impl PIWorker {
         };
 
         // epoch-filter: filter out explored epochs if continuing from a previous point
+        // TODO: filtering epochs in v1 repos must always be "all"
         if let Some(skip_until_epoch) = &skip_until_epoch {
             epochs_to_use = if skip_until_epoch == "all" {
                 epochs_to_use
@@ -441,11 +328,9 @@ impl PIWorker {
             )?;
 
             email_count += result.emails_processed;
-            next_email_num = result.next_email_num;
             global_position += result.commit_count;
 
-            // Reset skipping flags after processing the target epoch
-            skip_until_epoch = None;
+            // Reset skipping flags after processing the first epoch
             skip_until_sha = None;
         }
 
@@ -456,5 +341,135 @@ impl PIWorker {
             list_name
         );
         Ok(email_count)
+    }
+
+    /// Process a single epoch, streaming commits and archiving emails.
+    ///
+    /// This function handles the core logic of processing one epoch of a public inbox,
+    /// including commit iteration, article range filtering, resume-from-SHA logic,
+    /// and email extraction and archiving.
+    ///
+    /// # Arguments
+    ///
+    /// * `repo` - The git repository for this epoch
+    /// * `epoch` - Information about the epoch being processed
+    /// * `writer` - Archive writer for storing processed emails
+    /// * `article_range_positions` - Optional set of positions to filter by article range
+    /// * `skip_until_sha` - Optional short SHA to skip commits until found
+    /// * `global_position` - Current global email position across all epochs
+    /// * `shutdown_flag` - Flag to check for shutdown requests
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ProcessEpochResult)` - Results including emails processed and updated counters
+    /// * `Err` - If an error occurs during processing
+    fn process_epoch(
+        &self,
+        repo: &git2::Repository,
+        epoch: &EpochRepo,
+        writer: &ArchiveWriter,
+        article_range_positions: &Option<HashSet<usize>>,
+        skip_until_sha: &Option<String>,
+        global_position: usize,
+        shutdown_flag: &Arc<AtomicBool>,
+    ) -> crate::Result<ProcessEpochResult> {
+        let mut email_count = 0;
+        let mut next_email_num = global_position + 1;
+        let mut commit_count = 0;
+        let mut found_resume_sha = false;
+
+        // Set up revwalk with optional resume-from-SHA filtering
+        let mut revwalk = repo.revwalk()?;
+        if let Some(target_sha) = skip_until_sha {
+            // validate the hash exists
+            if let Ok(object) = repo.revparse_single(target_sha)
+                && let Some(commit) = object.as_commit()
+            {
+                // Use push_range to only walk commits after the target SHA
+                let full_sha = commit.id().to_string();
+                revwalk.push_range(&format!("{}..HEAD", full_sha))?;
+                found_resume_sha = true;
+            }
+        }
+
+        if !found_resume_sha {
+            log::warn!(
+                "configured to resume from {}, but commit not found in epoch {}",
+                skip_until_sha.clone().unwrap_or("--empty--".to_string()),
+                epoch.epoch_name
+            );
+            revwalk.push_head()?;
+        }
+
+        // Stream commits one-by-one instead of loading all into memory
+        for commit_id in revwalk.flatten() {
+            // Check for shutdown request at each commit
+            if crate::worker::is_shutdown_requested(shutdown_flag) {
+                log::info!(
+                    "W{}: Shutdown requested during epoch {} processing",
+                    self.id,
+                    epoch.epoch_name
+                );
+                break;
+            }
+
+            let current_global_position = global_position + commit_count;
+
+            // Apply article range filter if configured
+            // TODO: move to other function
+            if let Some(positions) = article_range_positions
+                && !positions.contains(&current_global_position)
+            {
+                continue;
+            }
+
+            // Extract and archive the email from this commit
+            let commit = repo.find_commit(commit_id)?;
+            commit_count += 1;
+            match extract_email_from_commit(repo, &commit) {
+                Ok((commit_hash, raw_email)) => {
+                    let email_id = format_email_id(next_email_num, &epoch.epoch_name, &commit_hash);
+                    writer.archive_email(&email_id, [raw_email.as_str()])?;
+                    email_count += 1;
+                }
+                Err(e) => {
+                    writer.log_error(&commit_id.to_string(), format!("Error reading content for commit. Possibly missing 'm' blob in commit tree. Error: {}", e).as_str());
+                    if log_enabled!(Level::Debug) {
+                        let subject = commit
+                            .message()
+                            .map(|msg| msg.to_string())
+                            .unwrap_or_else(|| "<no message>".to_string());
+                        let tree_id = commit.tree_id();
+                        let tree_str = format!("{}", tree_id);
+
+                        log::debug!(
+                            "W{}: Commit {} missing 'm' blob - subject: '{}', parents: {}, tree: {}, error: {}",
+                            self.id,
+                            commit_id,
+                            subject,
+                            commit.parent_ids().count(),
+                            tree_str,
+                            e
+                        );
+                    }
+                }
+            }
+            next_email_num += 1;
+        }
+
+        // If we used push_range for resume, the SHA must exist.
+        // If not found, the repo is corrupted.
+        if skip_until_sha.is_some() && !found_resume_sha {
+            return Err(crate::errors::Error::Anyhow(anyhow::anyhow!(
+                "Resume SHA {:?} not found in epoch {}, repository may be corrupted",
+                skip_until_sha,
+                epoch.epoch_name
+            )));
+        }
+
+        Ok(ProcessEpochResult {
+            emails_processed: email_count,
+            commit_count,
+        })
     }
 }
