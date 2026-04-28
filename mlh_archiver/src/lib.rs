@@ -36,6 +36,8 @@ pub use errors::Result;
 use config::{RunMode, RunModeConfig};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 use worker::WorkerManager;
 
 /// Main entry point for the archiver application.
@@ -115,4 +117,61 @@ pub fn start(
         scheduler::Scheduler::new(app_config, worker.get_groups(), shutdown_flag.clone());
 
     scheduler.run()
+}
+
+/// Sleeps for the specified duration, but checks the shutdown_flag every 2s.
+/// Returns `true` if the full duration elapsed, `false` if shutdown was requested.
+fn interruptible_sleep(duration: Duration, shutdown_flag: &Arc<AtomicBool>) -> bool {
+    let two_sec = Duration::from_millis(2_000);
+
+    if duration.as_millis() == 0 {
+        return true;
+    } else if duration <= two_sec {
+        sleep(duration);
+        return true;
+    }
+
+    let start = Instant::now();
+    let poll_interval = two_sec;
+
+    while start.elapsed() < duration {
+        if is_shutdown_requested(shutdown_flag) {
+            return false;
+        }
+
+        // Ensure we don't sleep past the remaining time
+        let time_left = duration.saturating_sub(start.elapsed());
+        sleep(time_left.min(poll_interval));
+    }
+
+    true
+}
+
+/// Helper function to check if a shutdown has been requested via the shared flag.
+///
+/// This is a convenience function for checking the shutdown flag using
+/// the correct memory ordering (`Relaxed`).
+///
+/// # Arguments
+///
+/// * `shutdown_flag` - Reference to the shared atomic shutdown flag
+///
+/// # Returns
+///
+/// `true` if shutdown was requested, `false` otherwise
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+/// use mlh_archiver::worker::is_shutdown_requested;
+///
+/// let flag = Arc::new(AtomicBool::new(false));
+/// if is_shutdown_requested(&flag) {
+///     // Clean up and exit
+/// }
+/// ```
+#[inline]
+pub fn is_shutdown_requested(shutdown_flag: &Arc<AtomicBool>) -> bool {
+    shutdown_flag.load(std::sync::atomic::Ordering::Relaxed)
 }

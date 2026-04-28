@@ -267,6 +267,7 @@ fn test_read_from_local_nntp_server() {
                 },
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
+                    request_interval: 0,
                     port: Some(host_port),
                     ..NntpConfig::default()
                 }),
@@ -327,6 +328,7 @@ fn test_read_single_article_by_range() {
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
+                    request_interval: 0,
                     article_range: Some("5".to_owned()),
                     ..NntpConfig::default()
                 }),
@@ -381,6 +383,7 @@ fn test_read_article_range() {
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
+                    request_interval: 0,
                     article_range: Some("1-3".to_owned()),
                     ..NntpConfig::default()
                 }),
@@ -440,6 +443,7 @@ fn test_read_multiple_articles_by_range() {
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
+                    request_interval: 0,
                     article_range: Some("1,5,10".to_owned()),
                     ..NntpConfig::default()
                 }),
@@ -504,6 +508,7 @@ fn test_read_mixed_range() {
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
+                    request_interval: 0,
                     article_range: Some("1,3-5,10".to_owned()),
                     ..NntpConfig::default()
                 }),
@@ -567,6 +572,7 @@ fn test_read_from_local_nntp_server_with_auth() {
                 nntp: Some(NntpConfig {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
+                    request_interval: 0,
                     username: Some("foo".to_owned()),
                     password: Some("bar".to_owned()),
                     ..NntpConfig::default()

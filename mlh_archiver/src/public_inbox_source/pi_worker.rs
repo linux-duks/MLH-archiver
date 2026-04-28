@@ -1,7 +1,7 @@
 use crate::worker::Worker;
 use crate::{
+    is_shutdown_requested,
     public_inbox_source::{pi_config::PIConfig, pi_utils::*},
-    worker,
 };
 use log::{Level, log_enabled};
 use std::collections::HashSet;
@@ -89,7 +89,7 @@ impl Worker for PIWorker {
     ) -> crate::Result<()> {
         log::info!("W{}: started consuming tasks", self.id);
         loop {
-            if worker::is_shutdown_requested(&self.shutdown_flag) {
+            if is_shutdown_requested(&self.shutdown_flag) {
                 log::info!("W{}: Shutdown requested, exiting...", self.id);
                 return Ok(());
             }
@@ -305,7 +305,7 @@ impl PIWorker {
         // Process each epoch in order
         for epoch in &epochs_to_use {
             // Check for shutdown request
-            if crate::worker::is_shutdown_requested(&self.shutdown_flag) {
+            if is_shutdown_requested(&self.shutdown_flag) {
                 log::info!(
                     "W{}: Shutdown requested while processing {}, processed {} emails",
                     self.id,
@@ -403,9 +403,10 @@ impl PIWorker {
             revwalk.push_head()?;
             for commit_id in revwalk.flatten() {
                 if let Some(ref sha) = resume_sha_full
-                    && commit_id.to_string() == *sha {
-                        break;
-                    }
+                    && commit_id.to_string() == *sha
+                {
+                    break;
+                }
                 total_before_resume += 1;
             }
         }
@@ -437,7 +438,7 @@ impl PIWorker {
         let mut processed_new = 0;
 
         for commit_id in revwalk.flatten() {
-            if crate::worker::is_shutdown_requested(shutdown_flag) {
+            if is_shutdown_requested(shutdown_flag) {
                 log::info!(
                     "W{}: Shutdown requested during epoch {} processing",
                     self.id,
@@ -447,17 +448,18 @@ impl PIWorker {
             }
 
             if let Some(ref sha) = resume_sha_full
-                && commit_id.to_string() == *sha {
-                    if total_before_resume == 0 {
-                        // Resume SHA is the HEAD — skip this already-processed
-                        // commit but continue with older (unprocessed) commits.
-                        continue;
-                    } else {
-                        // Resume SHA is in the middle of history — all newer
-                        // commits were processed, stop here.
-                        break;
-                    }
+                && commit_id.to_string() == *sha
+            {
+                if total_before_resume == 0 {
+                    // Resume SHA is the HEAD — skip this already-processed
+                    // commit but continue with older (unprocessed) commits.
+                    continue;
+                } else {
+                    // Resume SHA is in the middle of history — all newer
+                    // commits were processed, stop here.
+                    break;
                 }
+            }
 
             // Skip old (already processed) commits
             if processed_new >= new_commits && total_before_resume > 0 {

@@ -1,15 +1,16 @@
 use crate::config::AppConfig;
 use crate::range_inputs::parse_sequence;
-use crate::worker::{Worker, WorkerGroup, is_shutdown_requested};
+use crate::{
+    interruptible_sleep, is_shutdown_requested,
+    worker::{Worker, WorkerGroup},
+};
 use crossbeam_channel::bounded;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::thread::{self, JoinHandle};
-#[cfg(not(test))]
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 // intervals in seconds
-#[cfg(not(test))]
 const INTERVAL_BETWEEN_RESCANS: usize = 60 * 60; // 1h
 
 /// Channel capacity per worker group
@@ -139,7 +140,6 @@ impl<'a> Scheduler<'a> {
                         "Multiple lists selected in Range Mode. This is likely a mistake..."
                     );
 
-                    #[cfg(not(test))]
                     thread::sleep(Duration::from_millis(100));
                 }
                 let worker_handles = self.spawn_worker_to_read_email_by_index(workers, receiver);
@@ -288,7 +288,6 @@ impl<'a> Scheduler<'a> {
             worker_handles.push(handle);
 
             // Space out thread creation (to prevent multiple connections opening at once)
-            #[cfg(not(test))]
             interruptible_sleep(Duration::from_secs(5), &self.shutdown_flag);
         }
         return worker_handles;
@@ -344,7 +343,6 @@ impl<'a> Scheduler<'a> {
                 log::debug!("All tasks sent, waiting for rescan interval...");
 
                 // Sleep between rescans
-                #[cfg(not(test))]
                 interruptible_sleep(
                     Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64),
                     &shutdown_flag,
@@ -411,24 +409,4 @@ impl<'a> Scheduler<'a> {
             return;
         })
     }
-}
-
-/// Sleeps for the specified duration, but checks the shutdown_flag every 2s.
-/// Returns `true` if the full duration elapsed, `false` if shutdown was requested.
-#[cfg(not(test))]
-fn interruptible_sleep(duration: Duration, shutdown_flag: &Arc<AtomicBool>) -> bool {
-    let start = Instant::now();
-    let poll_interval = Duration::from_secs(2);
-
-    while start.elapsed() < duration {
-        if is_shutdown_requested(shutdown_flag) {
-            return false;
-        }
-
-        // Ensure we don't sleep past the remaining time
-        let time_left = duration.saturating_sub(start.elapsed());
-        thread::sleep(time_left.min(poll_interval));
-    }
-
-    true
 }

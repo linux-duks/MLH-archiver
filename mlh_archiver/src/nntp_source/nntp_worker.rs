@@ -3,15 +3,13 @@ use crate::config::RunModeConfig;
 use crate::errors;
 use crate::nntp_source::nntp_config::NntpConfig;
 use crate::nntp_source::nntp_utils::connect_to_nntp_server;
-use crate::worker::{Worker, is_shutdown_requested};
+use crate::{interruptible_sleep, is_shutdown_requested, worker::Worker};
 use nntp::NNTPStream;
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, atomic::AtomicBool};
-#[cfg(not(test))]
-use std::thread::sleep;
 use std::time::Duration;
 
 /// NNTP worker that fetches emails from an NNTP server.
@@ -85,8 +83,10 @@ impl NNTPWorker {
         shutdown_flag: Arc<AtomicBool>,
     ) -> NNTPWorker {
         // wait a bit to connect. This prevents multiple connections starting at once
-        #[cfg(not(test))]
-        std::thread::sleep(Duration::from_secs(id as u64));
+        interruptible_sleep(
+            Duration::from_secs(nntp_config.request_interval * id as u64),
+            &shutdown_flag,
+        );
 
         let nntp_stream = connect_to_nntp_server(
             &nntp_config.hostname,
@@ -113,8 +113,10 @@ impl Worker for NNTPWorker {
         receiver: crossbeam_channel::Receiver<String>,
     ) -> crate::Result<()> {
         // wait a bit to start(to prevent multiple connections starting at once)
-        #[cfg(not(test))]
-        std::thread::sleep(Duration::from_secs(self.id as u64));
+        interruptible_sleep(
+            Duration::from_secs(self.nntp_config.request_interval * self.id as u64),
+            &self.shutdown_flag,
+        );
 
         log::info!("W{}: started consuming tasks", self.id);
         loop {
@@ -136,8 +138,7 @@ impl Worker for NNTPWorker {
                         log::info!("W{}: Shutdown requested during reconnection wait", self.id);
                         return Ok(());
                     }
-                    #[cfg(not(test))]
-                    std::thread::sleep(check_interval);
+                    interruptible_sleep(check_interval, &self.shutdown_flag);
                     elapsed += check_interval;
                 }
 
@@ -192,8 +193,8 @@ impl Worker for NNTPWorker {
                                 log::info!("W{}: Shutdown requested during error wait", self.id);
                                 return Ok(());
                             }
-                            #[cfg(not(test))]
-                            std::thread::sleep(check_interval);
+
+                            interruptible_sleep(check_interval, &self.shutdown_flag);
                             elapsed += check_interval;
                         }
                     } else {
@@ -216,15 +217,19 @@ impl Worker for NNTPWorker {
                                 "W{}: Failed when closing connection with error {err}. Waiting before triggering a reconnection",
                                 self.id
                             );
-                            #[cfg(not(test))]
-                            std::thread::sleep(Duration::from_secs(5));
+                            interruptible_sleep(
+                                Duration::from_secs(self.nntp_config.request_interval * 2),
+                                &self.shutdown_flag,
+                            );
                         }
                     }
                 }
             };
             // interval between tasks
-            #[cfg(not(test))]
-            std::thread::sleep(Duration::from_secs(1));
+            interruptible_sleep(
+                Duration::from_secs(self.nntp_config.request_interval),
+                &self.shutdown_flag,
+            );
         }
     }
 
@@ -443,10 +448,10 @@ impl NNTPWorker {
                         (retry_delay_ms * (attempts + 1))
                     );
 
-                    #[cfg(not(test))]
-                    sleep(Duration::from_millis(
-                        (retry_delay_ms * (attempts + 1)) as u64,
-                    ));
+                    interruptible_sleep(
+                        Duration::from_millis((retry_delay_ms * (attempts + 1)) as u64),
+                        &self.shutdown_flag,
+                    );
                 }
             }
         }
