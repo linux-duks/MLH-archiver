@@ -482,12 +482,12 @@ pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::R
 /// * `Ok(usize)` - The total number of commits in the repository
 /// * `Err` - If an error occurs during revision walking
 pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
-    let _head_id = repo
+    let head_id = repo
         .refname_to_id("refs/heads/master")
         .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
     let mut revwalk = repo.revwalk()?;
-    revwalk.push_head()?;
+    revwalk.push(head_id)?;
 
     let count = revwalk.count();
 
@@ -584,12 +584,12 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
 /// * `Ok(Vec<git2::Oid>)` - A vector of commit object IDs, newest first
 /// * `Err` - If an error occurs during revision walking
 pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::Oid>> {
-    let _head_id = repo
+    let head_id = repo
         .refname_to_id("refs/heads/master")
         .map_err(|_| anyhow::anyhow!("refs/heads/master does not point to an object"))?;
 
     let mut revwalk = repo.revwalk()?;
-    revwalk.push_head()?;
+    revwalk.push(head_id)?;
 
     let commits: Vec<_> = revwalk.flatten().collect();
 
@@ -721,7 +721,7 @@ mod tests {
 
         let mut remote = clone.find_remote("origin").unwrap();
         remote
-            .push(&["refs/heads/master:refs/heads/master"], None)
+            .push(&["HEAD:refs/heads/master"], None)
             .unwrap();
         std::fs::remove_dir_all(&work_dir).ok();
     }

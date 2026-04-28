@@ -992,6 +992,10 @@ fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: u
         }
     }
 
+    // Ensure refs/heads/master points to HEAD
+    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
+    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
+
     // Push to bare repo
     let mut remote = clone.find_remote("origin").expect("find remote");
     remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
@@ -1048,6 +1052,10 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
                 .expect("commit");
         }
     }
+
+    // Ensure refs/heads/master points to HEAD
+    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
+    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
 
     let mut remote = clone.find_remote("origin").expect("find remote");
     remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
@@ -1204,6 +1212,10 @@ fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
                 .expect("commit");
         }
     }
+
+    // Ensure refs/heads/master points to HEAD
+    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
+    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
 
     let mut remote = clone.find_remote("origin").expect("find remote");
     remote
