@@ -53,245 +53,61 @@ struct Args {
     article: Option<usize>,
 }
 
-fn run(args: Args) -> anyhow::Result<()> {
-    let inbox_dir = &args.inbox_dir;
-    let count = args.count;
+// ── helpers ────────────────────────────────────────────────────────────
 
-    if !inbox_dir.is_dir() {
-        anyhow::bail!(
-            "Inbox directory does not exist or is not a directory: {}",
-            inbox_dir.display()
-        );
-    }
-
-    // Find all public-inbox subdirectories
-    let inboxes = find_public_inboxes(inbox_dir)?;
-
-    if inboxes.is_empty() {
-        println!(
-            "No public-inbox directories found in {}",
-            inbox_dir.display()
-        );
-        return Ok(());
-    }
-
-    println!("Found {} public-inbox(es)\n", inboxes.len());
-    for inbox in &inboxes {
-        println!(
-            "  - {} ({}): {}",
-            inbox.name,
-            inbox.version,
-            inbox.git_dir.display()
-        );
-    }
-
-    // Filter out incomplete repositories
-    let valid_inboxes: Vec<_> = inboxes
-        .into_iter()
-        .filter(|inbox| !inbox.version.contains("incomplete"))
-        .collect();
-
-    if valid_inboxes.is_empty() {
-        println!("No valid public-inboxes found.");
-        return Ok(());
-    }
-
-    println!("DEBUG: test mode = {}", args.test);
-    // Test mode: fetch a sample article and exit
-    if args.test {
-        return run_test_mode(&valid_inboxes, args.list_name.as_deref(), args.article);
-    }
-
-    // Show commit counts for each inbox
-    println!("DEBUG: commit counts block");
-    println!("📊 Commit counts:");
-    for inbox in &valid_inboxes {
-        eprintln!("DEBUG: counting commits for {}", inbox.name);
-        match count_commits(inbox) {
-            Ok(count) => println!("  - {}: {} commits", inbox.name, count),
-            Err(e) => println!("  - {}: failed to count commits ({})", inbox.name, e),
-        }
-    }
-    println!();
-
-    println!(
-        "{} valid public-inbox(es) available for selection.\n",
-        valid_inboxes.len()
-    );
-
-    // Interactive selection
-    let selected = MultiSelect::new("Select mailing lists:", valid_inboxes)
-        .with_help_message("Space to select, Enter to confirm")
-        .prompt()
-        .unwrap_or_else(|_| std::process::exit(0));
-
-    if selected.is_empty() {
-        println!("No lists selected. Exiting.");
-        return Ok(());
-    }
-
-    println!("\n✅ Selected {} inbox(es):", selected.len());
-    for inbox in &selected {
-        println!("  - {}", inbox.name);
-    }
-    println!();
-
-    // Main action loop
-    loop {
-        let actions = vec![
-            "Quick preview (last N emails)",
-            "Browse commits interactively",
-            "Test fetch a sample article",
-            "Generate configuration",
-            "Exit",
-        ];
-
-        let action = Select::new("What would you like to do?", actions).prompt()?;
-
-        match action {
-            "Quick preview (last N emails)" => {
-                for inbox in &selected {
-                    println!("\nProcessing inbox: {}", inbox.name);
-                    println!("  Version: {}", inbox.version);
-                    println!("  Git repo: {}", inbox.git_dir.display());
-
-                    match process_inbox(inbox, count) {
-                        Ok(email_count) => {
-                            println!("  Read {} email(s)\n", email_count);
-                        }
-                        Err(e) => eprintln!("  Error reading emails: {e}\n"),
-                    }
-                }
-            }
-            "Browse commits interactively" => {
-                // Let user choose which inbox to browse
-                let inbox_names: Vec<String> = selected.iter().map(|i| i.name.clone()).collect();
-                let chosen = Select::new("Select inbox to browse:", inbox_names).prompt()?;
-                if let Some(inbox) = selected.iter().find(|i| i.name == chosen) {
-                    browse_inbox(inbox)?;
-                }
-            }
-            "Test fetch a sample article" => {
-                // Let user choose which inbox to test
-                let inbox_names: Vec<String> = selected.iter().map(|i| i.name.clone()).collect();
-                let chosen = Select::new("Select inbox to test:", inbox_names).prompt()?;
-                if let Some(inbox) = selected.iter().find(|i| i.name == chosen) {
-                    // Ask for article position (optional)
-                    let position_str = Text::new("Article position (optional, default 1):")
-                        .with_default("1")
-                        .prompt()?;
-                    let position = position_str.parse::<usize>().unwrap_or(1);
-                    fetch_single_commit(inbox, position)?;
-                }
-            }
-            "Generate configuration" => {
-                generate_config_yaml(&selected, inbox_dir)?;
-            }
-            "Exit" => {
-                println!("Goodbye!");
-                break;
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    Ok(())
-}
-
-/// Run test mode: fetch a specific article from a specific list
-fn run_test_mode(
-    valid_inboxes: &[PublicInbox],
-    list_name: Option<&str>,
-    article_pos: Option<usize>,
-) -> anyhow::Result<()> {
-    if valid_inboxes.is_empty() {
-        anyhow::bail!("No valid public inboxes available for testing");
-    }
-
-    let inbox = if let Some(name) = list_name {
-        valid_inboxes
-            .iter()
-            .find(|inbox| inbox.name == name)
-            .ok_or_else(|| anyhow::anyhow!("List '{}' not found", name))?
+/// Returns the epoch repos to process for an inbox.
+/// V2 inboxes: returns epochs from git/*.git subdirs.
+/// V1 / single-repo: returns a single pseudo-epoch using the git_dir itself.
+fn get_epoch_repos(inbox: &PublicInbox) -> anyhow::Result<Vec<EpochRepo>> {
+    let epochs = find_epochs(&inbox.git_dir)?;
+    if epochs.is_empty() {
+        Ok(vec![EpochRepo {
+            epoch_name: "all".to_string(),
+            git_dir: inbox.git_dir.clone(),
+        }])
     } else {
-        &valid_inboxes[0]
-    };
-
-    let position = article_pos.unwrap_or(1);
-
-    println!(
-        "Testing fetch from list '{}', article position {}",
-        inbox.name, position
-    );
-    fetch_single_commit(inbox, position)
+        Ok(epochs)
+    }
 }
 
-/// Fetch a single commit by position (1-indexed from newest)
-fn fetch_single_commit(inbox: &PublicInbox, position: usize) -> anyhow::Result<()> {
-    // Skip incomplete repositories
-    if inbox.version.contains("incomplete") {
-        anyhow::bail!("Incomplete repository: {}", inbox.version);
+/// Collects all commit OIDs across all epochs, tagged with a global
+/// position (0 = newest overall) and the epoch they came from.
+fn collect_inbox_commits(inbox: &PublicInbox) -> anyhow::Result<Vec<(usize, EpochRepo, git2::Oid)>> {
+    let epochs = get_epoch_repos(inbox)?;
+    let mut all: Vec<(usize, EpochRepo, git2::Oid)> = Vec::new();
+    let mut global_pos = 0usize;
+
+    // Epochs are sorted by `find_epochs` (numeric first, "all" last).
+    // We iterate in reverse so that the highest-numbered (latest) epoch
+    // gets the earliest global positions.
+    for epoch in epochs.iter().rev() {
+        let repo = git2::Repository::open(&epoch.git_dir)?;
+        let commits = collect_all_commits(&repo)
+            .map_err(|e| anyhow::anyhow!("count commits in {}: {e}", epoch.epoch_name))?;
+        for oid in commits {
+            all.push((global_pos, epoch.clone(), oid));
+            global_pos += 1;
+        }
     }
-
-    let repo = git2::Repository::open(&inbox.git_dir)?;
-    let total_commits = count_commits_from_repo(&repo)?;
-
-    if position == 0 || position > total_commits {
-        anyhow::bail!(
-            "Position {} out of range (total commits: {})",
-            position,
-            total_commits
-        );
-    }
-
-    let commit_id = get_commit_at_position(&repo, position - 1)
-        .map_err(|e| anyhow::anyhow!("Failed to get commit at position: {}", e))?;
-    let commit = repo.find_commit(commit_id)?;
-    view_commit(&repo, &commit, position)
+    Ok(all)
 }
 
-/// Count total commits in a public inbox repository.
-fn count_commits(inbox: &PublicInbox) -> anyhow::Result<usize> {
-    // Skip incomplete repositories
+/// Reads the last `count` emails from an inbox and prints each one.
+fn process_inbox_preview(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
     if inbox.version.contains("incomplete") {
+        println!("  Skipping incomplete repository: {}", inbox.version);
         return Ok(0);
     }
 
-    let repo = git2::Repository::open(&inbox.git_dir)?;
-    count_commits_from_repo(&repo)
-}
-
-/// Count commits using an already-opened repository.
-fn count_commits_from_repo(repo: &git2::Repository) -> anyhow::Result<usize> {
-    mlh_archiver::public_inbox_source::pi_utils::count_commits(repo)
-        .map_err(|e| anyhow::anyhow!("Failed to count commits: {}", e))
-}
-
-/// Opens a public-inbox git repo, reads the most recent emails,
-/// prints each one immediately, and returns the count of emails processed.
-fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
-    // Skip incomplete repositories
-    if inbox.version.contains("incomplete") {
-        println!("  ⚠️  Skipping incomplete repository: {}", inbox.version);
-        return Ok(0);
-    }
-
-    let repo = git2::Repository::open(&inbox.git_dir)?;
-
-    let all_commit_ids = collect_all_commits(&repo)
-        .map_err(|e| anyhow::anyhow!("Failed to collect commits: {}", e))?;
-
-    if all_commit_ids.is_empty() {
-        return Ok(0);
-    }
-
-    // Take the first `count` commits (most recent)
-    let commits_to_process: Vec<_> = all_commit_ids.into_iter().take(count).collect();
+    let epochs = get_epoch_repos(inbox)?;
+    let commits = collect_inbox_commits(inbox)?;
+    println!("  {} epoch(s), {} total commit(s)", epochs.len(), commits.len());
+    let to_process: Vec<_> = commits.iter().take(count).collect();
 
     let mut email_count = 0;
-
-    for commit_id in commits_to_process {
-        let commit = repo.find_commit(commit_id)?;
+    for (global_pos, epoch, oid) in to_process {
+        let repo = git2::Repository::open(&epoch.git_dir)?;
+        let commit = repo.find_commit(*oid)?;
         let author = commit.author();
         let subject = commit.message().unwrap_or("");
 
@@ -300,13 +116,12 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
             Err(_) => continue,
         };
 
-        // Print immediately
         let timestamp = DateTime::from_timestamp(author.when().seconds(), 0)
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
 
         email_count += 1;
-        println!("  --- Email {email_count} ---");
+        println!("  --- Email {email_count} (global #{global_pos}) ---");
         println!("  Subject: {}", subject.lines().next().unwrap_or(""));
         println!(
             "  Author:  {} <{}>",
@@ -325,28 +140,44 @@ fn process_inbox(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
     Ok(email_count)
 }
 
-/// Browse commits in a public inbox with pagination
-fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
-    // Skip incomplete repositories
+/// Fetch a single commit by global position (1-indexed from newest).
+fn fetch_single_commit(inbox: &PublicInbox, position: usize) -> anyhow::Result<()> {
     if inbox.version.contains("incomplete") {
-        println!("⚠️  Skipping incomplete repository: {}", inbox.version);
+        anyhow::bail!("Incomplete repository: {}", inbox.version);
+    }
+
+    let commits = collect_inbox_commits(inbox)?;
+    if position == 0 || position > commits.len() {
+        anyhow::bail!(
+            "Position {} out of range (total commits: {})",
+            position,
+            commits.len()
+        );
+    }
+
+    let (_, epoch, oid) = &commits[position - 1];
+    let repo = git2::Repository::open(&epoch.git_dir)?;
+    let commit = repo.find_commit(*oid)?;
+    view_commit(&repo, &commit, position)
+}
+
+/// Browse commits with pagination across all epochs.
+fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
+    if inbox.version.contains("incomplete") {
+        println!("Skipping incomplete repository: {}", inbox.version);
         return Ok(());
     }
 
-    let repo = git2::Repository::open(&inbox.git_dir)?;
-
-    let all_commit_ids = collect_all_commits(&repo)
-        .map_err(|e| anyhow::anyhow!("Failed to collect commits: {}", e))?;
-
-    let total_commits = all_commit_ids.len();
+    let epochs = get_epoch_repos(inbox)?;
+    let commits = collect_inbox_commits(inbox)?;
+    let total_commits = commits.len();
     if total_commits == 0 {
         println!("No commits found in this inbox.");
         return Ok(());
     }
 
-    println!("📬 Inbox: {} ({} commits)", inbox.name, total_commits);
+    println!("Inbox: {} ({} commits across {} epochs)", inbox.name, total_commits, epochs.len());
 
-    // Pagination variables
     let page_size = 20;
     let mut current_page = 0;
     let total_pages = total_commits.div_ceil(page_size);
@@ -354,12 +185,12 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
     loop {
         let start = current_page * page_size;
         let end = (start + page_size).min(total_commits);
-        let page_commits = &all_commit_ids[start..end];
+        let page_commits = &commits[start..end];
 
-        // Fetch commit details for this page
         let mut commit_details = Vec::new();
-        for (i, commit_id) in page_commits.iter().enumerate() {
-            let commit = repo.find_commit(*commit_id)?;
+        for (i, (_global_pos, epoch, oid)) in page_commits.iter().enumerate() {
+            let repo = git2::Repository::open(&epoch.git_dir)?;
+            let commit = repo.find_commit(*oid)?;
             let author = commit.author();
             let subject = commit.message().unwrap_or("");
             let subject_preview = subject.lines().next().unwrap_or("").to_string();
@@ -368,17 +199,17 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                 .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
 
             commit_details.push(format!(
-                "{:4} | {} | {} | {}",
-                start + i + 1, // position (1-indexed)
+                "{:4} | {} | e{} | {} | {}",
+                start + i + 1,
                 date,
+                epoch.epoch_name,
                 author.name().unwrap_or(""),
                 truncate_subject(&subject_preview, 50)
             ));
         }
 
-        // Display page header
         println!(
-            "\n📄 Page {} of {} (commits {} to {})",
+            "\nPage {} of {} (commits {} to {})",
             current_page + 1,
             total_pages,
             start + 1,
@@ -390,7 +221,6 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
         }
         println!("─────────────────────────────────────────────────────────────");
 
-        // Action selection
         let mut actions = vec![
             "Select commits on this page",
             "View a single commit by number",
@@ -411,12 +241,12 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                     MultiSelect::new("Select commits to view:", commit_details.clone())
                         .with_help_message("Space to select, Enter to confirm")
                         .prompt()?;
-
                 for selected in selections {
                     if let Some(index) = commit_details.iter().position(|c| c == &selected) {
                         let commit_idx = start + index;
-                        let commit_id = all_commit_ids[commit_idx];
-                        let commit = repo.find_commit(commit_id)?;
+                        let (_pos, epoch, oid) = &commits[commit_idx];
+                        let repo = git2::Repository::open(&epoch.git_dir)?;
+                        let commit = repo.find_commit(*oid)?;
                         view_commit(&repo, &commit, commit_idx + 1)?;
                     }
                 }
@@ -428,8 +258,9 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                 if let Ok(num) = commit_num.parse::<usize>() {
                     if num >= 1 && num <= total_commits {
                         let commit_idx = num - 1;
-                        let commit_id = all_commit_ids[commit_idx];
-                        let commit = repo.find_commit(commit_id)?;
+                        let (_pos, epoch, oid) = &commits[commit_idx];
+                        let repo = git2::Repository::open(&epoch.git_dir)?;
+                        let commit = repo.find_commit(*oid)?;
                         view_commit(&repo, &commit, num)?;
                     } else {
                         println!(
@@ -441,15 +272,9 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
                     println!("Invalid number.");
                 }
             }
-            "Previous page" => {
-                current_page -= 1;
-            }
-            "Next page" => {
-                current_page += 1;
-            }
-            "Back to inbox selection" => {
-                break;
-            }
+            "Previous page" => current_page -= 1,
+            "Next page" => current_page += 1,
+            "Back to inbox selection" => break,
             _ => unreachable!(),
         }
     }
@@ -457,32 +282,101 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Generate configuration YAML for selected public inboxes
-fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Result<()> {
-    println!(
-        "\n📝 Generating configuration for {} inbox(es)",
-        inboxes.len()
-    );
+/// View a single commit in detail.
+fn view_commit(
+    repo: &git2::Repository,
+    commit: &git2::Commit,
+    position: usize,
+) -> anyhow::Result<()> {
+    let author = commit.author();
+    let subject = commit.message().unwrap_or("");
 
-    // Ask for origin (default to "public-inbox")
+    let date = DateTime::from_timestamp(author.when().seconds(), 0)
+        .map(|dt| dt.to_rfc3339())
+        .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
+
+    println!("\nCommit #{}", position);
+    println!("─────────────────────────────────────");
+    println!("Subject: {}", subject.lines().next().unwrap_or(""));
+    println!(
+        "Author:  {} <{}>",
+        author.name().unwrap_or(""),
+        author.email().unwrap_or("")
+    );
+    println!("Date:    {}", date);
+
+    let (commit_hash, raw_email) = match extract_email_from_commit(repo, commit) {
+        Ok(result) => result,
+        Err(_) => {
+            println!("No 'm' file found in commit tree");
+            println!("─────────────────────────────────────\n");
+            return Ok(());
+        }
+    };
+
+    println!("Commit:  {}", commit_hash);
+    println!("─────────────────────────────────────");
+    for line in raw_email.lines() {
+        println!("{}", line);
+    }
+    println!("─────────────────────────────────────\n");
+    Ok(())
+}
+
+fn truncate_subject(subject: &str, max_len: usize) -> String {
+    if subject.len() <= max_len {
+        subject.to_string()
+    } else {
+        format!("{}...", &subject[..max_len - 3])
+    }
+}
+
+// ── test mode ──────────────────────────────────────────────────────────
+
+fn run_test_mode(
+    valid_inboxes: &[PublicInbox],
+    list_name: Option<&str>,
+    article_pos: Option<usize>,
+) -> anyhow::Result<()> {
+    if valid_inboxes.is_empty() {
+        anyhow::bail!("No valid public inboxes available for testing");
+    }
+
+    let inbox = if let Some(name) = list_name {
+        valid_inboxes
+            .iter()
+            .find(|inbox| inbox.name == name)
+            .ok_or_else(|| anyhow::anyhow!("List '{}' not found", name))?
+    } else {
+        &valid_inboxes[0]
+    };
+
+    let position = article_pos.unwrap_or(1);
+    println!(
+        "Testing fetch from list '{}', article position {}",
+        inbox.name, position
+    );
+    fetch_single_commit(inbox, position)
+}
+
+// ── config export ──────────────────────────────────────────────────────
+
+fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Result<()> {
+    println!("\nGenerating configuration for {} inbox(es)", inboxes.len());
+
     let origin = Text::new("Enter origin identifier:")
         .with_default("public-inbox")
         .prompt()?;
 
-    // Ask for article range (optional)
     let article_range = Text::new("Article range (optional, e.g., '1-100'):")
         .with_default("")
         .prompt()?;
-
     let article_range_str = if article_range.trim().is_empty() {
         None
     } else {
         Some(article_range.trim().to_string())
     };
 
-    // Build group_lists from selected inboxes
-
-    // Construct YAML
     let mut yaml = String::new();
     yaml.push_str("# MLH Archiver Configuration - Public Inbox\n");
     yaml.push_str("# Generated by check_git\n\n");
@@ -505,68 +399,137 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
 
     println!("\n{}\n", yaml);
 
-    // Offer to save to file
     let save = Confirm::new("Save this configuration to archiver_config.yaml?")
         .with_default(false)
         .prompt()?;
-
     if save {
         match std::fs::write("archiver_config.yaml", yaml) {
-            Ok(_) => println!("✅ Configuration saved to archiver_config.yaml"),
-            Err(e) => eprintln!("❌ Failed to save configuration: {}", e),
+            Ok(_) => println!("Configuration saved to archiver_config.yaml"),
+            Err(e) => eprintln!("Failed to save configuration: {}", e),
         }
     }
 
     Ok(())
 }
 
-/// View a single commit in detail (including email content)
-fn view_commit(
-    repo: &git2::Repository,
-    commit: &git2::Commit,
-    position: usize,
-) -> anyhow::Result<()> {
-    let author = commit.author();
-    let subject = commit.message().unwrap_or("");
+// ── main ───────────────────────────────────────────────────────────────
 
-    let date = DateTime::from_timestamp(author.when().seconds(), 0)
-        .map(|dt| dt.to_rfc3339())
-        .unwrap_or_else(|| format!("timestamp={}", author.when().seconds()));
+fn run(args: Args) -> anyhow::Result<()> {
+    let inbox_dir = &args.inbox_dir;
 
-    println!("\n📧 Commit #{}", position);
-    println!("─────────────────────────────────────");
-    println!("Subject: {}", subject.lines().next().unwrap_or(""));
+    if !inbox_dir.is_dir() {
+        anyhow::bail!(
+            "Inbox directory does not exist or is not a directory: {}",
+            inbox_dir.display()
+        );
+    }
+
+    let inboxes = find_public_inboxes(inbox_dir)?;
+    if inboxes.is_empty() {
+        println!(
+            "No public-inbox directories found in {}",
+            inbox_dir.display()
+        );
+        return Ok(());
+    }
+
+    println!("Found {} public-inbox(es)\n", inboxes.len());
+    for inbox in &inboxes {
+        println!(
+            "  - {} ({}): {}",
+            inbox.name,
+            inbox.version,
+            inbox.git_dir.display()
+        );
+    }
+
+    let valid_inboxes: Vec<_> = inboxes
+        .into_iter()
+        .filter(|inbox| !inbox.version.contains("incomplete"))
+        .collect();
+
+    if valid_inboxes.is_empty() {
+        println!("No valid public-inboxes found.");
+        return Ok(());
+    }
+
+    if args.test {
+        return run_test_mode(&valid_inboxes, args.list_name.as_deref(), args.article);
+    }
+
     println!(
-        "Author:  {} <{}>",
-        author.name().unwrap_or(""),
-        author.email().unwrap_or("")
+        "{} valid public-inbox(es) available for selection.\n",
+        valid_inboxes.len()
     );
-    println!("Date:    {}", date);
-    println!("Commit:  {}", commit.id());
 
-    let (commit_hash, raw_email) = match extract_email_from_commit(repo, commit) {
-        Ok(result) => result,
-        Err(_) => {
-            println!("No 'm' file found in commit tree");
-            println!("─────────────────────────────────────\n");
-            return Ok(());
+    let selected = MultiSelect::new("Select mailing lists:", valid_inboxes)
+        .with_help_message("Space to select, Enter to confirm")
+        .prompt()
+        .unwrap_or_else(|_| std::process::exit(0));
+
+    if selected.is_empty() {
+        println!("No lists selected. Exiting.");
+        return Ok(());
+    }
+
+    println!("\nSelected {} inbox(es):", selected.len());
+    for inbox in &selected {
+        println!("  - {}", inbox.name);
+    }
+    println!();
+
+    loop {
+        let actions = vec![
+            "Quick preview (last N emails)",
+            "Browse commits interactively",
+            "Test fetch a sample article",
+            "Generate configuration",
+            "Exit",
+        ];
+
+        let action = Select::new("What would you like to do?", actions).prompt()?;
+
+        match action {
+            "Quick preview (last N emails)" => {
+                for inbox in &selected {
+                    println!("\nProcessing inbox: {}", inbox.name);
+                    println!("  Version: {}", inbox.version);
+                    println!("  Git repo: {}", inbox.git_dir.display());
+
+                    match process_inbox_preview(inbox, args.count) {
+                        Ok(email_count) => println!("  Read {} email(s)\n", email_count),
+                        Err(e) => eprintln!("  Error reading emails: {e}\n"),
+                    }
+                }
+            }
+            "Browse commits interactively" => {
+                let inbox_names: Vec<String> = selected.iter().map(|i| i.name.clone()).collect();
+                let chosen = Select::new("Select inbox to browse:", inbox_names).prompt()?;
+                if let Some(inbox) = selected.iter().find(|i| i.name == chosen) {
+                    browse_inbox(inbox)?;
+                }
+            }
+            "Test fetch a sample article" => {
+                let inbox_names: Vec<String> = selected.iter().map(|i| i.name.clone()).collect();
+                let chosen = Select::new("Select inbox to test:", inbox_names).prompt()?;
+                if let Some(inbox) = selected.iter().find(|i| i.name == chosen) {
+                    let position_str = Text::new("Article position (optional, default 1):")
+                        .with_default("1")
+                        .prompt()?;
+                    let position = position_str.parse::<usize>().unwrap_or(1);
+                    fetch_single_commit(inbox, position)?;
+                }
+            }
+            "Generate configuration" => {
+                generate_config_yaml(&selected, inbox_dir)?;
+            }
+            "Exit" => {
+                println!("Goodbye!");
+                break;
+            }
+            _ => unreachable!(),
         }
-    };
-
-    println!("Commit:  {}", commit_hash);
-    println!("─────────────────────────────────────");
-    for line in raw_email.lines() {
-        println!("{}", line);
     }
-    println!("─────────────────────────────────────\n");
+
     Ok(())
-}
-
-/// Truncate subject for display
-fn truncate_subject(subject: &str, max_len: usize) -> String {
-    if subject.len() <= max_len {
-        subject.to_string()
-    } else {
-        format!("{}...", &subject[..max_len - 3])
-    }
 }
