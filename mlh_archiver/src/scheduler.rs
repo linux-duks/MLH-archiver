@@ -63,11 +63,13 @@ impl<'a> Scheduler<'a> {
     ///
     /// ```rust,no_run
     /// use mlh_archiver::{config, scheduler::Scheduler, worker::WorkerManager};
+    /// use std::sync::{Arc, atomic::AtomicBool};
     ///
     /// let app_config = config::read_config().unwrap();
     /// let mut manager = WorkerManager::new();
     /// // ... create workers ...
-    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups());
+    /// let shutdown_flag = Arc::new(AtomicBool::new(false));
+    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups(), shutdown_flag);
     /// ```
     pub fn new(
         app_config: &'a AppConfig,

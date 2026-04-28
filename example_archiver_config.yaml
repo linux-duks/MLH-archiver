@@ -9,9 +9,15 @@ nthreads: 3
 output_dir: "./output"
 loop_groups: true
 
+# group_lists delcaration is optional.
+# if empty, the user will be prompted with the options found
+# in the source to select
+group_lists:
+  nntp: ["*"]
+  public_inbox: ["*"]
+
 nntp:
   hostname: "nntp://localhost"
-  group_lists: ["*"]
   # article_range: "1-100"  # Optional: fetch specific range from first list
 
 public_inbox:

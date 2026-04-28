@@ -298,7 +298,11 @@ fn extract_test_data_from_container(container: &Container<GenericImage>, dest_di
 
 /// Runs a public inbox archiver test with a custom configuration builder.
 /// Returns the list of files created in the output directory.
-fn run_pi_test_with_config<F>(config_builder: F, test_name: &str) -> Vec<String>
+fn run_pi_test_with_config<F>(
+    config_builder: F,
+    test_name: &str,
+    group_lists: Vec<String>,
+) -> Vec<String>
 where
     F: FnOnce(&str) -> AppConfig,
 {
@@ -316,7 +320,12 @@ where
     let mut app_config = config_builder(&test_data_path);
     app_config.output_dir = output_dir.clone();
 
-    println!("Starting worker for {}", test_name);
+    // Set group_lists for PublicInbox run mode
+    if !group_lists.is_empty() {
+        app_config
+            .group_lists
+            .insert("public_inbox".to_string(), group_lists);
+    }
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let test_name_owned = test_name.to_string();
 
@@ -372,12 +381,12 @@ fn test_read_from_synthetic_public_inbox() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
                 article_range: None,
             }),
             ..Default::default()
         },
         "synthetic",
+        vec!["v2_test.groups.synthetic".to_string()],
     );
 
     let output_dir = "./test_public_inbox_output_pi_synthetic";
@@ -411,12 +420,12 @@ fn test_pi_article_range() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_test.groups.synthetic".to_owned()]),
                 article_range: Some("1-3".to_owned()),
             }),
             ..Default::default()
         },
         "range",
+        vec!["v2_test.groups.synthetic".to_string()],
     );
 
     let output_dir = "./test_public_inbox_output_pi_range";
@@ -505,15 +514,18 @@ fn test_read_from_demo_public_inbox() {
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     // Configure archiver for this single inbox
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
+        group_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            group_lists: Some(vec![inbox.name.clone()]), // Only this inbox
             article_range: None,
         }),
         ..Default::default()
@@ -638,15 +650,18 @@ fn test_read_article_range_from_demo() {
     let output_dir = "./test_public_inbox_output_range".to_owned();
     check_and_delete_folder(output_dir.clone()).unwrap();
 
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
+        group_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            group_lists: Some(vec![inbox.name.clone()]),
             article_range: Some("2".to_owned()), // Only article 2
         }),
         ..Default::default()
@@ -735,15 +750,18 @@ fn test_validate_file_structure_using_helpers() {
     let output_dir = "./test_public_inbox_output_structure".to_owned();
     check_and_delete_folder(output_dir.clone()).unwrap();
 
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
+        group_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            group_lists: Some(vec![inbox.name.clone()]),
             article_range: None,
         }),
         ..Default::default()
@@ -793,12 +811,12 @@ fn test_multi_epoch_all_emails() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
                 article_range: None,
             }),
             ..Default::default()
         },
         "multi_epoch_all",
+        vec!["v2_multi_epoch.list".to_string()],
     );
 
     let output_dir = "./test_public_inbox_output_pi_multi_epoch_all";
@@ -832,12 +850,12 @@ fn test_multi_epoch_article_range() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
                 article_range: Some("5-8".to_owned()), // All in epoch 1
             }),
             ..Default::default()
         },
         "multi_epoch_range",
+        vec!["v2_multi_epoch.list".to_string()],
     );
 
     let output_dir = "./test_public_inbox_output_pi_multi_epoch_range";
@@ -858,6 +876,8 @@ fn test_multi_epoch_article_range() {
 
 #[test]
 fn test_multi_epoch_resume() {
+    let group_lists = vec!["v2_multi_epoch.list".to_string()];
+
     // Phase 1: Process first 4 emails (epoch 0)
     let _found_files1 = run_pi_test_with_config(
         |test_data_path| AppConfig {
@@ -868,12 +888,12 @@ fn test_multi_epoch_resume() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
                 article_range: Some("1-4".to_owned()), // Only first 4 emails
             }),
             ..Default::default()
         },
         "multi_epoch_resume_phase1",
+        group_lists.clone(),
     );
 
     // Phase 2: Resume without range (should start from epoch 1)
@@ -886,12 +906,12 @@ fn test_multi_epoch_resume() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec!["v2_multi_epoch.list".to_owned()]),
                 article_range: None, // No range - should resume
             }),
             ..Default::default()
         },
         "multi_epoch_resume_phase2",
+        group_lists.clone(),
     );
 
     // Verify all 12 emails are now present
@@ -953,7 +973,10 @@ fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: u
              Date: Mon, 01 Jan 2024 00:{:02}:00 +0000\n\
              \n\
              This is test email number {}.\n",
-            i, i, i % 60, i
+            i,
+            i,
+            i % 60,
+            i
         );
 
         let m_path = work_dir.join("m");
@@ -998,7 +1021,9 @@ fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: u
 
     // Push to bare repo
     let mut remote = clone.find_remote("origin").expect("find remote");
-    remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
+    remote
+        .push(&["refs/heads/master:refs/heads/master"], None)
+        .expect("push");
 
     std::fs::remove_dir_all(&work_dir).ok();
     drop(bare_repo);
@@ -1025,7 +1050,10 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
              Date: Mon, 01 Jan 2024 01:{:02}:00 +0000\n\
              \n\
              This is test email number {} (new).\n",
-            i, i, i % 60, i
+            i,
+            i,
+            i % 60,
+            i
         );
 
         let m_path = work_dir.join("m");
@@ -1058,27 +1086,41 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
     clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
 
     let mut remote = clone.find_remote("origin").expect("find remote");
-    remote.push(&["refs/heads/master:refs/heads/master"], None).expect("push");
+    remote
+        .push(&["refs/heads/master:refs/heads/master"], None)
+        .expect("push");
 
     std::fs::remove_dir_all(&work_dir).ok();
 }
 
 /// Runs the archiver once against a local inbox directory.
-fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, inbox_name: &str) {
+fn run_pi_archiver_once(
+    inbox_dir: &str,
+    output_dir: &str,
+    _inbox_name: &str,
+    group_lists: Vec<String>,
+) {
     let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
     let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
         std::fs::create_dir_all(output_dir).expect("create output_dir");
         std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
     });
+
+    // Build group_lists HashMap from the parameter
+    let mut group_lists_map = std::collections::HashMap::new();
+    if !group_lists.is_empty() {
+        group_lists_map.insert("public_inbox".to_string(), group_lists);
+    }
+
     let mut app_config = AppConfig {
         output_dir: abs_output.to_string_lossy().to_string(),
         nthreads: 1,
         loop_groups: false,
+        group_lists: group_lists_map,
         public_inbox: Some(PIConfig {
             import_directory: abs_inbox.to_string_lossy().to_string(),
             origin: "local-test".to_owned(),
             public_inbox_config: None,
-            group_lists: Some(vec![inbox_name.to_owned()]),
             article_range: None,
         }),
         ..Default::default()
@@ -1107,16 +1149,30 @@ fn test_resume_only_collects_new_emails() {
 
     // Phase 1: Create inbox with 10 emails, run archiver
     create_v1_inbox_with_emails(inbox_dir, inbox_name, 10);
-    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+    run_pi_archiver_once(
+        inbox_dir,
+        output_dir,
+        inbox_name,
+        vec![inbox_name.to_string()],
+    );
 
     let list_dir = format!("{}/{}", output_dir, inbox_name);
     let eml_count_1 = count_eml_files(&list_dir);
-    assert_eq!(eml_count_1, 10, "Phase 1: Expected 10 .eml files, found {}", eml_count_1);
+    assert_eq!(
+        eml_count_1, 10,
+        "Phase 1: Expected 10 .eml files, found {}",
+        eml_count_1
+    );
     validate_progress_file(&format!("{}/__progress.yaml", list_dir), 10);
 
     // Phase 2: Add 5 more emails (11-15), run archiver again
     add_emails_to_inbox(inbox_dir, inbox_name, 11, 5);
-    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+    run_pi_archiver_once(
+        inbox_dir,
+        output_dir,
+        inbox_name,
+        vec![inbox_name.to_string()],
+    );
 
     let eml_count_2 = count_eml_files(&list_dir);
     assert_eq!(
@@ -1134,7 +1190,9 @@ fn test_resume_only_collects_new_emails() {
             .filter(|e| e.path().is_file())
             .any(|e| {
                 let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                parse_email_id(filename).map(|p| p.email_num == i).unwrap_or(false)
+                parse_email_id(filename)
+                    .map(|p| p.email_num == i)
+                    .unwrap_or(false)
             });
         assert!(found, "Phase 2: Email {} should exist after resume", i);
     }
@@ -1147,7 +1205,9 @@ fn test_resume_only_collects_new_emails() {
             .filter(|e| e.path().is_file())
             .any(|e| {
                 let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
-                parse_email_id(filename).map(|p| p.email_num == i).unwrap_or(false)
+                parse_email_id(filename)
+                    .map(|p| p.email_num == i)
+                    .unwrap_or(false)
             });
         assert!(found, "Phase 2: Original email {} should still exist", i);
     }
@@ -1182,7 +1242,10 @@ fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
              Date: Mon, 01 Jan 2024 00:{:02}:00 +0000\n\
              \n\
              This is test email number {}.\n",
-            num, num, num % 60, num
+            num,
+            num,
+            num % 60,
+            num
         );
 
         let m_path = work_dir.join("m");
@@ -1208,7 +1271,14 @@ fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
                 .expect("commit");
         } else {
             clone
-                .commit(Some("HEAD"), &sig, &sig, &format!("email {}", num), &tree, &[])
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("email {}", num),
+                    &tree,
+                    &[],
+                )
                 .expect("commit");
         }
     }
@@ -1285,7 +1355,12 @@ fn test_broken_alternates_all_epochs_processed() {
     // Epochs 0 and 1 have broken alternates pointing to a non-existent path
     create_v2_multi_epoch_inbox(inbox_dir, inbox_name, &[4, 3, 2], &[0, 1]);
 
-    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+    run_pi_archiver_once(
+        inbox_dir,
+        output_dir,
+        inbox_name,
+        vec![inbox_name.to_string()],
+    );
 
     let list_dir = format!("{}/{}", output_dir, inbox_name);
     let eml_count = count_eml_files(&list_dir);
@@ -1339,11 +1414,15 @@ fn test_broken_alternates_resume() {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
             loop_groups: false,
+            group_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("public_inbox".to_string(), vec![inbox_name.to_string()]);
+                m
+            },
             public_inbox: Some(PIConfig {
                 import_directory: abs_inbox.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec![inbox_name.to_owned()]),
                 article_range: Some("1-5".to_owned()),
             }),
             ..Default::default()
@@ -1359,7 +1438,11 @@ fn test_broken_alternates_resume() {
 
     let list_dir = format!("{}/{}", output_dir, inbox_name);
     let phase1_count = count_eml_files(&list_dir);
-    assert_eq!(phase1_count, 5, "Phase 1: expected 5 emails, found {}", phase1_count);
+    assert_eq!(
+        phase1_count, 5,
+        "Phase 1: expected 5 emails, found {}",
+        phase1_count
+    );
 
     // Phase 2: Run without range — should resume and process remaining 6 emails
     {
@@ -1367,11 +1450,15 @@ fn test_broken_alternates_resume() {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
             loop_groups: false,
+            group_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert("public_inbox".to_string(), vec![inbox_name.to_string()]);
+                m
+            },
             public_inbox: Some(PIConfig {
                 import_directory: abs_inbox.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
-                group_lists: Some(vec![inbox_name.to_owned()]),
                 article_range: None,
             }),
             ..Default::default()

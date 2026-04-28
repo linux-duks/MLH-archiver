@@ -151,7 +151,9 @@ loop_groups: true
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  group_lists:
+
+group_lists:
+  nntp:
     - dev.rcpassos.me.lists.gfs2
     - dev.rcpassos.me.lists.iommu
 ```
@@ -165,6 +167,7 @@ nntp:
 | `nthreads` | integer | Number of parallel worker threads (default: 1) |
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
 | `loop_groups` | boolean | Continuously check for new articles (default: true) |
+| `group_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 
 #### Public-Inbox Options (under `public_inbox:` block)
 
@@ -178,9 +181,7 @@ It is expected that
 | `import_directory` | string | **Required.** The parent folder of all mailing lists|
 | `origin` | string | **Required**. server hostname were the lists were cloned from |
 | `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
-| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
-
 
 #### NNTP Options (under `nntp:` block)
 

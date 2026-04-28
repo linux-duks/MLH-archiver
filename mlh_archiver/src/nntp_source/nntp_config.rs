@@ -5,6 +5,9 @@ use crate::nntp_source::nntp_utils::server_address;
 ///
 /// All NNTP-related settings are nested under this struct.
 /// Future source methods (IMAP, local, mbox) will have their own structs.
+///
+/// Note: `group_lists` is now stored at the top-level `AppConfig.group_lists` HashMap
+/// with the key "NNTP", not in this struct.
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct NntpConfig {
     /// nntp server domain/ip
@@ -13,9 +16,6 @@ pub struct NntpConfig {
     pub hostname: String,
     /// nntp server port
     pub port: Option<u16>,
-    /// List of groups to be read. "*" will select all lists available.
-    /// Empty value will prompt a selection in the TUI (and save selected values)
-    pub group_lists: Option<Vec<String>>,
     /// (optional). Read a specific range of articles from the first list provided.
     /// Comma separated values, or dash separated ranges, like low-high
     pub article_range: Option<String>,

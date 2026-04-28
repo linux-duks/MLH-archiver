@@ -21,10 +21,11 @@ fn test_app_config_deserialize_nested_format() {
 nthreads: 4
 output_dir: "./custom_output"
 loop_groups: false
+group_lists:
+  nntp: ["list1", "list2"]
 nntp:
   hostname: "nntp.example.com"
   port: 563
-  group_lists: ["list1", "list2"]
 "#;
     let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
     assert_eq!(config.nthreads, 4);
@@ -35,8 +36,8 @@ nntp:
     assert_eq!(nntp.hostname, "nntp.example.com");
     assert_eq!(nntp.port, Some(563));
     assert_eq!(
-        nntp.group_lists,
-        Some(vec!["list1".to_string(), "list2".to_string()])
+        config.group_lists.get("nntp"),
+        Some(&vec!["list1".to_string(), "list2".to_string()])
     );
 }
 
@@ -91,7 +92,8 @@ nntp:
   port: 563
   username: "myuser"
   password: "mypass"
-  group_lists: ["list1"]
+group_lists:
+  nntp: ["list1"]
 "#;
     let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
     assert!(config.nntp.is_some());
@@ -100,7 +102,7 @@ nntp:
     assert_eq!(nntp.port, Some(563));
     assert_eq!(nntp.username, Some("myuser".to_string()));
     assert_eq!(nntp.password, Some("mypass".to_string()));
-    assert_eq!(nntp.group_lists, Some(vec!["list1".to_string()]));
+    assert_eq!(config.group_lists.get("nntp"), Some(&vec!["list1".to_string()]));
 }
 
 #[test]
@@ -216,13 +218,16 @@ fn test_app_config_get_nntp_config_without_nntp() {
 
 #[test]
 fn test_get_group_lists_star_glob() {
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), vec!["*".to_string()]);
+
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["*".to_string()]),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -241,13 +246,16 @@ fn test_get_group_lists_star_glob() {
 
 #[test]
 fn test_get_group_lists_specific_lists() {
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), vec!["list1".to_string(), "list2".to_string()]);
+
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["list1".to_string(), "list2".to_string()]),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -269,13 +277,16 @@ fn test_get_group_lists_specific_lists() {
 
 #[test]
 fn test_get_group_lists_filters_invalid() {
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), vec!["valid_list".to_string(), "invalid_list".to_string()]);
+
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["valid_list".to_string(), "invalid_list".to_string()]),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -293,13 +304,16 @@ fn test_get_group_lists_filters_invalid() {
 #[test]
 fn test_get_group_lists_all_invalid() {
     // Configuring only invalid (non-existent) list names should return an error
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), vec!["invalid1".to_string(), "invalid2".to_string()]);
+
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["invalid1".to_string(), "invalid2".to_string()]),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -317,17 +331,16 @@ fn test_get_group_lists_all_invalid() {
 
 #[test]
 fn test_get_group_lists_deduplicates() {
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), vec!["list1".to_string(), "list2".to_string(), "list1".to_string()]);
+
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec![
-                "list1".to_string(),
-                "list1".to_string(),
-                "list2".to_string(),
-            ]),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -371,7 +384,6 @@ fn test_get_article_range_single_number() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("100".to_string()),
             ..NntpConfig::default()
         }),
@@ -394,7 +406,6 @@ fn test_get_article_range_multiple_numbers() {
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1,5,10".to_string()),
             ..NntpConfig::default()
         }),
@@ -418,7 +429,6 @@ fn test_get_article_range_dash_range() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1-5".to_string()),
             ..NntpConfig::default()
         }),
@@ -441,7 +451,6 @@ fn test_get_article_range_mixed() {
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("1,3-5,10".to_string()),
             ..NntpConfig::default()
         }),
@@ -465,7 +474,6 @@ fn test_get_article_range_invalid() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            group_lists: Some(vec!["list1".to_string()]),
             article_range: Some("invalid".to_string()),
             ..NntpConfig::default()
         }),
@@ -507,10 +515,11 @@ fn test_full_config_workflow() {
 nthreads: 3
 output_dir: "./integration_test_output"
 loop_groups: true
+group_lists:
+  nntp: ["list1", "list2"]
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  group_lists: ["list1", "list2"]
   article_range: "1-10"
 "#;
 
@@ -568,14 +577,16 @@ fn test_config_validation_workflow() {
 
 /// Helper to create a config with specific group_lists
 fn config_with_group_lists(lists: Vec<String>) -> AppConfig {
+    let mut group_lists = std::collections::HashMap::new();
+    group_lists.insert("nntp".to_string(), lists);
     AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
+        group_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            group_lists: Some(lists),
             ..NntpConfig::default()
         }),
         ..Default::default()

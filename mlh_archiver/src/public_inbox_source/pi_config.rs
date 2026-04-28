@@ -4,7 +4,10 @@ use crate::errors::ConfigError;
 ///
 /// This struct holds the configuration needed to connect to and process a public inbox.
 /// It includes the import directory, origin, and optional settings for grokmirror,
-/// public inbox config, group lists, and article range.
+/// public inbox config, and article range.
+///
+/// Note: `group_lists` is now stored at the top-level `AppConfig.group_lists` HashMap
+/// with the key "PublicInbox", not in this struct.
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct PIConfig {
     /// (optional) if specified, will use grokmirror to identify the lists available
@@ -17,9 +20,6 @@ pub struct PIConfig {
     /// inboxes from config instead of listing the directories
     /// Also take the list origin and id from there
     pub public_inbox_config: Option<String>,
-    /// Optional list of specific inboxes to process (group lists).
-    /// If provided, only these inboxes will be processed.
-    pub group_lists: Option<Vec<String>>,
     /// (optional). Read a specific range of articles from the first list provided.
     /// Comma separated values, or dash separated ranges, like low-high
     /// Article numbers are 1-indexed.
@@ -33,7 +33,6 @@ impl PIConfig {
     /// Currently validates:
     /// - `import_directory` is not empty and exists as a directory
     /// - `origin` is not empty
-    /// - `group_lists` is not empty if provided
     ///
     /// # Returns
     /// - `Ok(())` if the configuration is valid
@@ -42,7 +41,6 @@ impl PIConfig {
     /// # Errors
     /// - `ConfigError::MissingHostname` if `import_directory` or `origin` is empty
     /// - `ConfigError::Io` if the import directory does not exist or is not a directory
-    /// - `ConfigError::ListSelectionEmpty` if `group_lists` is provided but empty
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.import_directory.is_empty() {
             // TODO: need new error variant for missing import directory
@@ -70,13 +68,6 @@ impl PIConfig {
         if self.origin.is_empty() {
             // TODO: need new error variant for missing origin
             return Err(ConfigError::MissingHostname);
-        }
-
-        // If group_lists is provided, ensure it's not empty
-        if let Some(lists) = &self.group_lists
-            && lists.is_empty()
-        {
-            return Err(ConfigError::ListSelectionEmpty);
         }
 
         // TODO: validate article_range format using parse_sequence
