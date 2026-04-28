@@ -31,7 +31,7 @@ nntp = { path = "./rust-nntp" }
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9"
 thiserror = "2.0"
-git2 = { version = "0.20.4", features = ["vendored-libgit2"] }
+git2 = { version = "0.20", default-features = false}
 
 [dev-dependencies]
 testcontainers = { version =  "0.27" , features = ["blocking"] }
