@@ -80,8 +80,9 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
 /// Checks if a git repository's alternates paths (if any) are accessible.
 ///
 /// Reads `objects/info/alternates` if it exists and verifies that each listed
-/// path exists on the filesystem. This prevents accepting repos that depend on
-/// external object stores that are no longer available.
+/// path exists on the filesystem. Logs a debug message for broken alternates
+/// but returns true in all cases — git2 can often operate with local objects
+/// even when alternates point to unavailable paths.
 ///
 /// # Arguments
 ///
@@ -89,23 +90,21 @@ pub fn find_public_inboxes(base_dir: &Path) -> errors::Result<Vec<PublicInbox>> 
 ///
 /// # Returns
 ///
-/// * `true` if no alternates file exists, or all alternates paths are accessible
-/// * `false` if alternates file exists but any path is missing
-fn has_valid_alternates(dir: &Path) -> bool {
+/// * `true` — this function no longer gates repo acceptance; it only provides
+///   diagnostics. Use `is_git2_openable` to determine usability.
+fn log_broken_alternates(dir: &Path) {
     let alternates_path = dir.join("objects/info/alternates");
     if !alternates_path.is_file() {
-        return true; // No alternates = nothing to validate
+        return;
     }
     if let Ok(content) = std::fs::read_to_string(&alternates_path) {
         for line in content.lines() {
             let alt = line.trim();
             if !alt.is_empty() && !std::path::Path::new(alt).exists() {
                 log::debug!("Repo at {:?} has broken alternates path: {}", dir, alt);
-                return false;
             }
         }
     }
-    true
 }
 
 /// Attempts to open a directory as a git2 repository to verify it is functional.
@@ -199,7 +198,6 @@ fn find_epoch_repo_with_master(git_dir: &Path) -> crate::Result<Option<PathBuf>>
             if epoch_name.ends_with(".git")
                 && is_git_repo(&epoch_path)
                 && has_master_ref(&epoch_path)
-                && has_valid_alternates(&epoch_path)
                 && is_git2_openable(&epoch_path)
             {
                 return Ok(Some(epoch_path));
@@ -292,11 +290,14 @@ pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
                                 && is_git_repo(parent)
                                 && has_master_ref(parent)
                                 && has_objects(parent)
+                                && is_git2_openable(parent)
                             {
+                                // Found a valid epoch via all.git alternates.
+                                // Return git/ directory so find_epochs discovers all epochs.
                                 return Ok(Some(PublicInbox {
                                     name,
-                                    version: "V2 (alternates)".to_string(),
-                                    git_dir: parent.to_path_buf(),
+                                    version: "V2".to_string(),
+                                    git_dir,
                                 }));
                             }
                         }
@@ -634,14 +635,16 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
             continue;
         }
 
-        if !has_valid_alternates(&path) || !is_git2_openable(&path) {
+        if !is_git2_openable(&path) {
             log::debug!(
-                "Skipping epoch {} at {:?}: alternates invalid or repo not openable by git2",
+                "Skipping epoch {} at {:?}: repo not openable by git2",
                 name,
                 path
             );
             continue;
         }
+        // Log diagnostic if alternates are broken but repo is still openable
+        log_broken_alternates(&path);
 
         let epoch_name = name.strip_suffix(".git").unwrap_or(name).to_string();
         epochs.push(EpochRepo {
@@ -669,4 +672,207 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
     });
 
     Ok(epochs)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    /// Creates a bare git repo at `path` with the given number of commits.
+    /// Each commit stores a fake email in a blob named "m" so that
+    /// `extract_email_from_commit` sees valid public-inbox data.
+    fn create_test_epoch_repo(path: &Path, commit_count: usize) {
+        std::fs::create_dir_all(path).unwrap();
+        let _bare = git2::Repository::init_bare(path).unwrap();
+
+        let work_dir = path.parent().unwrap().join("_work");
+        std::fs::remove_dir_all(&work_dir).ok();
+        let clone = git2::build::RepoBuilder::new()
+            .clone(path.to_str().unwrap(), &work_dir)
+            .unwrap();
+
+        let sig = git2::Signature::now("Test", "test@test").unwrap();
+        for i in 1..=commit_count {
+            let email = format!(
+                "From: test@test\nSubject: Commit {}\nMessage-ID: <{}@test>\n\nBody {}\n",
+                i, i, i
+            );
+            let m_path = work_dir.join("m");
+            std::fs::write(&m_path, &email).unwrap();
+            let mut index = clone.index().unwrap();
+            index.add_path(Path::new("m")).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = clone.find_tree(tree_id).unwrap();
+            let parent = clone.head().ok().and_then(|h| h.peel_to_commit().ok());
+            let parents = parent.iter().collect::<Vec<_>>();
+            clone
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("commit {}", i),
+                    &tree,
+                    parents.as_slice(),
+                )
+                .unwrap();
+        }
+
+        let mut remote = clone.find_remote("origin").unwrap();
+        remote
+            .push(&["refs/heads/master:refs/heads/master"], None)
+            .unwrap();
+        std::fs::remove_dir_all(&work_dir).ok();
+    }
+
+    /// Writes an alternates file pointing to a (usually non-existent) path.
+    fn write_alternates(repo_path: &Path, alternates_content: &str) {
+        let info_dir = repo_path.join("objects").join("info");
+        std::fs::create_dir_all(&info_dir).unwrap();
+        std::fs::write(info_dir.join("alternates"), alternates_content).unwrap();
+    }
+
+    /// Creates a V2-style directory structure:
+    ///   {inbox_dir}/
+    ///     git/
+    ///       0.git/   (epoch 0)
+    ///       1.git/   (epoch 1)
+    ///       2.git/   (epoch 2)
+    ///
+    /// Each epoch repo has the specified commit count.
+    fn create_v2_inbox_structure(
+        inbox_dir: &Path,
+        epoch_specs: &[(&str, usize)],
+    ) {
+        let git_dir = inbox_dir.join("git");
+        std::fs::create_dir_all(&git_dir).unwrap();
+        for (epoch_name, commit_count) in epoch_specs {
+            let repo_path = git_dir.join(format!("{}.git", epoch_name));
+            create_test_epoch_repo(&repo_path, *commit_count);
+        }
+    }
+
+    #[test]
+    fn test_find_epochs_with_broken_alternates() {
+        let test_dir = std::env::temp_dir().join("pi_test_broken_alternates");
+        std::fs::remove_dir_all(&test_dir).ok();
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        create_v2_inbox_structure(&test_dir, &[("0", 3), ("1", 5), ("2", 2)]);
+
+        write_alternates(
+            &test_dir.join("git").join("0.git"),
+            "/nonexistent/objstore/abc.git/objects\n",
+        );
+        write_alternates(
+            &test_dir.join("git").join("1.git"),
+            "/nonexistent/objstore/def.git/objects\n",
+        );
+
+        let git_dir = test_dir.join("git");
+        let epochs = find_epochs(&git_dir).expect("find_epochs should succeed");
+
+        assert_eq!(
+            epochs.len(),
+            3,
+            "Expected 3 epochs, got {}: {:?}",
+            epochs.len(),
+            epochs
+        );
+
+        let names: Vec<&str> = epochs.iter().map(|e| e.epoch_name.as_str()).collect();
+        assert!(names.contains(&"0"), "Epoch 0 should be found");
+        assert!(names.contains(&"1"), "Epoch 1 should be found");
+        assert!(names.contains(&"2"), "Epoch 2 should be found");
+
+        for epoch in &epochs {
+            let repo = git2::Repository::open(&epoch.git_dir).unwrap();
+            let count = count_commits(&repo).unwrap();
+            let expected = match epoch.epoch_name.as_str() {
+                "0" => 3,
+                "1" => 5,
+                "2" => 2,
+                _ => 0,
+            };
+            assert_eq!(
+                count, expected,
+                "Epoch {} should have {} commits, got {}",
+                epoch.epoch_name, expected, count
+            );
+        }
+
+        std::fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_detect_inbox_v2_with_broken_alternates() {
+        let test_dir = std::env::temp_dir().join("pi_test_detect_broken_alt");
+        std::fs::remove_dir_all(&test_dir).ok();
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        let inbox_dir = test_dir.join("v2_test.list");
+        create_v2_inbox_structure(&inbox_dir, &[("0", 4), ("1", 3)]);
+
+        write_alternates(
+            &inbox_dir.join("git").join("0.git"),
+            "/nonexistent/objstore/xyz.git/objects\n",
+        );
+        write_alternates(
+            &inbox_dir.join("git").join("1.git"),
+            "/nonexistent/objstore/xyz.git/objects\n",
+        );
+
+        let inbox = detect_inbox(&inbox_dir)
+            .expect("detect_inbox should succeed")
+            .expect("should detect a V2 inbox");
+
+        assert_eq!(inbox.name, "v2_test.list");
+        assert!(
+            inbox.version.contains("V2"),
+            "Version should be V2, got: {}",
+            inbox.version
+        );
+        assert!(
+            inbox.git_dir.ends_with("git"),
+            "git_dir should be the git/ directory, got: {:?}",
+            inbox.git_dir
+        );
+
+        let epochs = find_epochs(&inbox.git_dir).expect("find_epochs should succeed");
+        assert_eq!(epochs.len(), 2, "Should find both epochs: {:?}", epochs);
+
+        std::fs::remove_dir_all(&test_dir).ok();
+    }
+
+    #[test]
+    fn test_broken_alternates_does_not_affect_commit_extraction() {
+        let test_dir = std::env::temp_dir().join("pi_test_commit_extraction");
+        std::fs::remove_dir_all(&test_dir).ok();
+        std::fs::create_dir_all(&test_dir).unwrap();
+
+        create_v2_inbox_structure(&test_dir, &[("0", 2)]);
+
+        let repo_path = test_dir.join("git").join("0.git");
+        write_alternates(
+            &repo_path,
+            "/nonexistent/objstore/deadbeef.git/objects\n",
+        );
+
+        let repo = git2::Repository::open(&repo_path).expect("should open despite broken alternates");
+        let commits = collect_all_commits(&repo).expect("should collect commits");
+        assert_eq!(commits.len(), 2, "Should have 2 commits");
+
+        let latest_commit = repo.find_commit(commits[0]).unwrap();
+        let (hash, body) =
+            extract_email_from_commit(&repo, &latest_commit).expect("should extract email");
+        assert!(
+            body.contains("Body 2"),
+            "Body should contain 'Body 2', got: {}",
+            body
+        );
+        assert!(!hash.is_empty(), "Commit hash should not be empty");
+
+        std::fs::remove_dir_all(&test_dir).ok();
+    }
 }

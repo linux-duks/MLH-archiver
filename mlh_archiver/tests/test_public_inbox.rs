@@ -1147,3 +1147,253 @@ fn test_resume_only_collects_new_emails() {
     check_and_delete_folder(inbox_dir.to_string()).ok();
     check_and_delete_folder(output_dir.to_string()).ok();
 }
+
+// =============================================================================
+// Broken Alternates Integration Tests (local git repo, no container)
+// =============================================================================
+
+/// Creates a single bare git repo epoch with the given number of emails at `repo_path`.
+fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
+    std::fs::create_dir_all(repo_path).expect("create repo_path");
+    let _bare_repo = git2::Repository::init_bare(repo_path).expect("init bare repo");
+
+    let work_dir = repo_path.parent().unwrap().join("_work_clone");
+    std::fs::remove_dir_all(&work_dir).ok();
+    let clone = git2::build::RepoBuilder::new()
+        .clone(repo_path.to_str().unwrap(), &work_dir)
+        .expect("clone bare repo");
+
+    let sig = git2::Signature::now("Test User", "test@example.com").expect("create sig");
+
+    for i in 1..=email_count {
+        let num = offset + i;
+        let email_content = format!(
+            "From: tester@example.org\n\
+             Subject: Test email {}\n\
+             Message-ID: <test-{}@example.org>\n\
+             Date: Mon, 01 Jan 2024 00:{:02}:00 +0000\n\
+             \n\
+             This is test email number {}.\n",
+            num, num, num % 60, num
+        );
+
+        let m_path = work_dir.join("m");
+        std::fs::write(&m_path, &email_content).expect("write email");
+
+        let mut index = clone.index().expect("get index");
+        index.add_path(Path::new("m")).expect("add path");
+        index.write().expect("write index");
+        let tree_id = index.write_tree().expect("write tree");
+        let tree = clone.find_tree(tree_id).expect("find tree");
+        let parent_commit = clone.head().ok().and_then(|h| h.peel_to_commit().ok());
+
+        if let Some(parent) = parent_commit {
+            clone
+                .commit(
+                    Some("HEAD"),
+                    &sig,
+                    &sig,
+                    &format!("email {}", num),
+                    &tree,
+                    &[&parent],
+                )
+                .expect("commit");
+        } else {
+            clone
+                .commit(Some("HEAD"), &sig, &sig, &format!("email {}", num), &tree, &[])
+                .expect("commit");
+        }
+    }
+
+    let mut remote = clone.find_remote("origin").expect("find remote");
+    remote
+        .push(&["refs/heads/master:refs/heads/master"], None)
+        .expect("push");
+    std::fs::remove_dir_all(&work_dir).ok();
+}
+
+/// Writes an alternates file to a repo's objects/info/ directory pointing to
+/// a non-existent absolute path, simulating a broken alternates reference.
+fn write_broken_alternates(repo_path: &Path) {
+    let info_dir = repo_path.join("objects").join("info");
+    std::fs::create_dir_all(&info_dir).unwrap();
+    std::fs::write(
+        info_dir.join("alternates"),
+        "/nonexistent/objstore/deadbeef-1234.git/objects\n",
+    )
+    .unwrap();
+}
+
+/// Creates a V2-style public inbox with multiple epoch repos.
+///
+/// Directory layout:
+///   {inbox_dir}/
+///     {inbox_name}/
+///       git/
+///         0.git/  (epoch 0)
+///         1.git/  (epoch 1)
+///         2.git/  (epoch 2)
+///
+/// `broken_epochs` specifies which epoch indices get a broken alternates file.
+fn create_v2_multi_epoch_inbox(
+    inbox_dir: &str,
+    inbox_name: &str,
+    epoch_commit_counts: &[usize],
+    broken_epochs: &[usize],
+) {
+    let abs_inbox_dir = {
+        std::fs::create_dir_all(inbox_dir).expect("create inbox_dir");
+        std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir")
+    };
+    let inbox_path = abs_inbox_dir.join(inbox_name);
+    let git_dir = inbox_path.join("git");
+    std::fs::create_dir_all(&git_dir).expect("create git dir");
+
+    let mut offset = 0;
+    for (i, count) in epoch_commit_counts.iter().enumerate() {
+        let epoch_path = git_dir.join(format!("{}.git", i));
+        create_epoch_repo(&epoch_path, *count, offset);
+        if broken_epochs.contains(&i) {
+            write_broken_alternates(&epoch_path);
+        }
+        offset += count;
+    }
+}
+
+#[test]
+fn test_broken_alternates_all_epochs_processed() {
+    let inbox_dir = "./test_broken_alt_inbox_data";
+    let output_dir = "./test_broken_alt_output";
+    let inbox_name = "v2_broken.list";
+
+    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+
+    // 3 epochs: epoch0=4 commits, epoch1=3 commits, epoch2=2 commits = 9 total
+    // Epochs 0 and 1 have broken alternates pointing to a non-existent path
+    create_v2_multi_epoch_inbox(inbox_dir, inbox_name, &[4, 3, 2], &[0, 1]);
+
+    run_pi_archiver_once(inbox_dir, output_dir, inbox_name);
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(
+        eml_count, 9,
+        "Expected 9 .eml files from all epochs, found {}",
+        eml_count
+    );
+
+    for i in 1..=9 {
+        let found = WalkDir::new(&list_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .any(|e| {
+                let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                parse_email_id(filename)
+                    .map(|p| p.email_num == i)
+                    .unwrap_or(false)
+            });
+        assert!(found, "Email {} should exist across all epochs", i);
+    }
+
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 9);
+
+    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
+}
+
+#[test]
+fn test_broken_alternates_resume() {
+    let inbox_dir = "./test_broken_alt_resume_data";
+    let output_dir = "./test_broken_alt_resume_output";
+    let inbox_name = "v2_broken_resume.list";
+
+    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+
+    // 3 epochs: epoch0=4 commits, epoch1=4 commits, epoch2=3 commits = 11 total
+    // Epochs 0 and 1 have broken alternates, epoch 2 is clean.
+    create_v2_multi_epoch_inbox(inbox_dir, inbox_name, &[4, 4, 3], &[0, 1]);
+
+    // Phase 1: Process only first 5 emails with article_range
+    let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize");
+    let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
+        std::fs::create_dir_all(output_dir).expect("create output_dir");
+        std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
+    });
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: abs_inbox.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec![inbox_name.to_owned()]),
+                article_range: Some("1-5".to_owned()),
+            }),
+            ..Default::default()
+        };
+
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 1 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+    let phase1_count = count_eml_files(&list_dir);
+    assert_eq!(phase1_count, 5, "Phase 1: expected 5 emails, found {}", phase1_count);
+
+    // Phase 2: Run without range — should resume and process remaining 6 emails
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            loop_groups: false,
+            public_inbox: Some(PIConfig {
+                import_directory: abs_inbox.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                group_lists: Some(vec![inbox_name.to_owned()]),
+                article_range: None,
+            }),
+            ..Default::default()
+        };
+
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 2 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    let eml_count = count_eml_files(&list_dir);
+    assert_eq!(
+        eml_count, 11,
+        "Expected 11 total .eml files after resume, found {}",
+        eml_count
+    );
+
+    for i in 1..=11 {
+        let found = WalkDir::new(&list_dir)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().is_file())
+            .any(|e| {
+                let filename = e.path().file_stem().and_then(|s| s.to_str()).unwrap_or("");
+                parse_email_id(filename)
+                    .map(|p| p.email_num == i)
+                    .unwrap_or(false)
+            });
+        assert!(found, "Email {} should exist after resume", i);
+    }
+
+    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
+}

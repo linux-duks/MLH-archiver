@@ -402,16 +402,34 @@ impl PIWorker {
             let mut revwalk = repo.revwalk()?;
             revwalk.push_head()?;
             for commit_id in revwalk.flatten() {
-                if let Some(ref sha) = resume_sha_full {
-                    if commit_id.to_string() == *sha {
+                if let Some(ref sha) = resume_sha_full
+                    && commit_id.to_string() == *sha {
                         break;
                     }
-                }
                 total_before_resume += 1;
             }
         }
-        let old_non_resume = global_position.saturating_sub(1);
-        let new_commits = total_before_resume.saturating_sub(old_non_resume);
+        // total_before_resume already counts only commits newer than the
+        // resume SHA (or all commits when not resuming). In a multi-epoch
+        // setup, global_position spans epochs and must not be subtracted
+        // from per-epoch commit counts.
+        //
+        // When total_before_resume == 0 in a resume epoch, the resume SHA is
+        // the HEAD commit itself (already processed in a previous run).
+        // Process all commits in this epoch — the break at resume SHA below
+        // will skip the already-processed HEAD.
+        let new_commits = if total_before_resume == 0 && resume_sha_full.is_some() {
+            count_commits(repo)?
+        } else {
+            let old_non_resume = if total_before_resume > global_position {
+                // Single-epoch resume: count includes both new and old commits
+                // behind the resume SHA. Subtract already-processed position.
+                global_position.saturating_sub(1)
+            } else {
+                0
+            };
+            total_before_resume.saturating_sub(old_non_resume)
+        };
 
         // Second pass: process only the new commits
         let mut revwalk = repo.revwalk()?;
@@ -428,11 +446,18 @@ impl PIWorker {
                 break;
             }
 
-            if let Some(ref sha) = resume_sha_full {
-                if commit_id.to_string() == *sha {
-                    break;
+            if let Some(ref sha) = resume_sha_full
+                && commit_id.to_string() == *sha {
+                    if total_before_resume == 0 {
+                        // Resume SHA is the HEAD — skip this already-processed
+                        // commit but continue with older (unprocessed) commits.
+                        continue;
+                    } else {
+                        // Resume SHA is in the middle of history — all newer
+                        // commits were processed, stop here.
+                        break;
+                    }
                 }
-            }
 
             // Skip old (already processed) commits
             if processed_new >= new_commits && total_before_resume > 0 {
