@@ -121,7 +121,7 @@ fn log_broken_alternates(dir: &Path) {
 /// * `true` if git2::Repository::open succeeds
 /// * `false` if git2::Repository::open fails
 fn is_git2_openable(dir: &Path) -> bool {
-    git2::Repository::open(dir).is_ok()
+    git2::Repository::open_bare(dir).is_ok()
 }
 
 /// Check if a directory is a git repository (has HEAD and objects).
@@ -787,7 +787,7 @@ mod tests {
         assert!(names.contains(&"2"), "Epoch 2 should be found");
 
         for epoch in &epochs {
-            let repo = git2::Repository::open(&epoch.git_dir).unwrap();
+            let repo = git2::Repository::open_bare(&epoch.git_dir).unwrap();
             let count = count_commits(&repo).unwrap();
             let expected = match epoch.epoch_name.as_str() {
                 "0" => 3,
@@ -859,7 +859,7 @@ mod tests {
             "/nonexistent/objstore/deadbeef.git/objects\n",
         );
 
-        let repo = git2::Repository::open(&repo_path).expect("should open despite broken alternates");
+        let repo = git2::Repository::open_bare(&repo_path).expect("should open despite broken alternates");
         let commits = collect_all_commits(&repo).expect("should collect commits");
         assert_eq!(commits.len(), 2, "Should have 2 commits");
 

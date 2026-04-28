@@ -4,7 +4,7 @@ use std::process::Command;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 
-use mlh_archiver::config::AppConfig;
+use mlh_archiver::config::{AppConfig, RunMode};
 use mlh_archiver::public_inbox_source::pi_config::PIConfig;
 use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
 use mlh_archiver::start;
@@ -324,7 +324,7 @@ where
     if !group_lists.is_empty() {
         app_config
             .group_lists
-            .insert("public_inbox".to_string(), group_lists);
+            .insert(RunMode::PublicInbox.to_string(), group_lists);
     }
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let test_name_owned = test_name.to_string();
@@ -515,7 +515,7 @@ fn test_read_from_demo_public_inbox() {
 
     // Configure archiver for this single inbox
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
@@ -651,7 +651,7 @@ fn test_read_article_range_from_demo() {
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
@@ -751,7 +751,7 @@ fn test_validate_file_structure_using_helpers() {
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("public_inbox".to_string(), vec![inbox.name.clone()]);
+    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
@@ -955,6 +955,8 @@ fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: u
 
     // Create a bare repo
     let bare_repo = git2::Repository::init_bare(&inbox_path).expect("init bare repo");
+    // Ensure HEAD points to refs/heads/master regardless of git's init.defaultBranch
+    std::fs::write(inbox_path.join("HEAD"), "ref: refs/heads/master\n").expect("write HEAD");
 
     // Create a temporary working repo to make commits
     let work_dir = abs_inbox_dir.join("work");
@@ -1016,8 +1018,14 @@ fn create_v1_inbox_with_emails(inbox_dir: &str, inbox_name: &str, email_count: u
     }
 
     // Ensure refs/heads/master points to HEAD
-    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
-    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
+    let head_commit = clone
+        .head()
+        .expect("get HEAD")
+        .peel_to_commit()
+        .expect("peel to commit");
+    clone
+        .reference("refs/heads/master", head_commit.id(), true, "update master")
+        .expect("create master ref");
 
     // Push to bare repo
     let mut remote = clone.find_remote("origin").expect("find remote");
@@ -1082,8 +1090,14 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
     }
 
     // Ensure refs/heads/master points to HEAD
-    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
-    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
+    let head_commit = clone
+        .head()
+        .expect("get HEAD")
+        .peel_to_commit()
+        .expect("peel to commit");
+    clone
+        .reference("refs/heads/master", head_commit.id(), true, "update master")
+        .expect("create master ref");
 
     let mut remote = clone.find_remote("origin").expect("find remote");
     remote
@@ -1097,7 +1111,6 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
 fn run_pi_archiver_once(
     inbox_dir: &str,
     output_dir: &str,
-    _inbox_name: &str,
     group_lists: Vec<String>,
 ) {
     let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
@@ -1109,7 +1122,7 @@ fn run_pi_archiver_once(
     // Build group_lists HashMap from the parameter
     let mut group_lists_map = std::collections::HashMap::new();
     if !group_lists.is_empty() {
-        group_lists_map.insert("public_inbox".to_string(), group_lists);
+        group_lists_map.insert(RunMode::PublicInbox.to_string(), group_lists);
     }
 
     let mut app_config = AppConfig {
@@ -1139,20 +1152,21 @@ fn run_pi_archiver_once(
 
 #[test]
 fn test_resume_only_collects_new_emails() {
-    let inbox_dir = "./test_resume_inbox_data";
+    let base_dir = "./test_resume_data";
+    let inbox_name = "test.resume.list";
+    let inbox_dir = format!("{}/{}", base_dir, inbox_name);
     let output_dir = "./test_resume_output";
 
-    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(base_dir.to_string()).unwrap();
     check_and_delete_folder(output_dir.to_string()).unwrap();
-
-    let inbox_name = "test.resume.list";
+    std::fs::create_dir_all(&inbox_dir).expect("create inbox_dir");
 
     // Phase 1: Create inbox with 10 emails, run archiver
-    create_v1_inbox_with_emails(inbox_dir, inbox_name, 10);
+    // create_v1_inbox_with_emails creates repo at inbox_dir/inbox_name, so pass base_dir as inbox_dir
+    create_v1_inbox_with_emails(base_dir, inbox_name, 10);
     run_pi_archiver_once(
-        inbox_dir,
+        base_dir, // import_directory should be parent dir containing inboxes
         output_dir,
-        inbox_name,
         vec![inbox_name.to_string()],
     );
 
@@ -1166,11 +1180,10 @@ fn test_resume_only_collects_new_emails() {
     validate_progress_file(&format!("{}/__progress.yaml", list_dir), 10);
 
     // Phase 2: Add 5 more emails (11-15), run archiver again
-    add_emails_to_inbox(inbox_dir, inbox_name, 11, 5);
+    add_emails_to_inbox(base_dir, inbox_name, 11, 5);
     run_pi_archiver_once(
-        inbox_dir,
+        base_dir,
         output_dir,
-        inbox_name,
         vec![inbox_name.to_string()],
     );
 
@@ -1212,7 +1225,7 @@ fn test_resume_only_collects_new_emails() {
         assert!(found, "Phase 2: Original email {} should still exist", i);
     }
 
-    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(base_dir.to_string()).ok();
     check_and_delete_folder(output_dir.to_string()).ok();
 }
 
@@ -1224,6 +1237,8 @@ fn test_resume_only_collects_new_emails() {
 fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
     std::fs::create_dir_all(repo_path).expect("create repo_path");
     let _bare_repo = git2::Repository::init_bare(repo_path).expect("init bare repo");
+    // Ensure HEAD points to refs/heads/master regardless of git's init.defaultBranch
+    std::fs::write(repo_path.join("HEAD"), "ref: refs/heads/master\n").expect("write HEAD");
 
     let work_dir = repo_path.parent().unwrap().join("_work_clone");
     std::fs::remove_dir_all(&work_dir).ok();
@@ -1284,8 +1299,14 @@ fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
     }
 
     // Ensure refs/heads/master points to HEAD
-    let head_commit = clone.head().expect("get HEAD").peel_to_commit().expect("peel to commit");
-    clone.reference("refs/heads/master", head_commit.id(), true, "update master").expect("create master ref");
+    let head_commit = clone
+        .head()
+        .expect("get HEAD")
+        .peel_to_commit()
+        .expect("peel to commit");
+    clone
+        .reference("refs/heads/master", head_commit.id(), true, "update master")
+        .expect("create master ref");
 
     let mut remote = clone.find_remote("origin").expect("find remote");
     remote
@@ -1344,21 +1365,20 @@ fn create_v2_multi_epoch_inbox(
 
 #[test]
 fn test_broken_alternates_all_epochs_processed() {
-    let inbox_dir = "./test_broken_alt_inbox_data";
+    let base_dir = "./test_broken_alt_data";
     let output_dir = "./test_broken_alt_output";
     let inbox_name = "v2_broken.list";
 
-    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(base_dir.to_string()).unwrap();
     check_and_delete_folder(output_dir.to_string()).unwrap();
 
     // 3 epochs: epoch0=4 commits, epoch1=3 commits, epoch2=2 commits = 9 total
     // Epochs 0 and 1 have broken alternates pointing to a non-existent path
-    create_v2_multi_epoch_inbox(inbox_dir, inbox_name, &[4, 3, 2], &[0, 1]);
+    create_v2_multi_epoch_inbox(base_dir, inbox_name, &[4, 3, 2], &[0, 1]);
 
     run_pi_archiver_once(
-        inbox_dir,
+        base_dir,
         output_dir,
-        inbox_name,
         vec![inbox_name.to_string()],
     );
 
@@ -1386,25 +1406,25 @@ fn test_broken_alternates_all_epochs_processed() {
 
     validate_progress_file(&format!("{}/__progress.yaml", list_dir), 9);
 
-    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(base_dir.to_string()).ok();
     check_and_delete_folder(output_dir.to_string()).ok();
 }
 
 #[test]
 fn test_broken_alternates_resume() {
-    let inbox_dir = "./test_broken_alt_resume_data";
+    let base_dir = "./test_broken_alt_resume_data";
     let output_dir = "./test_broken_alt_resume_output";
     let inbox_name = "v2_broken_resume.list";
 
-    check_and_delete_folder(inbox_dir.to_string()).unwrap();
+    check_and_delete_folder(base_dir.to_string()).unwrap();
     check_and_delete_folder(output_dir.to_string()).unwrap();
 
     // 3 epochs: epoch0=4 commits, epoch1=4 commits, epoch2=3 commits = 11 total
     // Epochs 0 and 1 have broken alternates, epoch 2 is clean.
-    create_v2_multi_epoch_inbox(inbox_dir, inbox_name, &[4, 4, 3], &[0, 1]);
+    create_v2_multi_epoch_inbox(base_dir, inbox_name, &[4, 4, 3], &[0, 1]);
 
     // Phase 1: Process only first 5 emails with article_range
-    let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize");
+    let abs_base = std::fs::canonicalize(base_dir).expect("canonicalize base_dir");
     let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
         std::fs::create_dir_all(output_dir).expect("create output_dir");
         std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
@@ -1416,11 +1436,14 @@ fn test_broken_alternates_resume() {
             loop_groups: false,
             group_lists: {
                 let mut m = std::collections::HashMap::new();
-                m.insert("public_inbox".to_string(), vec![inbox_name.to_string()]);
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
                 m
             },
             public_inbox: Some(PIConfig {
-                import_directory: abs_inbox.to_string_lossy().to_string(),
+                import_directory: abs_base.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
                 article_range: Some("1-5".to_owned()),
@@ -1452,11 +1475,14 @@ fn test_broken_alternates_resume() {
             loop_groups: false,
             group_lists: {
                 let mut m = std::collections::HashMap::new();
-                m.insert("public_inbox".to_string(), vec![inbox_name.to_string()]);
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
                 m
             },
             public_inbox: Some(PIConfig {
-                import_directory: abs_inbox.to_string_lossy().to_string(),
+                import_directory: abs_base.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
                 article_range: None,
@@ -1493,6 +1519,6 @@ fn test_broken_alternates_resume() {
         assert!(found, "Email {} should exist after resume", i);
     }
 
-    check_and_delete_folder(inbox_dir.to_string()).ok();
+    check_and_delete_folder(base_dir.to_string()).ok();
     check_and_delete_folder(output_dir.to_string()).ok();
 }

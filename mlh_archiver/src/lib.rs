@@ -164,7 +164,7 @@ fn interruptible_sleep(duration: Duration, shutdown_flag: &Arc<AtomicBool>) -> b
 ///
 /// ```rust,no_run
 /// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
-/// use mlh_archiver::worker::is_shutdown_requested;
+/// use mlh_archiver::is_shutdown_requested;
 ///
 /// let flag = Arc::new(AtomicBool::new(false));
 /// if is_shutdown_requested(&flag) {

@@ -169,7 +169,7 @@ impl Worker for PIWorker {
 
         let mut remaining = email_index;
         for epoch in &epochs_to_use {
-            let repo = git2::Repository::open(&epoch.git_dir)?;
+            let repo = git2::Repository::open_bare(&epoch.git_dir)?;
 
             let commit_count = count_commits(&repo)?;
             if remaining <= commit_count {
@@ -315,7 +315,7 @@ impl PIWorker {
                 return Ok(emails_processed);
             }
 
-            let repo = git2::Repository::open(&epoch.git_dir)?;
+            let repo = git2::Repository::open_bare(&epoch.git_dir)?;
 
             let result = self.process_epoch(
                 &repo,
@@ -401,7 +401,14 @@ impl PIWorker {
         {
             let mut revwalk = repo.revwalk()?;
             revwalk.push_head()?;
-            for commit_id in revwalk.flatten() {
+            for commit_id_result in revwalk {
+                let commit_id = match commit_id_result {
+                    Ok(id) => id,
+                    Err(e) => {
+                        log::error!("W{}: Revwalk error in epoch {} (first pass): {}", self.id, epoch.epoch_name, e);
+                        break;
+                    }
+                };
                 if let Some(ref sha) = resume_sha_full
                     && commit_id.to_string() == *sha
                 {
@@ -437,7 +444,14 @@ impl PIWorker {
         revwalk.push_head()?;
         let mut processed_new = 0;
 
-        for commit_id in revwalk.flatten() {
+        for commit_id_result in revwalk {
+            let commit_id = match commit_id_result {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("W{}: Revwalk error in epoch {} (second pass): {}", self.id, epoch.epoch_name, e);
+                    break;
+                }
+            };
             if is_shutdown_requested(shutdown_flag) {
                 log::info!(
                     "W{}: Shutdown requested during epoch {} processing",
