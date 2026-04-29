@@ -99,7 +99,7 @@ impl<'a> Scheduler<'a> {
     ///
     /// ## Range Mode
     ///
-    /// If `article_range` is configured:
+    /// If `email_range` is configured:
     /// - Workers use `read_email_by_index()` to fetch specific articles
     /// - Producer parses range text and sends (list, index) pairs
     ///

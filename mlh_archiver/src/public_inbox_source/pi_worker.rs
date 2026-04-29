@@ -27,7 +27,7 @@ struct ProcessEpochResult {
 ///
 /// This struct represents a worker that consumes inbox names frpodmanhannel and processes
 /// the emails contained within those inboxes. It handles both V1 and V2 public inbox
-/// formats, supports resuming from a specific email, and can filter emails by article range.
+/// formats, supports resuming from a specific email, and can filter emails by email range.
 #[derive(std::fmt::Debug)]
 pub struct PIWorker {
     /// Unique identifier for this worker instance
@@ -133,7 +133,6 @@ impl Worker for PIWorker {
     ///
     /// * `Ok(())` - If the email was successfully retrieved and archived
     /// * `Err` - If the inbox is not found, the index is out of bounds, or an error occurs
-
     #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         let writer = ArchiveWriter::new(
@@ -210,7 +209,7 @@ impl PIWorker {
     /// all commits in the inbox (across all epochs for V2 inboxes), extracts the
     /// email content from each commit, and archives it using the ArchiveWriter.
     /// It supports resuming from a specific email based on progress tracking
-    /// and filtering by article range.
+    /// and filtering by email range.
     ///
     /// # Arguments
     ///
@@ -221,7 +220,6 @@ impl PIWorker {
     ///
     /// * `Ok(usize)` - The number of emails successfully processed
     /// * `Err` - If the inbox is not found or an error occurs during processing
-
     #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn process_inbox(&self, list_name: &str) -> crate::Result<usize> {
         log::info!(
@@ -269,10 +267,10 @@ impl PIWorker {
             global_position = parsed.email_num;
         }
 
-        // Parse article range if configured
-        let article_range_positions: Option<std::collections::HashSet<usize>> = match &self
+        // Parse email range if configured
+        let email_range_positions: Option<std::collections::HashSet<usize>> = match &self
             .pi_config
-            .article_range
+            .email_range
         {
             Some(range_str) => {
                 let parsed_range =
@@ -326,7 +324,7 @@ impl PIWorker {
                 &repo,
                 epoch,
                 &writer,
-                &article_range_positions,
+                &email_range_positions,
                 &skip_until_sha,
                 global_position,
             )?;
@@ -350,7 +348,7 @@ impl PIWorker {
     /// Process a single epoch, streaming commits and archiving emails.
     ///
     /// This function handles the core logic of processing one epoch of a public inbox,
-    /// including commit iteration, article range filtering, resume-from-SHA logic,
+    /// including commit iteration, email range filtering, resume-from-SHA logic,
     /// and email extraction and archiving.
     ///
     /// # Arguments
@@ -358,7 +356,7 @@ impl PIWorker {
     /// * `repo` - The git repository for this epoch
     /// * `epoch` - Information about the epoch being processed
     /// * `writer` - Archive writer for storing processed emails
-    /// * `article_range_positions` - Optional set of positions to filter by article range
+    /// * `email_range_positions` - Optional set of positions to filter by email range
     /// * `skip_until_sha` - Optional short SHA to skip commits until found
     /// * `global_position` - Current global email position across all epochs
     /// * `shutdown_flag` - Flag to check for shutdown requests
@@ -373,7 +371,7 @@ impl PIWorker {
         repo: &git2::Repository,
         epoch: &EpochRepo,
         writer: &ArchiveWriter,
-        article_range_positions: &Option<HashSet<usize>>,
+        email_range_positions: &Option<HashSet<usize>>,
         skip_until_sha: &Option<String>,
         global_position: usize,
     ) -> crate::Result<ProcessEpochResult> {
@@ -499,7 +497,7 @@ impl PIWorker {
 
             let current_global_position = global_position + commit_count;
 
-            if let Some(positions) = article_range_positions
+            if let Some(positions) = email_range_positions
                 && !positions.contains(&current_global_position)
             {
                 commit_count += 1;

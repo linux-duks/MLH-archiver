@@ -329,7 +329,7 @@ fn test_read_single_article_by_range() {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
                     request_interval: 0,
-                    article_range: Some("5".to_owned()),
+                    email_range: Some("5".to_owned()),
                     ..NntpConfig::default()
                 }),
                 ..Default::default()
@@ -368,7 +368,7 @@ fn test_read_single_article_by_range() {
 }
 
 #[test]
-fn test_read_article_range() {
+fn test_read_email_range() {
     let found_files = run_nntp_test_with_config(
         |host_port| {
             AppConfig {
@@ -384,7 +384,7 @@ fn test_read_article_range() {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
                     request_interval: 0,
-                    article_range: Some("1-3".to_owned()),
+                    email_range: Some("1-3".to_owned()),
                     ..NntpConfig::default()
                 }),
                 ..Default::default()
@@ -444,7 +444,7 @@ fn test_read_multiple_articles_by_range() {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
                     request_interval: 0,
-                    article_range: Some("1,5,10".to_owned()),
+                    email_range: Some("1,5,10".to_owned()),
                     ..NntpConfig::default()
                 }),
                 ..Default::default()
@@ -509,7 +509,7 @@ fn test_read_mixed_range() {
                     hostname: "localhost".to_owned(),
                     port: Some(host_port),
                     request_interval: 0,
-                    article_range: Some("1,3-5,10".to_owned()),
+                    email_range: Some("1,3-5,10".to_owned()),
                     ..NntpConfig::default()
                 }),
                 ..Default::default()

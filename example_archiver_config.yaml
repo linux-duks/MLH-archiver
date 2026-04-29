@@ -18,7 +18,7 @@ read_lists:
 
 nntp:
   hostname: "nntp://localhost"
-  # article_range: "1-100"  # Optional: fetch specific range from first list
+  # email_range: "1-100"  # Optional: fetch specific range from first list
 
 public_inbox:
   origin: public-inbox.example.org

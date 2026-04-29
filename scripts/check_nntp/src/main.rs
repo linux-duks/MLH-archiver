@@ -1,7 +1,7 @@
 //! check_nntp - Interactive NNTP mailing list browser
 //!
 //! This tool allows you to interactively browse available NNTP mailing lists,
-//! preview article ranges, and generate configuration snippets for the MLH Archiver.
+//! preview email ranges, and generate configuration snippets for the MLH Archiver.
 //!
 //! # Usage
 //!
@@ -215,8 +215,8 @@ fn main() -> mlh_archiver::Result<()> {
         selected.clone()
     };
 
-    // Get group info (article ranges)
-    println!("📊 Fetching article ranges...");
+    // Get group info (email ranges)
+    println!("📊 Fetching email ranges...");
     let groups_info = match mlh_archiver::nntp_source::retrieve_groups_info(
         &server.hostname,
         server.port,
@@ -424,7 +424,7 @@ nntp:
 {}
   read_lists:
 {}
-  # article_range: "1-100"  # Optional: fetch specific range
+  # email_range: "1-100"  # Optional: fetch specific range
 "#,
         server.hostname, port_line, lists_yaml
     )

@@ -318,7 +318,7 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 
 - **Multi-threaded**: Each worker thread handles one mailing list at a time
 - **Respectful**: Not designed to pull emails as fast as possible to avoid being detected as a malicious scraping bot
-- **Continuous**: Can keep local files up-to-date with new articles
+- **Continuous**: Can keep local files up-to-date with new emails
 - **Graceful shutdown**: Clean exit on Ctrl+C with progress preservation
 
 **Architecture:**
@@ -333,11 +333,11 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 The archiver uses a nested configuration format:
 
 - Global settings (`nthreads`, `output_dir`, `loop_groups`,`read_lists`) at the top level
-- NNTP-specific settings (`hostname`, `port`, `article_range`) under the `nntp:` block
+- NNTP-specific settings (`hostname`, `port`, `email_range`) under the `nntp:` block
 
-**Article Range Selection:**
+**email Range Selection:**
 
-The `article_range` option allows fetching specific articles instead of all new emails:
+The `email_range` option allows fetching specific emails instead of all new emails:
 
 - Single numbers: `"100"`
 - Ranges: `"1-50"`
