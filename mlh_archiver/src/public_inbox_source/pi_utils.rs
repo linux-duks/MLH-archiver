@@ -248,6 +248,7 @@ fn has_objects(dir: &Path) -> bool {
 /// * `Ok(Some(PublicInbox))` - Information about the detected public inbox
 /// * `Ok(None)` - The directory does not appear to be a public inbox
 /// * `Err` - If an I/O error occurs while reading files
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     let name = dir
         .file_name()
@@ -481,6 +482,7 @@ pub fn read_by_blob_id(repo: &git2::Repository, blob_oid: git2::Oid) -> crate::R
 ///
 /// * `Ok(usize)` - The total number of commits in the repository
 /// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn count_commits(repo: &git2::Repository) -> crate::Result<usize> {
     let head_id = repo
         .refname_to_id("refs/heads/master")
@@ -583,6 +585,7 @@ pub fn parse_email_id(id: &str) -> Option<ParsedEmailId> {
 ///
 /// * `Ok(Vec<git2::Oid>)` - A vector of commit object IDs, newest first
 /// * `Err` - If an error occurs during revision walking
+#[cfg_attr(feature = "otel", tracing::instrument(skip(repo)))]
 pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::Oid>> {
     let head_id = repo
         .refname_to_id("refs/heads/master")

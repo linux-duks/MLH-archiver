@@ -379,13 +379,13 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
         .with_default("public-inbox")
         .prompt()?;
 
-    let article_range = Text::new("Article range (optional, e.g., '1-100'):")
+    let email_range = Text::new("Article range (optional, e.g., '1-100'):")
         .with_default("")
         .prompt()?;
-    let article_range_str = if article_range.trim().is_empty() {
+    let email_range_str = if email_range.trim().is_empty() {
         None
     } else {
-        Some(article_range.trim().to_string())
+        Some(email_range.trim().to_string())
     };
 
     let mut yaml = String::new();
@@ -404,8 +404,8 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
     for inbox in inboxes {
         yaml.push_str(&format!("    - \"{}\"\n", inbox.name));
     }
-    if let Some(range) = article_range_str {
-        yaml.push_str(&format!("  article_range: \"{}\"\n", range));
+    if let Some(range) = email_range_str {
+        yaml.push_str(&format!("  email_range: \"{}\"\n", range));
     }
 
     println!("\n{}\n", yaml);

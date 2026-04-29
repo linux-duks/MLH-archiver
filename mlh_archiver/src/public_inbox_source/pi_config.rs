@@ -4,7 +4,7 @@ use crate::errors::ConfigError;
 ///
 /// This struct holds the configuration needed to connect to and process a public inbox.
 /// It includes the import directory, origin, and optional settings for grokmirror,
-/// public inbox config, and article range.
+/// public inbox config, and email range.
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct PIConfig {
     /// (optional) if specified, will use grokmirror to identify the lists available
@@ -20,7 +20,7 @@ pub struct PIConfig {
     /// (optional). Read a specific range of articles from the first list provided.
     /// Comma separated values, or dash separated ranges, like low-high
     /// Article numbers are 1-indexed.
-    pub article_range: Option<String>,
+    pub email_range: Option<String>,
 }
 
 impl PIConfig {
@@ -65,7 +65,7 @@ impl PIConfig {
             return Err(ConfigError::MissingOrigin);
         }
 
-        // TODO: validate article_range format using parse_sequence
+        // TODO: validate email_range format using parse_sequence
         // For now, just ignore
 
         Ok(())

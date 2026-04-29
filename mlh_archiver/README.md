@@ -1,13 +1,10 @@
 # MLH Archiver
 
 A multi-threaded Rust application for archiving mailing list emails from a few different sources.
+The MLH Archiver fetches emails from the configured source (e.g., NNTP servers) and saves them from specified mailing lists as raw email files.
 
 - NNTP (Network News Transfer Protocol) servers.
 - Public-Inbox Local Git Repositories
-
-## Overview
-
-The MLH Archiver connects to NNTP servers and downloads emails from specified mailing lists, storing them as raw email files. It's designed to be respectful to NNTP servers by not fetching emails too aggressively, avoiding detection as a malicious scraping bot.
 
 ## Architecture
 
@@ -40,12 +37,12 @@ enabling natural load balancing.
    - At start of each task iteration
    - During reconnection waits (60s)
    - During error recovery waits (10s)
-   - During email fetching (per article)
+   - During email fetching (per email)
 
 ### Design Principles
 
 - **Respectful bandwidth**: Not designed to fetch as fast as possible
-- **Continuous operation**: Can keep local files up-to-date with new articles
+- **Continuous operation**: Can keep local files up-to-date with new emails
 - **Graceful shutdown**: Clean exit on Ctrl+C with progress preservation
 
 See the [architecture diagram](../docs/fluxogram.svg) for a visual representation.
@@ -55,7 +52,7 @@ See the [architecture diagram](../docs/fluxogram.svg) for a visual representatio
 - **Multi-threaded**: Process multiple mailing lists concurrently
 - **Configurable**: Support for JSON, YAML, and TOML configuration files
 - **Interactive TUI**: Select mailing lists from an interactive terminal interface
-- **Flexible article selection**: Read specific article ranges or all articles
+- **Flexible email selection**: Read specific email ranges or all emails
 - **Continuous or one-shot mode**: Loop to keep archives updated or run once
 
 ## Prerequisites
@@ -166,7 +163,7 @@ read_lists:
 |--------|------|-------------|
 | `nthreads` | integer | Number of parallel worker threads (default: 1) |
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
-| `loop_groups` | boolean | Continuously check for new articles (default: true) |
+| `loop_groups` | boolean | Continuously check for new emails (default: true) |
 | `read_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 
 #### Public-Inbox Options (under `public_inbox:` block)
@@ -181,7 +178,22 @@ It is expected that
 | `import_directory` | string | **Required.** The parent folder of all mailing lists|
 | `origin` | string | **Required**. server hostname were the lists were cloned from |
 | `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
-| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
+| `email_range` | string | Optional. Read specific range of emails (e.g., `"1-100"` or `"1,5,10-20"`) |
+
+#### Public-Inbox Options (under `public_inbox:` block)
+
+If using a large number of public-inbox repositores, we recommend cloning them with [Grokmirror](https://github.com/mricon/grokmirror).
+We have our complete guide available in the [linux-duks/Public-Inbox-Stack](https://github.com/linux-duks/Public-Inbox-Stack). If using only for this, follow the mirroring steps only.
+
+It is expected that
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `import_directory` | string | **Required.** The parent folder of all mailing lists|
+| `origin` | string | **Required**. server hostname were the lists were cloned from |
+| `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
+| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `email_range` | string | Optional. Read specific range of emails (e.g., `"1-100"` or `"1,5,10-20"`) |
 
 #### NNTP Options (under `nntp:` block)
 
@@ -190,18 +202,18 @@ It is expected that
 | `hostname` | string | **Required.** NNTP server hostname or IP |
 | `port` | integer | NNTP server port (default: 119) |
 | `read_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
-| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
+| `email_range` | string | Optional. Read specific range of emails (e.g., `"1-100"` or `"1,5,10-20"`) |
 | `username` | string | Optional. NNTP server username for authentication |
 | `password` | string | Optional. NNTP server password for authentication |
 
-## Article Range Selection
+## email Range Selection
 
-The `article_range` configuration option allows fetching specific articles instead of all new emails:
+The `email_range` configuration option allows fetching specific emails instead of all new emails:
 
 ```yaml
 nntp:
   hostname: "nntp.example.com"
-  article_range: "1,5,10-15"  # Fetch articles 1, 5, and 10-15
+  email_range: "1,5,10-15"  # Fetch emails 1, 5, and 10-15
 ```
 
 **Supported formats:**
@@ -215,9 +227,9 @@ nntp:
 
 **Use cases:**
 
-- Retry failed articles: `article_range: "42,108,256"`
-- Fetch specific date ranges (if you know article numbers)
-- Test runs with small samples: `article_range: "1-10"`
+- Retry failed emails: `email_range: "42,108,256"`
+- Fetch specific date ranges (if you know email numbers)
+- Test runs with small samples: `email_range: "1-10"`
 
 ## Authentication
 
@@ -273,9 +285,9 @@ cargo test
 **Integration Tests** (`cargo test --test test_nntp`):
 
 - Full list download from mock NNTP server
-- Single article by range (`"5"`)
-- Article range (`"1-3"`)
-- Multiple articles (`"1,5,10"`)
+- Single email by range (`"5"`)
+- email range (`"1-3"`)
+- Multiple emails (`"1,5,10"`)
 - Mixed ranges (`"1,3-5,10"`)
 
 Integration tests use testcontainers to spin up a mock NNTP server. Requires Docker/Podman.
@@ -319,7 +331,7 @@ mlh_archiver/
 │   ├── worker.rs            # Worker trait, WorkerManager ownership
 │   ├── errors.rs            # Error types (Error, ConfigError)
 │   ├── file_utils.rs        # File I/O, YAML serialization
-│   ├── range_inputs.rs      # Article range parsing (lazy iterator)
+│   ├── range_inputs.rs      # email range parsing (lazy iterator)
 │   ├── archive_writer/      # Reusable storage facade (MUST be used by all workers)
 │   │   ├── mod.rs           # ArchiveWriter facade
 │   │   ├── progress.rs      # ProgressTracker (reads/writes __progress.yaml)
@@ -369,7 +381,7 @@ To add a new email source (e.g., ListArchiveX, IMAP, local mbox), follow these s
 
 - Writing fetched emails to disk (`.eml` files)
 - Tracking progress (`__progress.yaml` YAML)
-- Logging errors for unavailable articles (`__errors.csv` CSV)
+- Logging errors for unavailable emails (`__errors.csv` CSV)
 
 The `ArchiveWriter` provides a consistent storage interface so that:
 
@@ -389,17 +401,17 @@ let writer = ArchiveWriter::new(
     &list_name,
 );
 
-// Get last processed article ID (for resume)
+// Get last processed email ID (for resume)
 let last_id = writer.last_processed_id();
 
 // Write a fetched email
-writer.write_email(article_id, &raw_lines)?;
+writer.write_email(email_id, &raw_lines)?;
 
 // Update progress after successful write
-writer.update_progress(article_id)?;
+writer.update_progress(email_id)?;
 
-// Log unavailable articles (non-fatal)
-writer.log_error(article_id, &error.to_string());
+// Log unavailable emails (non-fatal)
+writer.log_error(email_id, &error.to_string());
 ```
 
 **File layout produced by `ArchiveWriter`:**
@@ -407,7 +419,7 @@ writer.log_error(article_id, &error.to_string());
 ```
 output/
 ├── list.name/
-│   ├── 1.eml                    # Fetched article
+│   ├── 1.eml                    # Fetched email
 │   ├── 2.eml
 │   ├── __progress.yaml          # YAML: last processed ID (resume)
 │   ├── __lineage.yaml           # YAML stream: DataLineage audit trail
@@ -438,7 +450,7 @@ pub struct ListArchiveXConfig {
     pub base_url: String,
     pub api_key: Option<String>,
     pub read_lists: Option<Vec<String>>,
-    pub article_range: Option<String>,
+    pub email_range: Option<String>,
 }
 
 impl ListArchiveXConfig {
@@ -531,7 +543,7 @@ impl Worker for ListArchiveXWorker {
             &list_name,
         );
 
-        // Fetch and store the specific article...
+        // Fetch and store the specific email...
         // writer.write_email(email_index, &lines)?;
         // writer.update_progress(email_index)?;
         Ok(())
@@ -704,6 +716,94 @@ Enable debug logging for troubleshooting:
 ```bash
 RUST_LOG=debug cargo run -- -c archiver_config.yaml
 ```
+
+## OpenTelemetry Tracing
+
+The archiver includes optional OpenTelemetry instrumentation via the `otel` Cargo feature. When enabled, it collects traces using the `tracing` crate and exports them to any OpenTelemetry-compatible backend.
+
+### Building and Running
+
+```bash
+# Build with tracing support
+cargo build --features=otel
+
+# Run with default endpoint (http://localhost:4318)
+cargo run --features=otel -- -c archiver_config.yaml
+
+# Run with a custom OTLP endpoint
+OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger.example.com:4318 cargo run --features=otel -- -c archiver_config.yaml
+```
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | OTLP HTTP endpoint URL | `http://localhost:4318` |
+| `RUST_LOG` | Log level (also affects trace verbosity) | `info` |
+
+### Quickstart with Jaeger
+
+OpenTelemetry is an open standard. Any OTLP HTTP-compatible backend works.
+The easiest way to visualize traces is to run Jaeger's all-in-one Docker image:
+
+```bash
+podman run --rm --name jaeger \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  -p 4318:4318 \
+  -p 5778:5778 \
+  -p 9411:9411 \
+  cr.jaegertracing.io/jaegertracing/jaeger:2.17.0
+```
+
+Then run the archiver:
+
+```bash
+cargo run --features=otel -- -c archiver_config.yaml
+```
+
+Open <http://localhost:16686> in your browser to view traces.
+
+### Adding Tracing to New Code
+
+The `tracing` crate is used to instrument code. When the `otel` feature is enabled, `tracing` events and spans are automatically exported as OpenTelemetry traces.
+
+#### Using `#[instrument]`
+
+The simplest way to add tracing is the `#[instrument]` attribute:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument)]
+fn my_function() {
+    // Function body — a span is automatically created
+}
+```
+
+#### Controlling Fields in Spans
+
+Adding specific fields:
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument(fields(list = %list_name)))]
+fn process_list(list_name: &str) {
+    // The `list` field appears in the span metadata
+}
+```
+
+Removing fields - Large entities, or entities that do not implement Debug need to be skipped :
+
+```rust
+#[cfg_attr(feature = "otel", tracing::instrument(skip(receiver, self)))]
+fn consumme_list(
+
+```
+
+#### Key Points
+
+- All existing `log::info!`, `log::debug!`, etc. calls are captured as OpenTelemetry log events within spans
+- Spans are exported synchronously via `SimpleSpanProcessor` — no async runtime is used
+- The `otel` module in `src/otel.rs` handles initialization. To add new exporters or layers, modify that file
+- When `otel` is not enabled, the application falls back to `env_logger` for console logging only
 
 ## License
 

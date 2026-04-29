@@ -374,11 +374,11 @@ fn test_get_read_lists_deduplicates() {
 }
 
 // =============================================================================
-// get_article_range() Tests
+// get_email_range() Tests
 // =============================================================================
 
 #[test]
-fn test_get_article_range_none() {
+fn test_get_email_range_none() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -395,7 +395,7 @@ fn test_get_article_range_none() {
 }
 
 #[test]
-fn test_get_article_range_single_number() {
+fn test_get_email_range_single_number() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -403,7 +403,7 @@ fn test_get_article_range_single_number() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            article_range: Some("100".to_string()),
+            email_range: Some("100".to_string()),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -418,14 +418,14 @@ fn test_get_article_range_single_number() {
 }
 
 #[test]
-fn test_get_article_range_multiple_numbers() {
+fn test_get_email_range_multiple_numbers() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            article_range: Some("1,5,10".to_string()),
+            email_range: Some("1,5,10".to_string()),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -440,7 +440,7 @@ fn test_get_article_range_multiple_numbers() {
 }
 
 #[test]
-fn test_get_article_range_dash_range() {
+fn test_get_email_range_dash_range() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -448,7 +448,7 @@ fn test_get_article_range_dash_range() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            article_range: Some("1-5".to_string()),
+            email_range: Some("1-5".to_string()),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -463,14 +463,14 @@ fn test_get_article_range_dash_range() {
 }
 
 #[test]
-fn test_get_article_range_mixed() {
+fn test_get_email_range_mixed() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
-            article_range: Some("1,3-5,10".to_string()),
+            email_range: Some("1,3-5,10".to_string()),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -485,7 +485,7 @@ fn test_get_article_range_mixed() {
 }
 
 #[test]
-fn test_get_article_range_invalid() {
+fn test_get_email_range_invalid() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -493,7 +493,7 @@ fn test_get_article_range_invalid() {
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
-            article_range: Some("invalid".to_string()),
+            email_range: Some("invalid".to_string()),
             ..NntpConfig::default()
         }),
         ..Default::default()
@@ -510,7 +510,7 @@ fn test_get_article_range_invalid() {
 }
 
 #[test]
-fn test_get_article_range_no_nntp() {
+fn test_get_email_range_no_nntp() {
     let config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
@@ -539,7 +539,7 @@ read_lists:
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  article_range: "1-10"
+  email_range: "1-10"
 "#;
 
     let mut config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
@@ -550,7 +550,7 @@ nntp:
     assert!(config.loop_groups);
     assert!(config.nntp.is_some());
 
-    // Verify article range parsing
+    // Verify email range parsing
     let range = config.get_range_selection_text(RunMode::NNTP);
     assert!(range.is_some());
     let range_vec: Vec<usize> = mlh_archiver::range_inputs::parse_sequence(&range.unwrap())

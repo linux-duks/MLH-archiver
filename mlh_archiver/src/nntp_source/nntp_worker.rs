@@ -166,14 +166,7 @@ impl Worker for NNTPWorker {
                 }
             };
 
-            // create ArchiveWriter instance for the new list
-            let writer = ArchiveWriter::new(
-                Path::new(&self.base_output_path),
-                &list_name,
-                RunModeConfig::NNTP(self.nntp_config.clone()),
-            );
-
-            match self.handle_group(list_name.clone(), &writer) {
+            match self.handle_group(list_name.clone()) {
                 Ok(return_status) => {
                     log::info!("W{}: completed a task with: {return_status}", self.id);
                 }
@@ -233,6 +226,7 @@ impl Worker for NNTPWorker {
         }
     }
 
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
         let writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
@@ -280,11 +274,15 @@ impl NNTPWorker {
     /// - Creates/updates `__progress.yaml` YAML file via writer
     /// - Writes fetched emails as `.eml` files via writer
     /// - Logs unavailable articles to `__errors.csv` file via writer
-    pub fn handle_group(
-        &self,
-        list_name: String,
-        writer: &ArchiveWriter,
-    ) -> nntp::Result<NNTPWorkerGroupResult> {
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
+    pub fn handle_group(&self, list_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
+        // create ArchiveWriter instance for the new list
+        let writer = ArchiveWriter::new(
+            Path::new(&self.base_output_path),
+            &list_name,
+            RunModeConfig::NNTP(self.nntp_config.clone()),
+        );
+
         let last_article_number = writer
             .last_processed_id()
             .unwrap_or("0".to_string())
@@ -324,7 +322,7 @@ impl NNTPWorker {
                 list_name.clone(),
                 last_article_number.max(low),
                 high,
-                writer,
+                &writer,
             ) {
                 Ok(num_emails_read) => {
                     return Ok(NNTPWorkerGroupResult::Ok(list_name, num_emails_read));
@@ -367,7 +365,8 @@ impl NNTPWorker {
     /// # Shutdown Behavior
     ///
     /// If shutdown is requested during fetching, returns the count of
-    /// emails fetched so far without error.
+    /// emails fetched so far without error
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self, writer)))]
     fn read_new_mails(
         &self,
         list_name: String,
@@ -414,6 +413,7 @@ impl NNTPWorker {
         Ok(num_emails_read)
     }
 
+    #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn get_raw_article_by_number_retryable(
         &self,
         mail_num: isize,

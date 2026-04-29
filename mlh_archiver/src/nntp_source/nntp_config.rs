@@ -21,7 +21,7 @@ pub struct NntpConfig {
     pub request_interval: u64,
     /// (optional). Read a specific range of articles from the first list provided.
     /// Comma separated values, or dash separated ranges, like low-high
-    pub article_range: Option<String>,
+    pub email_range: Option<String>,
 
     /// (optional). NNTP server username for authentication
     pub username: Option<String>,

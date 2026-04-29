@@ -71,6 +71,7 @@ pub(crate) struct DataLineage {
     pub(crate) archiver_build_info: String,
 }
 
+#[derive(std::fmt::Debug)]
 pub struct DataLineageWriter {
     output_path: PathBuf,
     list_name: String,

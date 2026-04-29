@@ -6,7 +6,7 @@
 //! # Functions
 //!
 //! - [`connect_to_nntp_server`] - Establish connection to NNTP server
-//! - [`get_group_info`] - Retrieve group information (article range)
+//! - [`get_group_info`] - Retrieve group information (email range)
 //! - [`retrieve_lists_with_connection`] - Get all available groups
 
 use crate::errors;
@@ -37,6 +37,7 @@ use nntp::NNTPStream;
 /// stream.quit()?;
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn connect_to_nntp_server(
     hostname: &str,
     port: Option<u16>,
@@ -81,7 +82,7 @@ pub fn server_address(hostname: &str, port: Option<u16>) -> String {
     }
 }
 
-/// Retrieves information about a newsgroup including article range.
+/// Retrieves information about a newsgroup including email range.
 ///
 /// This function queries the NNTP server for group statistics including
 /// the low and high article numbers, which can be used to determine
@@ -94,7 +95,7 @@ pub fn server_address(hostname: &str, port: Option<u16>) -> String {
 ///
 /// # Returns
 ///
-/// * `Ok(NewsGroup)` - Group information with article range
+/// * `Ok(NewsGroup)` - Group information with email range
 /// * `Err(...)` - NNTP protocol error
 ///
 /// # Example
@@ -107,6 +108,7 @@ pub fn server_address(hostname: &str, port: Option<u16>) -> String {
 /// println!("Articles: {} to {}", group.low, group.high);
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
+#[cfg_attr(feature = "otel", tracing::instrument(skip(nntp_stream)))]
 pub fn get_group_info(
     nntp_stream: &mut NNTPStream,
     group_name: &str,
@@ -140,6 +142,7 @@ pub fn get_group_info(
 /// println!("Available groups: {}", groups.len());
 /// # Ok::<(), mlh_archiver::errors::Error>(())
 /// ```
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn retrieve_lists_with_connection(
     hostname: &str,
     port: Option<u16>,
@@ -160,7 +163,7 @@ pub fn retrieve_lists_with_connection(
 /// Retrieves group information for multiple groups in a single call.
 ///
 /// This function connects to the server, queries info for each group,
-/// and returns the results. Useful for previewing article ranges.
+/// and returns the results. Useful for previewing email ranges.
 ///
 /// # Arguments
 ///
@@ -172,6 +175,7 @@ pub fn retrieve_lists_with_connection(
 ///
 /// * `Ok(Vec<(String, nntp::NewsGroup)>)` - Pair of group name and info
 /// * `Err(...)` - Connection or protocol error
+#[cfg_attr(feature = "otel", tracing::instrument(skip(password)))]
 pub fn retrieve_groups_info(
     hostname: &str,
     port: Option<u16>,

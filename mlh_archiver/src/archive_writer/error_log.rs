@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 /// let logger = ErrorLogger::new(Path::new("./output"), "test.list");
 /// logger.log("42", "email not available");
 /// ```
+#[derive(std::fmt::Debug)]
 pub struct ErrorLogger {
     output_path: PathBuf,
 }

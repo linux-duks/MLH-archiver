@@ -381,7 +381,7 @@ fn test_read_from_synthetic_public_inbox() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: None,
+                email_range: None,
             }),
             ..Default::default()
         },
@@ -410,7 +410,7 @@ fn test_read_from_synthetic_public_inbox() {
 }
 
 #[test]
-fn test_pi_article_range() {
+fn test_pi_email_range() {
     let _found_files = run_pi_test_with_config(
         |test_data_path| AppConfig {
             output_dir: "".to_string(),
@@ -420,7 +420,7 @@ fn test_pi_article_range() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: Some("1-3".to_owned()),
+                email_range: Some("1-3".to_owned()),
             }),
             ..Default::default()
         },
@@ -526,7 +526,7 @@ fn test_read_from_demo_public_inbox() {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            article_range: None,
+            email_range: None,
         }),
         ..Default::default()
     };
@@ -624,9 +624,9 @@ fn test_read_from_demo_public_inbox() {
     println!("Test passed for inbox {}", inbox.name);
 }
 
-/// Test article range functionality
+/// Test email range functionality
 #[test]
-fn test_read_article_range_from_demo() {
+fn test_read_email_range_from_demo() {
     let demo_dir = Path::new("../../public-inbox-demo");
     if !demo_dir.exists() {
         println!("Demo directory not found, skipping test");
@@ -662,7 +662,7 @@ fn test_read_article_range_from_demo() {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            article_range: Some("2".to_owned()), // Only article 2
+            email_range: Some("2".to_owned()), // Only article 2
         }),
         ..Default::default()
     };
@@ -762,7 +762,7 @@ fn test_validate_file_structure_using_helpers() {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
             public_inbox_config: None,
-            article_range: None,
+            email_range: None,
         }),
         ..Default::default()
     };
@@ -811,7 +811,7 @@ fn test_multi_epoch_all_emails() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: None,
+                email_range: None,
             }),
             ..Default::default()
         },
@@ -840,7 +840,7 @@ fn test_multi_epoch_all_emails() {
 }
 
 #[test]
-fn test_multi_epoch_article_range() {
+fn test_multi_epoch_email_range() {
     let _found_files = run_pi_test_with_config(
         |test_data_path| AppConfig {
             output_dir: "".to_string(),
@@ -850,7 +850,7 @@ fn test_multi_epoch_article_range() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: Some("5-8".to_owned()), // All in epoch 1
+                email_range: Some("5-8".to_owned()), // All in epoch 1
             }),
             ..Default::default()
         },
@@ -888,7 +888,7 @@ fn test_multi_epoch_resume() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: Some("1-4".to_owned()), // Only first 4 emails
+                email_range: Some("1-4".to_owned()), // Only first 4 emails
             }),
             ..Default::default()
         },
@@ -906,7 +906,7 @@ fn test_multi_epoch_resume() {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
                 public_inbox_config: None,
-                article_range: None, // No range - should resume
+                email_range: None, // No range - should resume
             }),
             ..Default::default()
         },
@@ -1130,7 +1130,7 @@ fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, read_lists: Vec<Strin
             import_directory: abs_inbox.to_string_lossy().to_string(),
             origin: "local-test".to_owned(),
             public_inbox_config: None,
-            article_range: None,
+            email_range: None,
         }),
         ..Default::default()
     };
@@ -1411,7 +1411,7 @@ fn test_broken_alternates_resume() {
     // Epochs 0 and 1 have broken alternates, epoch 2 is clean.
     create_v2_multi_epoch_inbox(base_dir, inbox_name, &[4, 4, 3], &[0, 1]);
 
-    // Phase 1: Process only first 5 emails with article_range
+    // Phase 1: Process only first 5 emails with email_range
     let abs_base = std::fs::canonicalize(base_dir).expect("canonicalize base_dir");
     let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
         std::fs::create_dir_all(output_dir).expect("create output_dir");
@@ -1434,7 +1434,7 @@ fn test_broken_alternates_resume() {
                 import_directory: abs_base.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
-                article_range: Some("1-5".to_owned()),
+                email_range: Some("1-5".to_owned()),
             }),
             ..Default::default()
         };
@@ -1473,7 +1473,7 @@ fn test_broken_alternates_resume() {
                 import_directory: abs_base.to_string_lossy().to_string(),
                 origin: "local-test".to_owned(),
                 public_inbox_config: None,
-                article_range: None,
+                email_range: None,
             }),
             ..Default::default()
         };

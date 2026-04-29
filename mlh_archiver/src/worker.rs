@@ -87,7 +87,7 @@ pub trait Worker: Send {
     ///
     /// This method is used for:
     /// - Re-fetching emails that previously failed
-    /// - Fetching specific articles via `article_range` configuration
+    /// - Fetching specific articles via `email_range` configuration
     ///
     /// # Arguments
     ///

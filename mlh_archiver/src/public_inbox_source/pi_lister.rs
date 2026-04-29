@@ -29,6 +29,7 @@ use std::path::PathBuf;
 /// };
 /// let lists = retrieve_lists(config).expect("Failed to retrieve lists");
 /// ```
+#[cfg_attr(feature = "otel", tracing::instrument)]
 pub fn retrieve_lists(pi_config: PIConfig) -> crate::Result<Vec<String>> {
     // Validate the configuration before proceeding.
     pi_config.validate()?;

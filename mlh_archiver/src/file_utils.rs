@@ -228,7 +228,7 @@ where
 /// ```rust,no_run
 /// use mlh_archiver::file_utils::append_yaml_to_file;
 ///
-/// #[derive(serde::Serialize)]
+/// #[derive(serde::Serialize, std::fmt::Debug)]
 /// struct Event { id: usize, msg: String }
 ///
 /// append_yaml_to_file("./events.yaml", &Event { id: 1, msg: "first".to_string() }).unwrap();
@@ -242,7 +242,7 @@ where
 /// ```
 pub fn append_yaml_to_file<T>(file_name: &str, value: &T) -> io::Result<()>
 where
-    T: ?Sized + ser::Serialize,
+    T: ?Sized + ser::Serialize + std::fmt::Debug,
 {
     let file_path = Path::new(file_name);
     if let Some(parent) = file_path.parent() {

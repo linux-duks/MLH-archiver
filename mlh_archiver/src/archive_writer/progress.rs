@@ -23,6 +23,7 @@ pub(crate) struct ReadStatus {
 /// let tracker = ProgressTracker::new(Path::new("./output"), "test.list");
 /// let last = tracker.last_processed_id();
 /// ```
+#[derive(std::fmt::Debug)]
 pub struct ProgressTracker {
     output_path: PathBuf,
 }

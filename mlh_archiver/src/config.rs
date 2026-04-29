@@ -149,7 +149,7 @@ impl AppConfig {
         }
     }
 
-    /// Retrieves the article range selection text for a specific run mode.
+    /// Retrieves the email range selection text for a specific run mode.
     ///
     /// The range text is a string like `"1,5,10-15"` that specifies which
     /// articles to fetch. It should be parsed by [`crate::range_inputs::parse_sequence()`]
@@ -165,8 +165,8 @@ impl AppConfig {
     /// * `None` if no range is configured or run mode has no config
     pub fn get_range_selection_text(&self, run_mode: RunMode) -> Option<String> {
         match self.get_run_mode_config(run_mode)? {
-            RunModeConfig::NNTP(nntp_config) => nntp_config.article_range,
-            RunModeConfig::PublicInbox(pi_config) => pi_config.article_range,
+            RunModeConfig::NNTP(nntp_config) => nntp_config.email_range,
+            RunModeConfig::PublicInbox(pi_config) => pi_config.email_range,
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }
