@@ -78,12 +78,15 @@ impl From<git2::Error> for Error {
 /// * `ConfiguredListsNotAvailable` - Configured lists don't exist on server
 /// * `AllListsUnavailable` - None of the configured lists are available
 /// * `Io(...)` - I/O error during config file operations
+// TODO: add split error types for each source module
 #[derive(Error, Debug)]
 pub enum ConfigError {
-    #[error(
-        "missing hostname: provide NNTP server hostname via --hostname/-H, NNTP_HOSTNAME env var, or config file"
-    )]
+    #[error("missing hostname: provide server hostname via NNTP_HOSTNAME env var, or config file")]
     MissingHostname,
+    #[error("missing import directory: provide a directory to read the data from")]
+    MissingImportDirectory,
+    #[error("missing origin key in configs. provide valid value")]
+    MissingOrigin,
     #[error("invalid list selection. At least one should be configured, or selected in runtime")]
     ListSelectionEmpty,
     #[error("invalid run mode.At least one RunMode should be configured")]

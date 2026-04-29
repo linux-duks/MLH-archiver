@@ -152,7 +152,7 @@ nntp:
   hostname: "nntp.example.com"
   port: 119
 
-group_lists:
+read_lists:
   nntp:
     - dev.rcpassos.me.lists.gfs2
     - dev.rcpassos.me.lists.iommu
@@ -167,7 +167,7 @@ group_lists:
 | `nthreads` | integer | Number of parallel worker threads (default: 1) |
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
 | `loop_groups` | boolean | Continuously check for new articles (default: true) |
-| `group_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `read_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 
 #### Public-Inbox Options (under `public_inbox:` block)
 
@@ -189,7 +189,7 @@ It is expected that
 |--------|------|-------------|
 | `hostname` | string | **Required.** NNTP server hostname or IP |
 | `port` | integer | NNTP server port (default: 119) |
-| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `read_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 | `username` | string | Optional. NNTP server username for authentication |
 | `password` | string | Optional. NNTP server password for authentication |
@@ -229,7 +229,7 @@ nntp:
   port: 563
   username: "myuser"
   password: "mypass"
-  group_lists: ["*"]
+  read_lists: ["*"]
 ```
 
 Both `username` and `password` are optional. If omitted, the archiver connects without authentication.
@@ -326,12 +326,18 @@ mlh_archiver/
 │   │   ├── data_lineage.rs  # DataLineageWriter (appends audit trail)
 │   │   ├── error_log.rs     # ErrorLogger (appends to __errors.csv)
 │   │   └── email_store.rs   # EmailStore (writes .eml files)
-│   └── nntp_source/         # NNTP-specific implementation
-│       ├── mod.rs           # Module exports, NNTP connection helper
-│       ├── nntp_config.rs   # NNTP configuration struct
-│       ├── nntp_lister.rs   # List retrieval from NNTP server
-│       ├── nntp_utils.rs    # shared utils handling the NNTP lib
-│       └── nntp_worker.rs   # NNTPWorker implementation
+│   ├── nntp_source/         # NNTP-specific implementation
+│   │   ├── mod.rs           # Module exports, NNTP connection helper
+│   │   ├── nntp_config.rs   # NNTP configuration struct
+│   │   ├── nntp_lister.rs   # List retrieval from NNTP server
+│   │   ├── nntp_utils.rs    # shared utils handling the NNTP lib
+│   │   └── nntp_worker.rs   # NNTPWorker implementation
+│   └── public_inbox_source/ # Public-Inbox git repo implementation
+│       ├── mod.rs           # Module exports
+│       ├── pi_config.rs     # Public-Inbox configuration struct
+│       ├── pi_lister.rs     # List retrieval from public-inbox repos
+│       ├── pi_utils.rs      # Shared public-inbox utilities
+│       └─── pi_worker.rs     # PublicInboxWorker implementation
 ├── rust-nntp/               # Forked NNTP library
 ├── tests/
 │   ├── test_config.rs       # Configuration tests
@@ -431,7 +437,7 @@ use crate::errors::ConfigError;
 pub struct ListArchiveXConfig {
     pub base_url: String,
     pub api_key: Option<String>,
-    pub group_lists: Option<Vec<String>>,
+    pub read_lists: Option<Vec<String>>,
     pub article_range: Option<String>,
 }
 
@@ -660,12 +666,12 @@ loop_groups: true
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  group_lists: ["list1"]
+  read_lists: ["list1"]
 
 list_archive_x:
   base_url: "https://archive.example.com/api"
   api_key: "your-api-key"
-  group_lists: ["list1", "list2"]
+  read_lists: ["list1", "list2"]
 ```
 
 ### 8. Add Tests

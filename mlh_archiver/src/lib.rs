@@ -87,7 +87,7 @@ pub fn start(
                     // Get available lists in endpoint
                     let groups = nntp_source::nntp_lister::retrieve_lists(nntp_config.clone())?;
                     // Filter with selected lists by user
-                    let groups = app_config.get_group_lists(groups, mode)?;
+                    let groups = app_config.get_read_lists(groups, mode)?;
 
                     log::info!("made a selection of {} {:#?}", groups.len(), groups);
 
@@ -100,7 +100,7 @@ pub fn start(
                     app_config.get_run_mode_config(mode)
                 {
                     let groups = public_inbox_source::pi_lister::retrieve_lists(pi_config.clone())?;
-                    let groups = app_config.get_group_lists(groups, mode)?;
+                    let groups = app_config.get_read_lists(groups, mode)?;
                     log::info!("made a selection of {} {:#?}", groups.len(), groups);
                     worker.create_workers(mode, groups, app_config, shutdown_flag.clone());
                 }

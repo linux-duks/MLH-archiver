@@ -301,7 +301,7 @@ fn extract_test_data_from_container(container: &Container<GenericImage>, dest_di
 fn run_pi_test_with_config<F>(
     config_builder: F,
     test_name: &str,
-    group_lists: Vec<String>,
+    read_lists: Vec<String>,
 ) -> Vec<String>
 where
     F: FnOnce(&str) -> AppConfig,
@@ -320,11 +320,11 @@ where
     let mut app_config = config_builder(&test_data_path);
     app_config.output_dir = output_dir.clone();
 
-    // Set group_lists for PublicInbox run mode
-    if !group_lists.is_empty() {
+    // Set read_lists for PublicInbox run mode
+    if !read_lists.is_empty() {
         app_config
-            .group_lists
-            .insert(RunMode::PublicInbox.to_string(), group_lists);
+            .read_lists
+            .insert(RunMode::PublicInbox.to_string(), read_lists);
     }
     let shutdown_flag = Arc::new(AtomicBool::new(false));
     let test_name_owned = test_name.to_string();
@@ -514,14 +514,14 @@ fn test_read_from_demo_public_inbox() {
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     // Configure archiver for this single inbox
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
-        group_lists,
+        read_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
@@ -650,14 +650,14 @@ fn test_read_article_range_from_demo() {
     let output_dir = "./test_public_inbox_output_range".to_owned();
     check_and_delete_folder(output_dir.clone()).unwrap();
 
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
-        group_lists,
+        read_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
@@ -750,14 +750,14 @@ fn test_validate_file_structure_using_helpers() {
     let output_dir = "./test_public_inbox_output_structure".to_owned();
     check_and_delete_folder(output_dir.clone()).unwrap();
 
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(RunMode::PublicInbox.to_string(), vec![inbox.name.clone()]);
 
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
         loop_groups: false,
-        group_lists,
+        read_lists,
         public_inbox: Some(PIConfig {
             import_directory: demo_dir.to_string_lossy().to_string(),
             origin: "demo".to_owned(),
@@ -876,7 +876,7 @@ fn test_multi_epoch_article_range() {
 
 #[test]
 fn test_multi_epoch_resume() {
-    let group_lists = vec!["v2_multi_epoch.list".to_string()];
+    let read_lists = vec!["v2_multi_epoch.list".to_string()];
 
     // Phase 1: Process first 4 emails (epoch 0)
     let _found_files1 = run_pi_test_with_config(
@@ -893,7 +893,7 @@ fn test_multi_epoch_resume() {
             ..Default::default()
         },
         "multi_epoch_resume_phase1",
-        group_lists.clone(),
+        read_lists.clone(),
     );
 
     // Phase 2: Resume without range (should start from epoch 1)
@@ -911,7 +911,7 @@ fn test_multi_epoch_resume() {
             ..Default::default()
         },
         "multi_epoch_resume_phase2",
-        group_lists.clone(),
+        read_lists.clone(),
     );
 
     // Verify all 12 emails are now present
@@ -1108,24 +1108,24 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
 }
 
 /// Runs the archiver once against a local inbox directory.
-fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, group_lists: Vec<String>) {
+fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, read_lists: Vec<String>) {
     let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
     let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
         std::fs::create_dir_all(output_dir).expect("create output_dir");
         std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
     });
 
-    // Build group_lists HashMap from the parameter
-    let mut group_lists_map = std::collections::HashMap::new();
-    if !group_lists.is_empty() {
-        group_lists_map.insert(RunMode::PublicInbox.to_string(), group_lists);
+    // Build read_lists HashMap from the parameter
+    let mut read_lists_map = std::collections::HashMap::new();
+    if !read_lists.is_empty() {
+        read_lists_map.insert(RunMode::PublicInbox.to_string(), read_lists);
     }
 
     let mut app_config = AppConfig {
         output_dir: abs_output.to_string_lossy().to_string(),
         nthreads: 1,
         loop_groups: false,
-        group_lists: group_lists_map,
+        read_lists: read_lists_map,
         public_inbox: Some(PIConfig {
             import_directory: abs_inbox.to_string_lossy().to_string(),
             origin: "local-test".to_owned(),
@@ -1422,7 +1422,7 @@ fn test_broken_alternates_resume() {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
             loop_groups: false,
-            group_lists: {
+            read_lists: {
                 let mut m = std::collections::HashMap::new();
                 m.insert(
                     RunMode::PublicInbox.to_string(),
@@ -1461,7 +1461,7 @@ fn test_broken_alternates_resume() {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
             loop_groups: false,
-            group_lists: {
+            read_lists: {
                 let mut m = std::collections::HashMap::new();
                 m.insert(
                     RunMode::PublicInbox.to_string(),

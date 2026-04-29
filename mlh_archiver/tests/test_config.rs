@@ -21,7 +21,7 @@ fn test_app_config_deserialize_nested_format() {
 nthreads: 4
 output_dir: "./custom_output"
 loop_groups: false
-group_lists:
+read_lists:
   nntp: ["list1", "list2"]
 nntp:
   hostname: "nntp.example.com"
@@ -36,7 +36,7 @@ nntp:
     assert_eq!(nntp.hostname, "nntp.example.com");
     assert_eq!(nntp.port, Some(563));
     assert_eq!(
-        config.group_lists.get("nntp"),
+        config.read_lists.get("nntp"),
         Some(&vec!["list1".to_string(), "list2".to_string()])
     );
 }
@@ -92,7 +92,7 @@ nntp:
   port: 563
   username: "myuser"
   password: "mypass"
-group_lists:
+read_lists:
   nntp: ["list1"]
 "#;
     let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
@@ -103,7 +103,7 @@ group_lists:
     assert_eq!(nntp.username, Some("myuser".to_string()));
     assert_eq!(nntp.password, Some("mypass".to_string()));
     assert_eq!(
-        config.group_lists.get("nntp"),
+        config.read_lists.get("nntp"),
         Some(&vec!["list1".to_string()])
     );
 }
@@ -216,19 +216,19 @@ fn test_app_config_get_nntp_config_without_nntp() {
 }
 
 // =============================================================================
-// get_group_lists() Tests
+// get_read_lists() Tests
 // =============================================================================
 
 #[test]
-fn test_get_group_lists_star_glob() {
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), vec!["*".to_string()]);
+fn test_get_read_lists_star_glob() {
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert("nntp".to_string(), vec!["*".to_string()]);
 
     let mut config = AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
@@ -242,15 +242,15 @@ fn test_get_group_lists_star_glob() {
         "list3".to_string(),
     ];
 
-    let result = config.get_group_lists(available_lists.clone(), RunMode::NNTP);
+    let result = config.get_read_lists(available_lists.clone(), RunMode::NNTP);
     assert!(result.is_ok());
     assert_eq!(result.unwrap(), available_lists);
 }
 
 #[test]
-fn test_get_group_lists_specific_lists() {
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(
+fn test_get_read_lists_specific_lists() {
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(
         "nntp".to_string(),
         vec!["list1".to_string(), "list2".to_string()],
     );
@@ -259,7 +259,7 @@ fn test_get_group_lists_specific_lists() {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
@@ -273,7 +273,7 @@ fn test_get_group_lists_specific_lists() {
         "list3".to_string(),
     ];
 
-    let result = config.get_group_lists(available_lists, RunMode::NNTP);
+    let result = config.get_read_lists(available_lists, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 2);
@@ -282,9 +282,9 @@ fn test_get_group_lists_specific_lists() {
 }
 
 #[test]
-fn test_get_group_lists_filters_invalid() {
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(
+fn test_get_read_lists_filters_invalid() {
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(
         "nntp".to_string(),
         vec!["valid_list".to_string(), "invalid_list".to_string()],
     );
@@ -293,7 +293,7 @@ fn test_get_group_lists_filters_invalid() {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
@@ -303,7 +303,7 @@ fn test_get_group_lists_filters_invalid() {
 
     let available_lists = vec!["valid_list".to_string(), "another_valid_list".to_string()];
 
-    let result = config.get_group_lists(available_lists, RunMode::NNTP);
+    let result = config.get_read_lists(available_lists, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 1);
@@ -311,10 +311,10 @@ fn test_get_group_lists_filters_invalid() {
 }
 
 #[test]
-fn test_get_group_lists_all_invalid() {
+fn test_get_read_lists_all_invalid() {
     // Configuring only invalid (non-existent) list names should return an error
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(
         "nntp".to_string(),
         vec!["invalid1".to_string(), "invalid2".to_string()],
     );
@@ -323,7 +323,7 @@ fn test_get_group_lists_all_invalid() {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
@@ -333,7 +333,7 @@ fn test_get_group_lists_all_invalid() {
 
     let available_lists = vec!["valid_list".to_string(), "another_valid_list".to_string()];
 
-    let result = config.get_group_lists(available_lists, RunMode::NNTP);
+    let result = config.get_read_lists(available_lists, RunMode::NNTP);
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
@@ -342,9 +342,9 @@ fn test_get_group_lists_all_invalid() {
 }
 
 #[test]
-fn test_get_group_lists_deduplicates() {
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert(
+fn test_get_read_lists_deduplicates() {
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert(
         "nntp".to_string(),
         vec![
             "list1".to_string(),
@@ -357,7 +357,7 @@ fn test_get_group_lists_deduplicates() {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             ..NntpConfig::default()
@@ -367,7 +367,7 @@ fn test_get_group_lists_deduplicates() {
 
     let available_lists = vec!["list1".to_string(), "list2".to_string()];
 
-    let result = config.get_group_lists(available_lists, RunMode::NNTP);
+    let result = config.get_read_lists(available_lists, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 2);
@@ -534,7 +534,7 @@ fn test_full_config_workflow() {
 nthreads: 3
 output_dir: "./integration_test_output"
 loop_groups: true
-group_lists:
+read_lists:
   nntp: ["list1", "list2"]
 nntp:
   hostname: "nntp.example.com"
@@ -564,7 +564,7 @@ nntp:
         "list2".to_string(),
         "list3".to_string(),
     ];
-    let groups = config.get_group_lists(available_lists, RunMode::NNTP);
+    let groups = config.get_read_lists(available_lists, RunMode::NNTP);
     assert!(groups.is_ok());
     assert_eq!(groups.unwrap().len(), 2);
 }
@@ -594,15 +594,15 @@ fn test_config_validation_workflow() {
 // Glob Pattern Matching Tests
 // =============================================================================
 
-/// Helper to create a config with specific group_lists
-fn config_with_group_lists(lists: Vec<String>) -> AppConfig {
-    let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), lists);
+/// Helper to create a config with specific read_lists
+fn config_with_read_lists(lists: Vec<String>) -> AppConfig {
+    let mut read_lists = std::collections::HashMap::new();
+    read_lists.insert("nntp".to_string(), lists);
     AppConfig {
         nthreads: 1,
         output_dir: "./output".to_string(),
         loop_groups: true,
-        group_lists,
+        read_lists,
         nntp: Some(NntpConfig {
             hostname: "nntp.example.com".to_string(),
             port: Some(119),
@@ -623,12 +623,12 @@ fn test_fixture_lists() -> Vec<String> {
 }
 
 #[test]
-fn test_get_group_lists_glob_star_suffix() {
+fn test_get_read_lists_glob_star_suffix() {
     // test.groups.* should match all 4 test groups
-    let mut config = config_with_group_lists(vec!["test.groups.*".to_string()]);
+    let mut config = config_with_read_lists(vec!["test.groups.*".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 4);
@@ -639,12 +639,12 @@ fn test_get_group_lists_glob_star_suffix() {
 }
 
 #[test]
-fn test_get_group_lists_glob_partial_match() {
+fn test_get_read_lists_glob_partial_match() {
     // *.synth* should match only test.groups.synthetic
-    let mut config = config_with_group_lists(vec!["*.synth*".to_string()]);
+    let mut config = config_with_read_lists(vec!["*.synth*".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 1);
@@ -652,12 +652,12 @@ fn test_get_group_lists_glob_partial_match() {
 }
 
 #[test]
-fn test_get_group_lists_glob_no_match() {
+fn test_get_read_lists_glob_no_match() {
     // nonexistent.* should match nothing → error
-    let mut config = config_with_group_lists(vec!["nonexistent.*".to_string()]);
+    let mut config = config_with_read_lists(vec!["nonexistent.*".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_err());
     assert!(matches!(
         result.unwrap_err(),
@@ -666,13 +666,13 @@ fn test_get_group_lists_glob_no_match() {
 }
 
 #[test]
-fn test_get_group_lists_glob_mixed_patterns() {
+fn test_get_read_lists_glob_mixed_patterns() {
     // Mix of exact name and glob: test.groups.foo + *.synth*
     let mut config =
-        config_with_group_lists(vec!["test.groups.foo".to_string(), "*.synth*".to_string()]);
+        config_with_read_lists(vec!["test.groups.foo".to_string(), "*.synth*".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 2);
@@ -681,13 +681,13 @@ fn test_get_group_lists_glob_mixed_patterns() {
 }
 
 #[test]
-fn test_get_group_lists_glob_question_mark() {
+fn test_get_read_lists_glob_question_mark() {
     // test.groups.fo? should match test.groups.foo (single char wildcard)
     // but NOT test.groups.foobar (if it existed)
-    let mut config = config_with_group_lists(vec!["test.groups.fo?".to_string()]);
+    let mut config = config_with_read_lists(vec!["test.groups.fo?".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 1);
@@ -695,30 +695,30 @@ fn test_get_group_lists_glob_question_mark() {
 }
 
 #[test]
-fn test_get_group_lists_glob_deduplication() {
+fn test_get_read_lists_glob_deduplication() {
     // test.groups.* matches all, test.groups.foo is already included → no dupes
-    let mut config = config_with_group_lists(vec![
+    let mut config = config_with_read_lists(vec![
         "test.groups.*".to_string(),
         "test.groups.foo".to_string(),
     ]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 4); // Should be 4, not 5
 }
 
 #[test]
-fn test_get_group_lists_glob_partial_warning() {
+fn test_get_read_lists_glob_partial_warning() {
     // Valid glob + invalid pattern → should succeed but warn about invalid one
-    let mut config = config_with_group_lists(vec![
+    let mut config = config_with_read_lists(vec![
         "test.groups.foo".to_string(),
         "nonexistent.list".to_string(),
     ]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     assert_eq!(lists.len(), 1);
@@ -726,13 +726,13 @@ fn test_get_group_lists_glob_partial_warning() {
 }
 
 #[test]
-fn test_get_group_lists_glob_multiple_globs() {
+fn test_get_read_lists_glob_multiple_globs() {
     // Multiple glob patterns: test.groups.* + *.empty (overlapping, tests dedup)
     let mut config =
-        config_with_group_lists(vec!["test.groups.*".to_string(), "*.empty".to_string()]);
+        config_with_read_lists(vec!["test.groups.*".to_string(), "*.empty".to_string()]);
     let available = test_fixture_lists();
 
-    let result = config.get_group_lists(available, RunMode::NNTP);
+    let result = config.get_read_lists(available, RunMode::NNTP);
     assert!(result.is_ok());
     let lists = result.unwrap();
     // test.groups.* matches all 4, *.empty matches empty (already included) → 4 total

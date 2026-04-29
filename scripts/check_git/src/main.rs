@@ -400,7 +400,7 @@ fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Re
         inbox_dir.display()
     ));
     yaml.push_str(&format!("  origin: \"{}\"\n", origin));
-    yaml.push_str("  group_lists:\n");
+    yaml.push_str("  read_lists:\n");
     for inbox in inboxes {
         yaml.push_str(&format!("    - \"{}\"\n", inbox.name));
     }

@@ -5,9 +5,6 @@ use crate::errors::ConfigError;
 /// This struct holds the configuration needed to connect to and process a public inbox.
 /// It includes the import directory, origin, and optional settings for grokmirror,
 /// public inbox config, and article range.
-///
-/// Note: `group_lists` is now stored at the top-level `AppConfig.group_lists` HashMap
-/// with the key "PublicInbox", not in this struct.
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct PIConfig {
     /// (optional) if specified, will use grokmirror to identify the lists available
@@ -43,8 +40,7 @@ impl PIConfig {
     /// - `ConfigError::Io` if the import directory does not exist or is not a directory
     pub fn validate(&self) -> Result<(), ConfigError> {
         if self.import_directory.is_empty() {
-            // TODO: need new error variant for missing import directory
-            return Err(ConfigError::MissingHostname);
+            return Err(ConfigError::MissingImportDirectory);
         }
 
         // Check if import directory exists and is a directory
@@ -66,8 +62,7 @@ impl PIConfig {
         }
 
         if self.origin.is_empty() {
-            // TODO: need new error variant for missing origin
-            return Err(ConfigError::MissingHostname);
+            return Err(ConfigError::MissingOrigin);
         }
 
         // TODO: validate article_range format using parse_sequence

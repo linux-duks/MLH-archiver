@@ -9,10 +9,10 @@ nthreads: 3
 output_dir: "./output"
 loop_groups: true
 
-# group_lists delcaration is optional.
+# read_lists delcaration is optional.
 # if empty, the user will be prompted with the options found
 # in the source to select
-group_lists:
+read_lists:
   nntp: ["*"]
   public_inbox: ["*"]
 

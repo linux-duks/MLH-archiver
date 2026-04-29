@@ -69,7 +69,7 @@ One of the dependencies is a git submodule. To build correctly
    output_dir: "./output"
    loop_groups: true
 
-   group_lists:
+   read_lists:
       nntp:
        - dev.example.me.lists.gfs2
        - dev.example.me.lists.iommu
@@ -77,13 +77,13 @@ One of the dependencies is a git submodule. To build correctly
       hostname: "nntps://nntp.example.com"
    ```
 
-   **Glob patterns** are also supported in `group_lists`. Use `*` or `?` to match multiple lists:
+   **Glob patterns** are also supported in `read_lists`. Use `*` or `?` to match multiple lists:
 
    ```yaml
    nntp:
      hostname: "nntp.example.com"
      port: 119
-   group_lists:
+   read_lists:
       nntp:
        # Match all lists starting with "dev.example."
        - "dev.example.*"
@@ -328,7 +328,7 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 
 The archiver uses a nested configuration format:
 
-- Global settings (`nthreads`, `output_dir`, `loop_groups`,`group_lists`) at the top level
+- Global settings (`nthreads`, `output_dir`, `loop_groups`,`read_lists`) at the top level
 - NNTP-specific settings (`hostname`, `port`, `article_range`) under the `nntp:` block
 
 **Article Range Selection:**

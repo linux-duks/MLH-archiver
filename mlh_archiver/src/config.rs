@@ -20,7 +20,7 @@ pub(crate) mod built_info {
 /// Source-specific settings are nested, and private (e.g., nntp, imap, local, mbox).
 /// Their values should be accessed using the [`RunMode`] ENUM.
 ///
-/// The `group_lists` field is a HashMap that stores selected mailing lists per run mode.
+/// The `read_lists` field is a HashMap that stores selected mailing lists per run mode.
 ///
 /// # Example
 ///
@@ -28,7 +28,7 @@ pub(crate) mod built_info {
 /// nthreads: 2
 /// output_dir: "./output"
 /// loop_groups: true
-/// group_lists:
+/// read_lists:
 ///   NNTP: ["list1", "list2"]
 ///   PublicInbox: ["list3"]
 ///
@@ -52,7 +52,7 @@ pub struct AppConfig {
 
     /// Group lists per run mode: run_mode display name -> list of groups
     #[serde(default)]
-    pub group_lists: HashMap<String, Vec<String>>,
+    pub read_lists: HashMap<String, Vec<String>>,
 
     /// NNTP-specific configuration
     pub nntp: Option<nntp_config::NntpConfig>,
@@ -200,15 +200,15 @@ impl AppConfig {
         return run_modes;
     }
 
-    /// Retrieves the list selection for a specific run mode from the top-level group_lists HashMap
+    /// Retrieves the list selection for a specific run mode from the top-level read_lists HashMap
     fn get_list_selection(&self, run_mode: RunMode) -> Option<Vec<String>> {
         let key = run_mode.to_string();
-        self.group_lists.get(&key).cloned()
+        self.read_lists.get(&key).cloned()
     }
 
     /// Saves the list selection for a run mode to the config and persists to file.
     ///
-    /// Updates the top-level `group_lists` HashMap and writes the full config
+    /// Updates the top-level `read_lists` HashMap and writes the full config
     /// to `archiver_config.yml`.
     fn set_list_selection(
         &mut self,
@@ -216,7 +216,7 @@ impl AppConfig {
         list_options: Vec<String>,
     ) -> Result<(), ConfigError> {
         let key = run_mode.to_string();
-        self.group_lists.insert(key, list_options);
+        self.read_lists.insert(key, list_options);
 
         // Persist the full config to the default config file
         match file_utils::write_yaml_truncate("archiver_config.yml", self) {
@@ -313,7 +313,7 @@ impl Default for AppConfig {
             nthreads: default_nthreads(),
             output_dir: default_output_dir(),
             loop_groups: default_loop_groups(),
-            group_lists: HashMap::new(),
+            read_lists: HashMap::new(),
             nntp: None,
             public_inbox: None,
         }
@@ -469,16 +469,16 @@ impl AppConfig {
     /// # Side Effects
     ///
     /// Writes selection to config file if user selects interactively.
-    pub fn get_group_lists(
+    pub fn get_read_lists(
         &mut self,
         list_options: Vec<String>,
         run_mode: RunMode,
     ) -> Result<Vec<String>, ConfigError> {
         let mut answer: Vec<String>;
-        let group_lists = self.get_list_selection(run_mode);
-        match group_lists {
+        let read_lists = self.get_list_selection(run_mode);
+        match read_lists {
             None => {
-                log::info!("No group_lists defined");
+                log::info!("No read_lists defined");
 
                 // list of options provides, with "*" as first
                 let mut select_options = vec!["*".to_string()];
@@ -502,7 +502,7 @@ impl AppConfig {
                 }
             }
             Some(_) => {
-                let mut user_selection = group_lists.expect("is none was validated");
+                let mut user_selection = read_lists.expect("is none was validated");
                 // If "*" provided, load all lists
                 if user_selection.len() == 1 && user_selection[0] == "*" {
                     log::info!("Configured to fetch all lists");

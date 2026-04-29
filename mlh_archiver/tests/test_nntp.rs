@@ -260,7 +260,7 @@ fn test_read_from_local_nntp_server() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*".to_owned()]);
                     m
@@ -320,7 +320,7 @@ fn test_read_single_article_by_range() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*".to_owned()]);
                     m
@@ -375,7 +375,7 @@ fn test_read_article_range() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*".to_owned()]);
                     m
@@ -435,7 +435,7 @@ fn test_read_multiple_articles_by_range() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*".to_owned()]);
                     m
@@ -500,7 +500,7 @@ fn test_read_mixed_range() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*".to_owned()]);
                     m
@@ -564,7 +564,7 @@ fn test_read_from_local_nntp_server_with_auth() {
                 output_dir: "".to_string(), // will be overwritten by helper
                 nthreads: 1,
                 loop_groups: false,
-                group_lists: {
+                read_lists: {
                     let mut m = HashMap::new();
                     m.insert("nntp".to_string(), vec!["*.foo".to_owned()]);
                     m
