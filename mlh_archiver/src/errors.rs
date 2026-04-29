@@ -52,11 +52,20 @@ pub enum Error {
     #[error("git error: {0}")]
     Git(String),
 
+    #[error("parquet error: {0}")]
+    Parquet(String),
+
     #[error(transparent)]
     Anyhow(#[from] anyhow::Error),
 
     #[error(transparent)]
     Config(#[from] ConfigError),
+}
+
+impl From<parquet::errors::ParquetError> for Error {
+    fn from(err: parquet::errors::ParquetError) -> Self {
+        Error::Parquet(err.to_string())
+    }
 }
 
 impl From<git2::Error> for Error {

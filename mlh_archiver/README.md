@@ -144,6 +144,7 @@ Configuration is **nested**: global settings at the top level, NNTP-specific set
 nthreads: 2
 output_dir: "./output"
 loop_groups: true
+write_mode: "parquet:10000"  # or "raw_email"
 
 nntp:
   hostname: "nntp.example.com"
@@ -164,6 +165,7 @@ read_lists:
 | `nthreads` | integer | Number of parallel worker threads (default: 1) |
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
 | `loop_groups` | boolean | Continuously check for new emails (default: true) |
+| `write_mode` | string | Output format: `"raw_email"` or `"parquet:SIZE"` (default: `"parquet:10000"`) |
 | `read_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 
 #### Public-Inbox Options (under `public_inbox:` block)
@@ -248,8 +250,31 @@ Both `username` and `password` are optional. If omitted, the archiver connects w
 
 ## Output Format
 
-Emails are stored as raw RFC 822 email files in the output directory, organized by mailing list:
+Emails are stored according to the `write_mode` configuration:
 
+- **`raw_email`**: Raw RFC 822 email files (`.eml`) organized by mailing list:
+```
+output/
+├── dev.rcpassos.me.lists.gfs2/
+│   ├── 000001.eml
+│   ├── 000002.eml
+│   └── ...
+```
+
+- **`parquet:<buffer_size>`** (default): Parquet files with batched writes:
+```
+output/
+├── dev.rcpassos.me.lists.gfs2/
+│   ├── list.name_0.parquet
+│   ├── list.name_1.parquet
+│   └── ...
+```
+
+Both modes also produce:
+```
+├── __progress.yaml          # YAML: last processed ID (resume)
+├── __lineage.yaml           # YAML stream: DataLineage audit trail
+└── __errors.csv             # CSV: id,error_message
 ```
 output/
 ├── dev.rcpassos.me.lists.gfs2/
@@ -392,23 +417,24 @@ The `ArchiveWriter` provides a consistent storage interface so that:
 Since each worker writes to a distinct output path per list, **no concurrency control is needed**. Workers create their own `ArchiveWriter` instance per task.
 
 ```rust
-use mlh_archiver::archive_writer::ArchiveWriter;
+use mlh_archiver::archive_writer::{ArchiveWriter, WriteMode};
+use mlh_archiver::config::RunModeConfig;
 use std::path::Path;
 
-// Inside worker's consumme_list or read_email_by_index:
+// Inside worker's consume_list or read_email_by_index:
+let write_mode = WriteMode::Parquet { buffer_size: 10000 }; // or WriteMode::RawEmails
 let writer = ArchiveWriter::new(
     Path::new(&self.base_output_path),
     &list_name,
+    run_mode, // RunModeConfig from your worker's config
+    write_mode,
 );
 
 // Get last processed email ID (for resume)
 let last_id = writer.last_processed_id();
 
-// Write a fetched email
-writer.write_email(email_id, &raw_lines)?;
-
-// Update progress after successful write
-writer.update_progress(email_id)?;
+// Archive a fetched email
+writer.archive_email(email_id, &raw_lines)?;
 
 // Log unavailable emails (non-fatal)
 writer.log_error(email_id, &error.to_string());
@@ -416,6 +442,13 @@ writer.log_error(email_id, &error.to_string());
 
 **File layout produced by `ArchiveWriter`:**
 
+See [Output Format](#output-format) for details on file layout based on `write_mode`. Both modes produce:
+```
+output/
+├── list.name/
+│   ├── __progress.yaml          # YAML: last processed ID (resume)
+│   ├── __lineage.yaml           # YAML stream: DataLineage audit trail
+│   └── __errors.csv             # CSV: id,error_message
 ```
 output/
 ├── list.name/
@@ -468,7 +501,7 @@ impl ListArchiveXConfig {
 **`src/list_archive_x_source/list_archive_x_worker.rs`:**
 
 ```rust
-use crate::archive_writer::ArchiveWriter;
+use crate::archive_writer::{ArchiveWriter, WriteMode};
 use crate::worker::Worker;
 use std::path::Path;
 use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
@@ -478,6 +511,7 @@ pub struct ListArchiveXWorker {
     config: ListArchiveXConfig,
     base_output_path: String,
     shutdown_flag: Arc<AtomicBool>,
+    write_mode: WriteMode,
     // ... other fields (e.g., HTTP client)
 }
 
@@ -487,12 +521,14 @@ impl ListArchiveXWorker {
         config: ListArchiveXConfig,
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
+        write_mode: WriteMode,
     ) -> Self {
         ListArchiveXWorker {
             id,
             config,
             base_output_path,
             shutdown_flag,
+            write_mode,
             // ...
         }
     }
@@ -517,17 +553,18 @@ impl Worker for ListArchiveXWorker {
             };
 
             // Create ArchiveWriter for this list
-            let writer = ArchiveWriter::new(
+            let mut writer = ArchiveWriter::new(
                 Path::new(&self.base_output_path),
                 &list_name,
+                run_mode, // RunModeConfig for this source
+                self.write_mode,
             );
 
             // Get last processed ID for resume
             let last_id = writer.last_processed_id();
 
             // Fetch emails for list_name using writer for storage...
-            // writer.write_email(id, &lines)?;
-            // writer.update_progress(id)?;
+            // writer.archive_email(id, &lines)?;
             // writer.log_error(id, &error);
         }
     }
@@ -538,14 +575,15 @@ impl Worker for ListArchiveXWorker {
         email_index: usize,
     ) -> crate::Result<()> {
         // Create writer for this list
-        let writer = ArchiveWriter::new(
+        let mut writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             &list_name,
+            run_mode,
+            self.write_mode,
         );
 
         // Fetch and store the specific email...
-        // writer.write_email(email_index, &lines)?;
-        // writer.update_progress(email_index)?;
+        // writer.archive_email(email_index, &lines)?;
         Ok(())
     }
 }

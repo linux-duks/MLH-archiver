@@ -23,7 +23,7 @@
 //! |-----------|---------|
 //! | [`ProgressTracker`] | Reads/writes `__progress.yaml` for resume support |
 //! | [`DataLineageWriter`] | Appends lineage records to `__lineage.yaml` |
-//! | [`EmailStore`] | Writes `{id}.eml` files |
+//! | [`RawEmailStore`] | Writes `{id}.eml` files |
 //! | [`ErrorLogger`] | Appends `{id},{error}` to `__errors.csv` CSV |
 //!
 //! # Concurrency
@@ -72,32 +72,36 @@
 mod data_lineage;
 mod email_store;
 mod error_log;
+mod parquet_email_store;
 mod progress;
+mod raw_email_store;
 
 use crate::config::RunModeConfig;
+
 pub use data_lineage::DataLineageWriter;
-pub use email_store::EmailStore;
+pub use email_store::{EmailData, EmailStore, WriteMode};
 pub use error_log::ErrorLogger;
+pub use parquet_email_store::ParquetEmailStore;
 pub use progress::ProgressTracker;
+pub use raw_email_store::RawEmailStore;
 
 use std::path::Path;
 
 /// Facade combining progress tracking, error logging, email storage,
 /// and data lineage for a single mailing list.
 ///
-/// Created once per list by a worker. Safe to share across threads via
-/// `&self` since all internal state is file-based.
+/// Created once per list by a worker. The email store requires `&mut self`
+/// access for writes, so callers pass `&mut ArchiveWriter`.
 ///
 /// # Why a Facade?
 ///
 /// Instead of workers managing their own file I/O, `ArchiveWriter` provides
 /// a single interface that all workers use. This ensures consistent behavior
 /// across different source implementations (NNTP, IMAP, mbox, etc.).
-#[derive(std::fmt::Debug)]
 pub struct ArchiveWriter {
     progress: ProgressTracker,
     error_log: ErrorLogger,
-    email_store: EmailStore,
+    email_store: Box<dyn EmailStore>,
     data_lineage: DataLineageWriter,
 }
 
@@ -109,11 +113,25 @@ impl ArchiveWriter {
     /// * `base_output_path` - Root output directory (e.g., `./output`)
     /// * `list_name` - Mailing list name (becomes subdirectory)
     /// * `run_mode` - Run mode configuration (used for lineage source type)
-    pub fn new(base_output_path: &Path, list_name: &str, run_mode: RunModeConfig) -> Self {
+    pub fn new(
+        base_output_path: &Path,
+        list_name: &str,
+        run_mode: RunModeConfig,
+        write_mode: email_store::WriteMode,
+    ) -> Self {
+        let list_path = base_output_path.join(list_name);
+
+        let storage: Box<dyn EmailStore> = match write_mode {
+            WriteMode::RawEmails => Box::new(RawEmailStore::new(list_path)),
+            WriteMode::Parquet { buffer_size } => {
+                Box::new(ParquetEmailStore::new(list_path, buffer_size))
+            }
+        };
+
         Self {
             progress: ProgressTracker::new(base_output_path, list_name),
             error_log: ErrorLogger::new(base_output_path, list_name),
-            email_store: EmailStore::new(base_output_path, list_name),
+            email_store: storage,
             data_lineage: DataLineageWriter::new(base_output_path, list_name, run_mode),
         }
     }
@@ -135,22 +153,31 @@ impl ArchiveWriter {
     ///
     /// This is the primary method for storing a successfully fetched email.
     /// It performs three operations atomically:
-    /// 1. Writes the email content to `{list_name}/{id}.eml`
+    /// 1. Writes the email content to parquet inside `{list_name}/`
     /// 2. Updates `__progress.yaml` with the new last-processed ID
-    /// 3. Appends a `DataLineage` record to `__progress.yaml`
+    /// 3. Appends a `DataLineage` record to `__lineage.yaml`
     ///
     /// # Arguments
     ///
     /// * `email_id` - Email/article number
     /// * `lines` - Raw email lines (can be any iterable collection of strings)
-    #[cfg_attr(feature = "otel", tracing::instrument(skip(self, lines)))]
-    pub fn archive_email<I, L>(&self, email_id: &str, lines: I) -> crate::Result<()>
+    pub fn archive_email<I, L>(&mut self, email_id: &str, lines: I) -> crate::Result<()>
     where
-        I: IntoIterator<Item = L> + std::fmt::Debug,
+        I: IntoIterator<Item = L>,
         L: AsRef<str>,
     {
-        self.email_store.write(email_id, lines)?;
-        self.progress.update(email_id)?;
+        let content: Vec<String> = lines.into_iter().map(|l| l.as_ref().to_string()).collect();
+
+        let committed_emails = self.email_store.add_email(email_store::EmailData {
+            email_id: email_id.to_string(),
+            content,
+        })?;
+
+        if let Some(committed_emails) = committed_emails {
+            for email_id in committed_emails {
+                self.progress.update(&email_id)?;
+            }
+        }
         self.data_lineage.update(email_id)
     }
 
@@ -161,5 +188,15 @@ impl ArchiveWriter {
     /// do not propagate as errors.
     pub fn log_error(&self, email_id: &str, error: &str) {
         self.error_log.log(email_id, error);
+    }
+}
+
+impl Drop for ArchiveWriter {
+    fn drop(&mut self) {
+        if let Ok(Some(committed_emails)) = self.email_store.close()
+            && let Some(last_email) = committed_emails.last()
+        {
+            let _ = self.progress.update(last_email);
+        }
     }
 }

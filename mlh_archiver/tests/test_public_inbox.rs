@@ -4,6 +4,7 @@ use std::process::Command;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 
+use mlh_archiver::archive_writer::WriteMode;
 use mlh_archiver::config::{AppConfig, RunMode};
 use mlh_archiver::public_inbox_source::pi_config::PIConfig;
 use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
@@ -32,6 +33,11 @@ pub fn check_and_delete_folder(folder_path: String) -> io::Result<()> {
         fs::remove_dir_all(&folder_path)?;
     }
     Ok(())
+}
+
+/// Pads numeric IDs with zeros to at least 3 digits (e.g., 1 -> "001", 42 -> "042").
+fn pad_ids(ids: &[usize]) -> Vec<String> {
+    ids.iter().map(|&n| format!("{:0>3}", n)).collect()
 }
 
 /// Validates the content of a `__progress.yaml` file.
@@ -152,21 +158,21 @@ fn root_dir(dir: &str) -> Vec<String> {
 /// - The list directory
 ///
 /// Conditionally includes:
-/// - `__progress.yaml` — if `articles` is non-empty (created by `archive_email`)
-/// - `__lineage.yaml` — if `articles` is non-empty
-/// - `{N}.eml` — for each N in `articles`
+/// - `__progress.yaml` — if `mail_files` is non-empty (created by `archive_email`)
+/// - `__lineage.yaml` — if `mail_files` is non-empty
+/// - `{N}.eml` — for each N in `mail_files`
 /// - `__errors.csv` — if `has_errors` is true
-fn list_entry(dir: &str, list_name: &str, articles: &[usize], has_errors: bool) -> Vec<String> {
+fn list_entry(dir: &str, list_name: &str, mail_files: &[String], has_errors: bool) -> Vec<String> {
     let mut files = vec![format!("{}/{}", dir, list_name)];
 
     // Progress and lineage files only exist when at least one article was fetched
-    if !articles.is_empty() {
+    if !mail_files.is_empty() {
         files.push(format!("{}/{}/__progress.yaml", dir, list_name));
         files.push(format!("{}/{}/__lineage.yaml", dir, list_name));
     }
 
     // Article files
-    for &n in articles {
+    for n in mail_files {
         files.push(format!("{}/{}/{}.eml", dir, list_name, n));
     }
 
@@ -183,11 +189,11 @@ fn list_entry(dir: &str, list_name: &str, articles: &[usize], has_errors: bool) 
 /// Checks `__progress.yaml` has the expected `last_email` value,
 /// and `__lineage.yaml` contains the expected article indices.
 /// Skips all validation for empty article lists (no files created).
-fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
-    if articles.is_empty() {
+fn validate_list(dir: &str, list_name: &str, mail_files: &[usize]) {
+    if mail_files.is_empty() {
         return;
     }
-    let max_article = *articles.iter().max().unwrap_or(&0);
+    let max_article = *mail_files.iter().max().unwrap_or(&0);
     validate_progress_file(
         &format!("{}/{}/__progress.yaml", dir, list_name),
         max_article,
@@ -195,7 +201,7 @@ fn validate_list(dir: &str, list_name: &str, articles: &[usize]) {
     validate_lineage_file(
         &format!("{}/{}/__lineage.yaml", dir, list_name),
         list_name,
-        articles,
+        mail_files,
     );
 }
 
@@ -377,6 +383,7 @@ fn test_read_from_synthetic_public_inbox() {
             output_dir: "".to_string(),
             nthreads: 1,
             loop_groups: false,
+            write_mode: WriteMode::RawEmails,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
                 origin: "synthetic".to_owned(),
@@ -415,6 +422,7 @@ fn test_pi_email_range() {
         |test_data_path| AppConfig {
             output_dir: "".to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
@@ -520,6 +528,7 @@ fn test_read_from_demo_public_inbox() {
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
+        write_mode: WriteMode::RawEmails,
         loop_groups: false,
         read_lists,
         public_inbox: Some(PIConfig {
@@ -656,6 +665,7 @@ fn test_read_email_range_from_demo() {
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
+        write_mode: WriteMode::RawEmails,
         loop_groups: false,
         read_lists,
         public_inbox: Some(PIConfig {
@@ -756,6 +766,7 @@ fn test_validate_file_structure_using_helpers() {
     let mut app_config = AppConfig {
         output_dir: output_dir.clone(),
         nthreads: 1,
+        write_mode: WriteMode::RawEmails,
         loop_groups: false,
         read_lists,
         public_inbox: Some(PIConfig {
@@ -781,7 +792,7 @@ fn test_validate_file_structure_using_helpers() {
     let root = root_dir(&output_dir);
     assert!(!root.is_empty(), "root_dir should return output dir");
 
-    let expected_files = list_entry(&output_dir, &inbox.name, &article_nums, false);
+    let expected_files = list_entry(&output_dir, &inbox.name, &pad_ids(&article_nums), false);
     assert!(
         !expected_files.is_empty(),
         "list_entry should generate expected files"
@@ -806,6 +817,7 @@ fn test_multi_epoch_all_emails() {
         |test_data_path| AppConfig {
             output_dir: "".to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
@@ -845,6 +857,7 @@ fn test_multi_epoch_email_range() {
         |test_data_path| AppConfig {
             output_dir: "".to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
@@ -883,6 +896,7 @@ fn test_multi_epoch_resume() {
         |test_data_path| AppConfig {
             output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase1".to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
@@ -901,6 +915,7 @@ fn test_multi_epoch_resume() {
         |test_data_path| AppConfig {
             output_dir: "./test_public_inbox_output_pi_multi_epoch_resume_phase2".to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             public_inbox: Some(PIConfig {
                 import_directory: test_data_path.to_owned(),
@@ -1124,6 +1139,7 @@ fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, read_lists: Vec<Strin
     let mut app_config = AppConfig {
         output_dir: abs_output.to_string_lossy().to_string(),
         nthreads: 1,
+        write_mode: WriteMode::RawEmails,
         loop_groups: false,
         read_lists: read_lists_map,
         public_inbox: Some(PIConfig {
@@ -1421,6 +1437,7 @@ fn test_broken_alternates_resume() {
         let mut app_config = AppConfig {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
+            write_mode: WriteMode::RawEmails,
             loop_groups: false,
             read_lists: {
                 let mut m = std::collections::HashMap::new();
@@ -1461,6 +1478,7 @@ fn test_broken_alternates_resume() {
             output_dir: abs_output.to_string_lossy().to_string(),
             nthreads: 1,
             loop_groups: false,
+            write_mode: WriteMode::RawEmails,
             read_lists: {
                 let mut m = std::collections::HashMap::new();
                 m.insert(

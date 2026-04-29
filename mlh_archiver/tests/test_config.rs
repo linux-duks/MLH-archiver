@@ -1,3 +1,4 @@
+use mlh_archiver::archive_writer::WriteMode;
 use mlh_archiver::config::{AppConfig, RunMode};
 use mlh_archiver::errors::ConfigError;
 use mlh_archiver::nntp_source::nntp_config::NntpConfig;
@@ -795,4 +796,124 @@ fn test_expand_glob_patterns_unit() {
     assert!(matched.is_empty());
     assert_eq!(unmatched.len(), 1);
     assert_eq!(unmatched[0], "nonexistent.*");
+}
+
+// =============================================================================
+// WriteMode Deserialization Tests
+// =============================================================================
+
+#[test]
+fn test_app_config_default_write_mode() {
+    let config = AppConfig::default();
+    assert_eq!(
+        config.write_mode,
+        WriteMode::Parquet {
+            buffer_size: 10_000
+        }
+    );
+}
+
+#[test]
+fn test_app_config_deserialize_write_mode_raw() {
+    let yaml = r#"
+write_mode: raw_email
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    assert_eq!(config.write_mode, WriteMode::RawEmails);
+}
+
+#[test]
+fn test_app_config_deserialize_write_mode_parquet_default_buffer() {
+    // Parquet without explicit buffer size is not valid via string; must use default
+    // Test that the default is applied when write_mode is omitted instead
+    let yaml = r#"
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    // Default is applied via #[serde(default)]
+    assert_eq!(
+        config.write_mode,
+        WriteMode::Parquet {
+            buffer_size: 10_000
+        }
+    );
+}
+
+#[test]
+fn test_app_config_deserialize_write_mode_parquet_with_buffer() {
+    let yaml = r#"
+write_mode: "parquet:5000"
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    assert_eq!(config.write_mode, WriteMode::Parquet { buffer_size: 5000 });
+}
+
+#[test]
+fn test_app_config_deserialize_write_mode_invalid() {
+    let yaml = r#"
+write_mode: "invalid_mode"
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let result: Result<AppConfig, _> = serde_yaml::from_str(yaml);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_app_config_deserialize_write_mode_missing_uses_default() {
+    // When write_mode is omitted, #[serde(default)] kicks in
+    let yaml = r#"
+nntp:
+  hostname: "nntp.example.com"
+"#;
+    let config: AppConfig = serde_yaml::from_str(yaml).expect("Failed to parse");
+    assert_eq!(
+        config.write_mode,
+        WriteMode::Parquet {
+            buffer_size: 10_000
+        }
+    );
+}
+
+#[test]
+fn test_write_mode_display() {
+    assert_eq!(WriteMode::RawEmails.to_string(), "raw_email");
+    assert_eq!(
+        WriteMode::Parquet { buffer_size: 5000 }.to_string(),
+        "parquet:5000"
+    );
+    assert_eq!(
+        WriteMode::Parquet {
+            buffer_size: 10_000
+        }
+        .to_string(),
+        "parquet:10000"
+    );
+}
+
+#[test]
+fn test_write_mode_from_str() {
+    use std::str::FromStr;
+    assert_eq!(
+        WriteMode::from_str("raw_email").unwrap(),
+        WriteMode::RawEmails
+    );
+    assert_eq!(WriteMode::from_str("raw").unwrap(), WriteMode::RawEmails);
+    assert_eq!(
+        WriteMode::from_str("parquet:10000").unwrap(),
+        WriteMode::Parquet {
+            buffer_size: 10_000
+        }
+    );
+    assert_eq!(
+        WriteMode::from_str("parquet:3000").unwrap(),
+        WriteMode::Parquet { buffer_size: 3000 }
+    );
+    assert!(WriteMode::from_str("parquet").is_err());
+    assert!(WriteMode::from_str("invalid").is_err());
 }

@@ -19,7 +19,7 @@ This project consists of four main components:
 
 | Component | Description | Language |
 |-----------|-------------|----------|
-| **[MLH Archiver](mlh_archiver/)** | Downloads emails from NNTP servers and stores them as raw RFC 822 files | Rust |
+| **[MLH Archiver](mlh_archiver/)** | Downloads emails from NNTP servers and stores them as raw emails or Parquet (configurable) | Rust |
 | **[MLH Parser](mlh_parser/)** | Parses raw emails into structured Parquet datasets with Hive partitioning | Python |
 | **[MLH Anonymizer](anonymizer/)** | Pseudo-anonymizes personal identification using SHA1 digests | Python |
 | **[MLH Analysis](analysis/)** | Example analysis scripts for exploring mailing list data | Python |
@@ -65,11 +65,12 @@ One of the dependencies is a git submodule. To build correctly
 2. Edit `archiver_config.yaml` with your NNTP server details:
 
    ```yaml
-   nthreads: 2
-   output_dir: "./output"
-   loop_groups: true
+    nthreads: 2
+    output_dir: "./output"
+    loop_groups: true
+    write_mode: "parquet:10000"  # or "raw_email"
 
-   read_lists:
+    read_lists:
       nntp:
        - dev.example.me.lists.gfs2
        - dev.example.me.lists.iommu
@@ -372,7 +373,7 @@ The anonymizer applies SHA1 hashing to personally identifiable information (PII)
 - [Analysis Detailed Documentation](analysis/README.md)
 - [Example Configuration](example_archiver_config.yaml)
 - [Architecture Diagram](./docs/fluxogram.svg)
-- [Rust API Documentation](mlh_archiver/target/doc/mlh_archiver/) - Generated via `cargo doc`
+- Generated docs via `cargo doc` (or )
 
 ## License
 

@@ -1,3 +1,4 @@
+use crate::archive_writer::{self, WriteMode};
 use crate::nntp_source::nntp_config;
 use crate::public_inbox_source::pi_config;
 use crate::{errors::ConfigError, file_utils};
@@ -59,6 +60,10 @@ pub struct AppConfig {
 
     /// PublicInbox configuration
     pub public_inbox: Option<pi_config::PIConfig>,
+
+    /// Archiver Write configuration
+    #[serde(default)]
+    pub write_mode: archive_writer::WriteMode,
 }
 
 /// Represents a source type that can be processed by the archiver.
@@ -316,6 +321,7 @@ impl Default for AppConfig {
             read_lists: HashMap::new(),
             nntp: None,
             public_inbox: None,
+            write_mode: WriteMode::default(),
         }
     }
 }
