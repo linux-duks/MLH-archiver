@@ -1,73 +1,79 @@
 {
-  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
-  "packages": [
-    "python@3.14",
-    "gnumake@latest",
-    "uv@latest",
-    "git@latest",
-    "rustup@latest",
-    "libgit2@latest"
-  ],
-  "env": {
-    "PROJECT_DIR": "$PWD",
-    "UV_PYTHON":   "$PWD/.venv/bin/python"
-  },
-  "shell": {
-    "init_hook": [
-      "echo 'Welcome to devbox!' > /dev/null"
-    ],
-    "scripts": {
-      "build": [
-        "make build"
-      ],
-      "run": [
-        "make run"
-      ],
-      "parse": [
-        "make parse"
-      ],
-      "anonymize": [
-        "make anonymize"
-      ],
-      "analysis": [
-        "make analysis"
-      ],
-      "rebuild": [
-        "make rebuild"
-      ],
-      "test": [
-        "make test"
-      ],
-      "test-archiver": [
-        "make test-archiver"
-      ],
-      "test-parser": [
-        "make test-parser"
-      ],
-      "test-anonymizer": [
-        "make test-anonymizer"
-      ],
-      "clean": [
-        "make clean"
-      ],
-      "debug-parser": [
-        "make debug-parser"
-      ],
-      "debug-anonymizer": [
-        "make debug-anonymizer"
-      ],
-      "debug-analysis": [
-        "make debug-analysis"
-      ],
-      "peek": [
-        "uv run --project scripts scripts/peek_files.py \"$@\""
-      ],
-      "check_nntp": [
-        "cargo run --release --bin check_nntp -- \"$@\""
-      ],
-      "doc": [
-        "make doc"
-      ]
-    }
-  }
+	"$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
+	"packages": [
+		"python@3.14",
+		"gnumake@latest",
+		"pkg-config@latest",
+		"uv@latest",
+		"git@latest",
+		"rustup@latest",
+		"libgit2@latest"
+	],
+	"env": {
+		"PROJECT_DIR": "$PWD",
+		"UV_PYTHON": "$PWD/.venv/bin/python"
+	},
+	"shell": {
+		"init_hook": [
+			"echo 'Welcome to devbox!' > /dev/null",
+			"rustup default stable",
+			"cargo fetch"
+		],
+		"scripts": {
+			"build": [
+				"make build"
+			],
+			"run": [
+				"make run"
+			],
+			"parse": [
+				"make parse"
+			],
+			"anonymize": [
+				"make anonymize"
+			],
+			"analysis": [
+				"make analysis"
+			],
+			"rebuild": [
+				"make rebuild"
+			],
+			"test": [
+				"make test"
+			],
+			"test-archiver": [
+				"make test-archiver"
+			],
+			"test-parser": [
+				"make test-parser"
+			],
+			"test-anonymizer": [
+				"make test-anonymizer"
+			],
+			"clean": [
+				"make clean"
+			],
+			"debug-parser": [
+				"make debug-parser"
+			],
+			"debug-anonymizer": [
+				"make debug-anonymizer"
+			],
+			"debug-analysis": [
+				"make debug-analysis"
+			],
+			"peek": [
+				"uv run --project scripts scripts/peek_files.py \"$@\""
+			],
+			"check_nntp": [
+				"cargo run --release --bin check_nntp -- \"$@\""
+			],
+			"check_git": [
+				"cargo run --release --bin check_git -- \"$@\""
+			],
+			"doc": [
+				"make doc"
+			]
+		}
+	}
 }
