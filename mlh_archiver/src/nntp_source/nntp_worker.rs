@@ -408,6 +408,9 @@ impl NNTPWorker {
                     return Ok(raw_article);
                 }
                 Err(e) => {
+                    if matches!(e, nntp::NNTPError::ArticleUnavailable) {
+                        return Err(e);
+                    }
                     log::warn!(
                         "W{}: Failed reading article '{}' from '{}'",
                         self.id,
