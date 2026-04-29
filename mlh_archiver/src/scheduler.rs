@@ -1,7 +1,12 @@
 use crate::config::AppConfig;
 use crate::range_inputs::parse_sequence;
-use crate::worker::{Worker, WorkerGroup};
+use crate::{
+    interruptible_sleep, is_shutdown_requested,
+    worker::{Worker, WorkerGroup},
+};
 use crossbeam_channel::bounded;
+use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
@@ -44,6 +49,7 @@ pub struct Scheduler<'a> {
     app_config: &'a AppConfig,
     loop_groups: bool,
     worker_groups: &'a mut Vec<WorkerGroup>,
+    shutdown_flag: Arc<AtomicBool>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -58,20 +64,24 @@ impl<'a> Scheduler<'a> {
     ///
     /// ```rust,no_run
     /// use mlh_archiver::{config, scheduler::Scheduler, worker::WorkerManager};
+    /// use std::sync::{Arc, atomic::AtomicBool};
     ///
     /// let app_config = config::read_config().unwrap();
     /// let mut manager = WorkerManager::new();
     /// // ... create workers ...
-    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups());
+    /// let shutdown_flag = Arc::new(AtomicBool::new(false));
+    /// let mut scheduler = Scheduler::new(&app_config, manager.get_groups(), shutdown_flag);
     /// ```
     pub fn new(
         app_config: &'a AppConfig,
         worker_groups: &'a mut Vec<WorkerGroup>,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> Scheduler<'a> {
         Scheduler {
             app_config,
             loop_groups: app_config.loop_groups,
             worker_groups,
+            shutdown_flag,
         }
     }
 
@@ -129,6 +139,7 @@ impl<'a> Scheduler<'a> {
                     log::warn!(
                         "Multiple lists selected in Range Mode. This is likely a mistake..."
                     );
+
                     thread::sleep(Duration::from_millis(100));
                 }
                 let worker_handles = self.spawn_worker_to_read_email_by_index(workers, receiver);
@@ -136,8 +147,12 @@ impl<'a> Scheduler<'a> {
                 handles.extend(worker_handles);
 
                 // Spawn producer thread that sends tasks
-                let producer_handle =
-                    Self::spawn_producer_for_read_email_by_index(sender, tasks, range_text);
+                let producer_handle = Self::spawn_producer_for_read_email_by_index(
+                    sender,
+                    tasks,
+                    range_text,
+                    self.shutdown_flag.clone(),
+                );
                 handles.push(producer_handle);
 
                 // read_email_by_index
@@ -150,8 +165,12 @@ impl<'a> Scheduler<'a> {
                 handles.extend(worker_handles);
 
                 // Spawn producer thread that sends tasks
-                let producer_handle =
-                    Self::spawn_producer_for_consume_list(sender, tasks, self.loop_groups);
+                let producer_handle = Self::spawn_producer_for_consume_list(
+                    sender,
+                    tasks,
+                    self.loop_groups,
+                    self.shutdown_flag.clone(),
+                );
                 handles.push(producer_handle);
             }
         }
@@ -206,9 +225,6 @@ impl<'a> Scheduler<'a> {
                 }
             });
             worker_handles.push(handle);
-
-            // Space out thread creation (to prevent multiple connections opening at once)
-            std::thread::sleep(Duration::from_secs(2));
         }
         return worker_handles;
     }
@@ -258,7 +274,7 @@ impl<'a> Scheduler<'a> {
                         list_name.to_string(),
                         index
                             .parse::<usize>()
-                            .expect("Task index shoud parse into a usize"),
+                            .expect("Task index should parse into a usize"),
                     ) {
                         Ok(_) => {
                             log::debug!("Worker thread finished");
@@ -272,7 +288,7 @@ impl<'a> Scheduler<'a> {
             worker_handles.push(handle);
 
             // Space out thread creation (to prevent multiple connections opening at once)
-            std::thread::sleep(Duration::from_secs(2));
+            interruptible_sleep(Duration::from_secs(5), &self.shutdown_flag);
         }
         return worker_handles;
     }
@@ -298,11 +314,16 @@ impl<'a> Scheduler<'a> {
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
         loop_groups: bool,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             // if in Looping mode: send tasks, then sleep and repeat
             // otherwise, send and drop the sender
             loop {
+                if is_shutdown_requested(&shutdown_flag) {
+                    log::info!("Shutdown requested, exiting...");
+                    return;
+                }
                 // Send all tasks
                 for task in &tasks {
                     if sender.send(task.clone()).is_err() {
@@ -322,7 +343,10 @@ impl<'a> Scheduler<'a> {
                 log::debug!("All tasks sent, waiting for rescan interval...");
 
                 // Sleep between rescans
-                std::thread::sleep(Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64));
+                interruptible_sleep(
+                    Duration::from_secs(INTERVAL_BETWEEN_RESCANS as u64),
+                    &shutdown_flag,
+                );
             }
         })
     }
@@ -352,9 +376,14 @@ impl<'a> Scheduler<'a> {
         sender: crossbeam_channel::Sender<String>,
         tasks: Vec<String>,
         range_text: String,
+        shutdown_flag: Arc<AtomicBool>,
     ) -> thread::JoinHandle<()> {
         thread::spawn(move || {
             for task in &tasks {
+                if is_shutdown_requested(&shutdown_flag) {
+                    log::info!("Shutdown requested, exiting...");
+                    return;
+                }
                 // Parse range text for each task (memory efficient, lazy evaluation)
                 let range = match parse_sequence(&range_text) {
                     Ok(iter) => iter,

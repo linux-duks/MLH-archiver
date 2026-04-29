@@ -26,6 +26,7 @@ pub mod config;
 pub mod errors;
 pub mod file_utils;
 pub mod nntp_source;
+pub mod public_inbox_source;
 pub mod range_inputs;
 pub mod scheduler;
 pub mod worker;
@@ -35,6 +36,8 @@ pub use errors::Result;
 use config::{RunMode, RunModeConfig};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 use worker::WorkerManager;
 
 /// Main entry point for the archiver application.
@@ -84,11 +87,21 @@ pub fn start(
                     // Get available lists in endpoint
                     let groups = nntp_source::nntp_lister::retrieve_lists(nntp_config.clone())?;
                     // Filter with selected lists by user
-                    let groups = app_config.get_group_lists(groups, mode)?;
+                    let groups = app_config.get_read_lists(groups, mode)?;
 
                     log::info!("made a selection of {} {:#?}", groups.len(), groups);
 
                     // Create workers for this run mode
+                    worker.create_workers(mode, groups, app_config, shutdown_flag.clone());
+                }
+            }
+            RunMode::PublicInbox => {
+                if let Some(RunModeConfig::PublicInbox(pi_config)) =
+                    app_config.get_run_mode_config(mode)
+                {
+                    let groups = public_inbox_source::pi_lister::retrieve_lists(pi_config.clone())?;
+                    let groups = app_config.get_read_lists(groups, mode)?;
+                    log::info!("made a selection of {} {:#?}", groups.len(), groups);
                     worker.create_workers(mode, groups, app_config, shutdown_flag.clone());
                 }
             }
@@ -100,7 +113,65 @@ pub fn start(
 
     file_utils::check_or_create_folder(app_config.output_dir.clone())?;
 
-    let mut scheduler = scheduler::Scheduler::new(app_config, worker.get_groups());
+    let mut scheduler =
+        scheduler::Scheduler::new(app_config, worker.get_groups(), shutdown_flag.clone());
 
     scheduler.run()
+}
+
+/// Sleeps for the specified duration, but checks the shutdown_flag every 2s.
+/// Returns `true` if the full duration elapsed, `false` if shutdown was requested.
+fn interruptible_sleep(duration: Duration, shutdown_flag: &Arc<AtomicBool>) -> bool {
+    let two_sec = Duration::from_millis(2_000);
+
+    if duration.as_millis() == 0 {
+        return true;
+    } else if duration <= two_sec {
+        sleep(duration);
+        return true;
+    }
+
+    let start = Instant::now();
+    let poll_interval = two_sec;
+
+    while start.elapsed() < duration {
+        if is_shutdown_requested(shutdown_flag) {
+            return false;
+        }
+
+        // Ensure we don't sleep past the remaining time
+        let time_left = duration.saturating_sub(start.elapsed());
+        sleep(time_left.min(poll_interval));
+    }
+
+    true
+}
+
+/// Helper function to check if a shutdown has been requested via the shared flag.
+///
+/// This is a convenience function for checking the shutdown flag using
+/// the correct memory ordering (`Relaxed`).
+///
+/// # Arguments
+///
+/// * `shutdown_flag` - Reference to the shared atomic shutdown flag
+///
+/// # Returns
+///
+/// `true` if shutdown was requested, `false` otherwise
+///
+/// # Example
+///
+/// ```rust,no_run
+/// use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+/// use mlh_archiver::is_shutdown_requested;
+///
+/// let flag = Arc::new(AtomicBool::new(false));
+/// if is_shutdown_requested(&flag) {
+///     // Clean up and exit
+/// }
+/// ```
+#[inline]
+pub fn is_shutdown_requested(shutdown_flag: &Arc<AtomicBool>) -> bool {
+    shutdown_flag.load(std::sync::atomic::Ordering::Relaxed)
 }

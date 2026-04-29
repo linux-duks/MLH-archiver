@@ -1,6 +1,9 @@
 # MLH Archiver
 
-A multi-threaded Rust application for archiving mailing list emails from NNTP (Network News Transfer Protocol) servers to local storage.
+A multi-threaded Rust application for archiving mailing list emails from a few different sources.
+
+- NNTP (Network News Transfer Protocol) servers.
+- Public-Inbox Local Git Repositories
 
 ## Overview
 
@@ -148,7 +151,9 @@ loop_groups: true
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  group_lists:
+
+read_lists:
+  nntp:
     - dev.rcpassos.me.lists.gfs2
     - dev.rcpassos.me.lists.iommu
 ```
@@ -162,6 +167,21 @@ nntp:
 | `nthreads` | integer | Number of parallel worker threads (default: 1) |
 | `output_dir` | string | Directory to store archived emails (default: "./output") |
 | `loop_groups` | boolean | Continuously check for new articles (default: true) |
+| `read_lists` | map(source:list) | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+
+#### Public-Inbox Options (under `public_inbox:` block)
+
+If using a large number of public-inbox repositores, we recommend cloning them with [Grokmirror](https://github.com/mricon/grokmirror).
+We have our complete guide available in the [linux-duks/Public-Inbox-Stack](https://github.com/linux-duks/Public-Inbox-Stack). If using only for this, follow the mirroring steps only.
+
+It is expected that
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `import_directory` | string | **Required.** The parent folder of all mailing lists|
+| `origin` | string | **Required**. server hostname were the lists were cloned from |
+| `public_inbox_config` | string | Optional.  TODO: public-inbox configuration file, to automatically select lists |
+| `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 
 #### NNTP Options (under `nntp:` block)
 
@@ -169,7 +189,7 @@ nntp:
 |--------|------|-------------|
 | `hostname` | string | **Required.** NNTP server hostname or IP |
 | `port` | integer | NNTP server port (default: 119) |
-| `group_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
+| `read_lists` | list | Mailing list names to archive (e.g., `["*"]` for all, or specific lists/globs) |
 | `article_range` | string | Optional. Read specific range of articles (e.g., `"1-100"` or `"1,5,10-20"`) |
 | `username` | string | Optional. NNTP server username for authentication |
 | `password` | string | Optional. NNTP server password for authentication |
@@ -185,6 +205,7 @@ nntp:
 ```
 
 **Supported formats:**
+
 - Single numbers: `"100"`
 - Ranges: `"1-50"`
 - Comma-separated: `"1,5,10"`
@@ -193,6 +214,7 @@ nntp:
 **Memory efficiency:** Range parsing is lazy - the range string is stored and parsed per mailing list, avoiding memory issues with large ranges.
 
 **Use cases:**
+
 - Retry failed articles: `article_range: "42,108,256"`
 - Fetch specific date ranges (if you know article numbers)
 - Test runs with small samples: `article_range: "1-10"`
@@ -207,7 +229,7 @@ nntp:
   port: 563
   username: "myuser"
   password: "mypass"
-  group_lists: ["*"]
+  read_lists: ["*"]
 ```
 
 Both `username` and `password` are optional. If omitted, the archiver connects without authentication.
@@ -243,11 +265,13 @@ cargo test
 ### Test Coverage
 
 **Unit Tests** (`cargo test --lib`):
+
 - Range parsing (`range_inputs.rs`)
 - Configuration loading and validation
 - Error types
 
 **Integration Tests** (`cargo test --test test_nntp`):
+
 - Full list download from mock NNTP server
 - Single article by range (`"5"`)
 - Article range (`"1-3"`)
@@ -274,6 +298,7 @@ cargo doc --document-private-items --open
 ```
 
 This generates comprehensive documentation including:
+
 - All public and private items
 - Function signatures with parameters and return values
 - Struct and enum field descriptions
@@ -301,12 +326,18 @@ mlh_archiver/
 │   │   ├── data_lineage.rs  # DataLineageWriter (appends audit trail)
 │   │   ├── error_log.rs     # ErrorLogger (appends to __errors.csv)
 │   │   └── email_store.rs   # EmailStore (writes .eml files)
-│   └── nntp_source/         # NNTP-specific implementation
-│       ├── mod.rs           # Module exports, NNTP connection helper
-│       ├── nntp_config.rs   # NNTP configuration struct
-│       ├── nntp_lister.rs   # List retrieval from NNTP server
-│       ├── nntp_utils.rs    # shared utils handling the NNTP lib
-│       └── nntp_worker.rs   # NNTPWorker implementation
+│   ├── nntp_source/         # NNTP-specific implementation
+│   │   ├── mod.rs           # Module exports, NNTP connection helper
+│   │   ├── nntp_config.rs   # NNTP configuration struct
+│   │   ├── nntp_lister.rs   # List retrieval from NNTP server
+│   │   ├── nntp_utils.rs    # shared utils handling the NNTP lib
+│   │   └── nntp_worker.rs   # NNTPWorker implementation
+│   └── public_inbox_source/ # Public-Inbox git repo implementation
+│       ├── mod.rs           # Module exports
+│       ├── pi_config.rs     # Public-Inbox configuration struct
+│       ├── pi_lister.rs     # List retrieval from public-inbox repos
+│       ├── pi_utils.rs      # Shared public-inbox utilities
+│       └─── pi_worker.rs     # PublicInboxWorker implementation
 ├── rust-nntp/               # Forked NNTP library
 ├── tests/
 │   ├── test_config.rs       # Configuration tests
@@ -335,11 +366,13 @@ To add a new email source (e.g., ListArchiveX, IMAP, local mbox), follow these s
 ### ArchiveWriter — The Reusable Storage Interface
 
 **All worker implementations MUST use [`ArchiveWriter`](src/archive_writer/) for:**
+
 - Writing fetched emails to disk (`.eml` files)
 - Tracking progress (`__progress.yaml` YAML)
 - Logging errors for unavailable articles (`__errors.csv` CSV)
 
 The `ArchiveWriter` provides a consistent storage interface so that:
+
 1. Progress is tracked uniformly across all sources
 2. Resume from last position works the same way regardless of source
 3. File layout is consistent across all implementations
@@ -404,7 +437,7 @@ use crate::errors::ConfigError;
 pub struct ListArchiveXConfig {
     pub base_url: String,
     pub api_key: Option<String>,
-    pub group_lists: Option<Vec<String>>,
+    pub read_lists: Option<Vec<String>>,
     pub article_range: Option<String>,
 }
 
@@ -507,6 +540,7 @@ impl Worker for ListArchiveXWorker {
 ```
 
 **Key requirements:**
+
 - Store `shutdown_flag: Arc<AtomicBool>` for graceful shutdown
 - Check shutdown flag at:
   - Start of each task iteration
@@ -632,12 +666,12 @@ loop_groups: true
 nntp:
   hostname: "nntp.example.com"
   port: 119
-  group_lists: ["list1"]
+  read_lists: ["list1"]
 
 list_archive_x:
   base_url: "https://archive.example.com/api"
   api_key: "your-api-key"
-  group_lists: ["list1", "list2"]
+  read_lists: ["list1", "list2"]
 ```
 
 ### 8. Add Tests

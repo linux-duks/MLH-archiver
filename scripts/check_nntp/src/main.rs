@@ -391,7 +391,7 @@ fn generate_config_yaml(server: &ServerConfig, groups: &[String]) -> String {
 nntp:
   hostname: "{}"
 {}
-  group_lists:
+  read_lists:
 {}
 "#,
         server.hostname, port_line, lists_yaml
@@ -422,7 +422,7 @@ loop_groups: true
 nntp:
   hostname: "{}"
 {}
-  group_lists:
+  read_lists:
 {}
   # article_range: "1-100"  # Optional: fetch specific range
 "#,

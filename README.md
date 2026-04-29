@@ -2,7 +2,7 @@
 
 Collect and archive locally all emails from mailing lists, parse them into structured datasets, and analyze them while preserving privacy.
 
-This project is in active development. It currently supports reading from NNTP endpoints.
+This project is in active development. It currently supports reading from NNTP endpoints and public-inbox git repositories.
 
 ## Pipeline Overview
 
@@ -39,7 +39,7 @@ Each component has its own detailed documentation:
 
 1. Clone recursively
 
-One of the dependencies is a git submodule. To build correclty
+One of the dependencies is a git submodule. To build correctly
 
    ```bash
    git clone --recurse-submodules git@github.com:linux-duks/MLH-archiver.git
@@ -69,20 +69,22 @@ One of the dependencies is a git submodule. To build correclty
    output_dir: "./output"
    loop_groups: true
 
-   nntp:
-     hostname: "nntps://nntp.example.com"
-     group_lists:
+   read_lists:
+      nntp:
        - dev.example.me.lists.gfs2
        - dev.example.me.lists.iommu
+   nntp:
+      hostname: "nntps://nntp.example.com"
    ```
 
-   **Glob patterns** are also supported in `group_lists`. Use `*` or `?` to match multiple lists:
+   **Glob patterns** are also supported in `read_lists`. Use `*` or `?` to match multiple lists:
 
    ```yaml
    nntp:
      hostname: "nntp.example.com"
      port: 119
-     group_lists:
+   read_lists:
+      nntp:
        # Match all lists starting with "dev.example."
        - "dev.example.*"
        # Match any list containing ".synth"
@@ -330,8 +332,8 @@ The archiver is implemented in Rust and uses a forked NNTP library ([`rust-nntp`
 
 The archiver uses a nested configuration format:
 
-- Global settings (`nthreads`, `output_dir`, `loop_groups`) at the top level
-- NNTP-specific settings (`hostname`, `port`, `group_lists`, `article_range`) under the `nntp:` block
+- Global settings (`nthreads`, `output_dir`, `loop_groups`,`read_lists`) at the top level
+- NNTP-specific settings (`hostname`, `port`, `article_range`) under the `nntp:` block
 
 **Article Range Selection:**
 

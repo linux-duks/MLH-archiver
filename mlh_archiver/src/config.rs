@@ -1,4 +1,5 @@
 use crate::nntp_source::nntp_config;
+use crate::public_inbox_source::pi_config;
 use crate::{errors::ConfigError, file_utils};
 use clap::{Parser, ValueHint};
 use config::Config;
@@ -19,17 +20,21 @@ pub(crate) mod built_info {
 /// Source-specific settings are nested, and private (e.g., nntp, imap, local, mbox).
 /// Their values should be accessed using the [`RunMode`] ENUM.
 ///
+/// The `read_lists` field is a HashMap that stores selected mailing lists per run mode.
+///
 /// # Example
 ///
 /// ```yaml
 /// nthreads: 2
 /// output_dir: "./output"
 /// loop_groups: true
+/// read_lists:
+///   NNTP: ["list1", "list2"]
+///   PublicInbox: ["list3"]
 ///
 /// nntp:
 ///   hostname: "nntp.example.com"
 ///   port: 119
-///   group_lists: ["list1", "list2"]
 /// ```
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct AppConfig {
@@ -45,8 +50,15 @@ pub struct AppConfig {
     #[serde(default = "default_loop_groups")]
     pub loop_groups: bool,
 
+    /// Group lists per run mode: run_mode display name -> list of groups
+    #[serde(default)]
+    pub read_lists: HashMap<String, Vec<String>>,
+
     /// NNTP-specific configuration
     pub nntp: Option<nntp_config::NntpConfig>,
+
+    /// PublicInbox configuration
+    pub public_inbox: Option<pi_config::PIConfig>,
 }
 
 /// Represents a source type that can be processed by the archiver.
@@ -62,7 +74,18 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RunMode {
     NNTP,
+    PublicInbox,
     LocalMbox,
+}
+
+impl fmt::Display for RunMode {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            RunMode::NNTP => write!(f, "nntp"),
+            RunMode::PublicInbox => write!(f, "public_inbox"),
+            RunMode::LocalMbox => write!(f, "local_mbox"),
+        }
+    }
 }
 
 /// Configuration for a specific [`RunMode`].
@@ -77,6 +100,7 @@ pub enum RunMode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunModeConfig {
     NNTP(nntp_config::NntpConfig),
+    PublicInbox(pi_config::PIConfig),
     LocalMbox,
 }
 
@@ -86,6 +110,9 @@ impl fmt::Display for RunModeConfig {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             RunModeConfig::NNTP(config) => write!(f, "NNTP h={}", config.clone().hostname),
+            RunModeConfig::PublicInbox(config) => {
+                write!(f, "PublicInbox h={}", config.clone().origin)
+            }
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }
@@ -117,6 +144,7 @@ impl AppConfig {
     pub fn get_run_mode_config(&self, run_mode: RunMode) -> Option<RunModeConfig> {
         match run_mode {
             RunMode::NNTP => Some(RunModeConfig::NNTP(self.nntp.clone()?)),
+            RunMode::PublicInbox => Some(RunModeConfig::PublicInbox(self.public_inbox.clone()?)),
             RunMode::LocalMbox => Some(RunModeConfig::LocalMbox),
         }
     }
@@ -138,6 +166,7 @@ impl AppConfig {
     pub fn get_range_selection_text(&self, run_mode: RunMode) -> Option<String> {
         match self.get_run_mode_config(run_mode)? {
             RunModeConfig::NNTP(nntp_config) => nntp_config.article_range,
+            RunModeConfig::PublicInbox(pi_config) => pi_config.article_range,
             RunModeConfig::LocalMbox => unimplemented!(),
         }
     }
@@ -165,21 +194,37 @@ impl AppConfig {
         if self.nntp.is_some() {
             run_modes.push(RunMode::NNTP);
         }
+        if self.public_inbox.is_some() {
+            run_modes.push(RunMode::PublicInbox);
+        }
         return run_modes;
     }
 
-    /// Other sources should be implemented here too
+    /// Retrieves the list selection for a specific run mode from the top-level read_lists HashMap
     fn get_list_selection(&self, run_mode: RunMode) -> Option<Vec<String>> {
-        match run_mode {
-            RunMode::NNTP => {
-                match &self.nntp {
-                    Some(nntp_config) => {
-                        return nntp_config.group_lists.clone();
-                    }
-                    None => return None,
-                };
+        let key = run_mode.to_string();
+        self.read_lists.get(&key).cloned()
+    }
+
+    /// Saves the list selection for a run mode to the config and persists to file.
+    ///
+    /// Updates the top-level `read_lists` HashMap and writes the full config
+    /// to `archiver_config.yml`.
+    fn set_list_selection(
+        &mut self,
+        run_mode: RunMode,
+        list_options: Vec<String>,
+    ) -> Result<(), ConfigError> {
+        let key = run_mode.to_string();
+        self.read_lists.insert(key, list_options);
+
+        // Persist the full config to the default config file
+        match file_utils::write_yaml_truncate("archiver_config.yml", self) {
+            Ok(_) => {
+                log::info!("Saved list selection to archiver_config.yml");
+                Ok(())
             }
-            RunMode::LocalMbox => unimplemented!(),
+            Err(e) => Err(ConfigError::Io(e)),
         }
     }
 }
@@ -268,7 +313,9 @@ impl Default for AppConfig {
             nthreads: default_nthreads(),
             output_dir: default_output_dir(),
             loop_groups: default_loop_groups(),
+            read_lists: HashMap::new(),
             nntp: None,
+            public_inbox: None,
         }
     }
 }
@@ -421,17 +468,17 @@ impl AppConfig {
     ///
     /// # Side Effects
     ///
-    /// Writes selection to `archiver_config_selected_lists.yml` if user selects interactively.
-    pub fn get_group_lists(
+    /// Writes selection to config file if user selects interactively.
+    pub fn get_read_lists(
         &mut self,
         list_options: Vec<String>,
         run_mode: RunMode,
     ) -> Result<Vec<String>, ConfigError> {
         let mut answer: Vec<String>;
-        let group_lists = self.get_list_selection(run_mode);
-        match group_lists {
+        let read_lists = self.get_list_selection(run_mode);
+        match read_lists {
             None => {
-                log::info!("No group_lists defined");
+                log::info!("No read_lists defined");
 
                 // list of options provides, with "*" as first
                 let mut select_options = vec!["*".to_string()];
@@ -449,26 +496,13 @@ impl AppConfig {
 
                 if answer.is_empty() {
                     log::info!("empty selection");
-                    // group_lists = None;
-                    // update the config with the selection
-                    // self.set_list_selection(run_mode, group_lists);
                     return Err(ConfigError::ListSelectionEmpty);
                 } else {
-                    // save selection to a file
-                    let mut selected_lists = HashMap::new();
-                    selected_lists.insert("group_lists", answer.clone());
-
-                    match file_utils::write_yaml(
-                        "archiver_config_selected_lists.yml",
-                        &selected_lists,
-                    ) {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(ConfigError::Io(e)),
-                    }?;
+                    self.set_list_selection(run_mode, answer.clone())?;
                 }
             }
             Some(_) => {
-                let mut user_selection = group_lists.expect("is none was validated");
+                let mut user_selection = read_lists.expect("is none was validated");
                 // If "*" provided, load all lists
                 if user_selection.len() == 1 && user_selection[0] == "*" {
                     log::info!("Configured to fetch all lists");

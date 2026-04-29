@@ -1,0 +1,44 @@
+FROM docker.io/library/debian:trixie-slim as base
+
+ARG USER_ID=1000
+ARG GROUP_ID=1000
+
+USER root
+RUN export DEBIAN_FRONTEND=noninteractive &&\
+	apt-get update && \
+	apt-get install -y \
+	git \
+	perl \
+	sqlite3 \
+	curl \
+	make \
+	build-essential \
+	libyaml-libyaml-perl \
+	libdbd-sqlite3-perl \
+	public-inbox \
+	cpanminus
+
+# Install required Perl modules
+RUN cpanm -n YAML::XS
+
+# Copy public-inbox source (for Perl modules)
+COPY public-inbox /public-inbox
+
+# Create directory for test data generation
+WORKDIR /test-gen
+
+# Copy generation script and fixtures
+COPY generate_test_inboxes.pl /test-gen/
+COPY fixtures /test-gen/fixtures
+
+# Set PERL5LIB to include public-inbox source
+ENV PERL5LIB=/public-inbox/lib
+
+# Generate test data during build
+RUN mkdir -p /test-data && \
+    perl /test-gen/generate_test_inboxes.pl /test-data
+
+# Ensure proper permissions
+RUN chmod -R a+rx /test-data
+
+VOLUME /test-data

@@ -2,6 +2,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 use crate::config::{AppConfig, RunMode, RunModeConfig};
 use crate::nntp_source::nntp_worker::NNTPWorker;
+use crate::public_inbox_source::pi_worker::PIWorker;
 
 /// Trait representing a worker that can fetch emails from a specific source.
 ///
@@ -192,11 +193,11 @@ impl WorkerManager {
         app_config: &AppConfig,
         shutdown_flag: Arc<AtomicBool>,
     ) {
+        // max(1) guarantees at least one
+        let num_workers = app_config.nthreads.max(1) as usize;
+        let mut workers: Vec<Box<dyn Worker>> = Vec::with_capacity(num_workers);
         match run_mode {
             RunMode::NNTP => {
-                let num_workers = app_config.nthreads.max(1) as usize;
-                let mut workers: Vec<Box<dyn Worker>> = Vec::with_capacity(num_workers);
-
                 if let Some(RunModeConfig::NNTP(nntp_config)) =
                     app_config.get_run_mode_config(run_mode)
                 {
@@ -204,6 +205,27 @@ impl WorkerManager {
                         let worker = NNTPWorker::new(
                             id as u8,
                             nntp_config.clone(),
+                            app_config.output_dir.clone(),
+                            shutdown_flag.clone(),
+                        );
+                        workers.push(Box::new(worker));
+                    }
+
+                    self.groups.push(WorkerGroup {
+                        tasks,
+                        workers,
+                        run_mode,
+                    });
+                }
+            }
+            RunMode::PublicInbox => {
+                if let Some(RunModeConfig::PublicInbox(pi_config)) =
+                    app_config.get_run_mode_config(run_mode)
+                {
+                    for id in 0..num_workers {
+                        let worker = PIWorker::new(
+                            id as u8,
+                            pi_config.clone(),
                             app_config.output_dir.clone(),
                             shutdown_flag.clone(),
                         );

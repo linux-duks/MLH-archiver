@@ -3,9 +3,11 @@
 	"packages": [
 		"python@3.14",
 		"gnumake@latest",
+		"pkg-config@latest",
 		"uv@latest",
 		"git@latest",
-		"rustup@latest"
+		"rustup@latest",
+		"libgit2@latest"
 	],
 	"env": {
 		"PROJECT_DIR": "$PWD",
@@ -13,7 +15,9 @@
 	},
 	"shell": {
 		"init_hook": [
-			"echo 'Welcome to devbox!' > /dev/null"
+			"echo 'Welcome to devbox!' > /dev/null",
+			"rustup default stable",
+			"cargo fetch"
 		],
 		"scripts": {
 			"build": [
@@ -63,6 +67,9 @@
 			],
 			"check_nntp": [
 				"cargo run --release --bin check_nntp -- \"$@\""
+			],
+			"check_git": [
+				"cargo run --release --bin check_git -- \"$@\""
 			],
 			"doc": [
 				"make doc"

@@ -3,14 +3,13 @@ use crate::config::RunModeConfig;
 use crate::errors;
 use crate::nntp_source::nntp_config::NntpConfig;
 use crate::nntp_source::nntp_utils::connect_to_nntp_server;
-use crate::worker::Worker;
+use crate::{interruptible_sleep, is_shutdown_requested, worker::Worker};
 use nntp::NNTPStream;
 use std::cell::{Cell, RefCell};
 use std::fmt;
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, atomic::AtomicBool};
-use std::thread::sleep;
 use std::time::Duration;
 
 /// NNTP worker that fetches emails from an NNTP server.
@@ -83,6 +82,12 @@ impl NNTPWorker {
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
     ) -> NNTPWorker {
+        // wait a bit to connect. This prevents multiple connections starting at once
+        interruptible_sleep(
+            Duration::from_secs(nntp_config.request_interval * id as u64),
+            &shutdown_flag,
+        );
+
         let nntp_stream = connect_to_nntp_server(
             &nntp_config.hostname,
             nntp_config.port,
@@ -107,10 +112,16 @@ impl Worker for NNTPWorker {
         self: Box<Self>,
         receiver: crossbeam_channel::Receiver<String>,
     ) -> crate::Result<()> {
+        // wait a bit to start(to prevent multiple connections starting at once)
+        interruptible_sleep(
+            Duration::from_secs(self.nntp_config.request_interval * self.id as u64),
+            &self.shutdown_flag,
+        );
+
         log::info!("W{}: started consuming tasks", self.id);
         loop {
             // Check shutdown flag at start of each iteration
-            if self.shutdown_flag.load(Ordering::Relaxed) {
+            if is_shutdown_requested(&self.shutdown_flag) {
                 log::info!("W{}: Shutdown requested, exiting...", self.id);
                 return Ok(());
             }
@@ -123,11 +134,11 @@ impl Worker for NNTPWorker {
                 let check_interval = Duration::from_secs(1);
                 let mut elapsed = Duration::ZERO;
                 while elapsed < reconnect_wait {
-                    if self.shutdown_flag.load(Ordering::Relaxed) {
+                    if is_shutdown_requested(&self.shutdown_flag) {
                         log::info!("W{}: Shutdown requested during reconnection wait", self.id);
                         return Ok(());
                     }
-                    std::thread::sleep(check_interval);
+                    interruptible_sleep(check_interval, &self.shutdown_flag);
                     elapsed += check_interval;
                 }
 
@@ -178,11 +189,12 @@ impl Worker for NNTPWorker {
                         let check_interval = Duration::from_secs(1);
                         let mut elapsed = Duration::ZERO;
                         while elapsed < sleep_duration {
-                            if self.shutdown_flag.load(Ordering::Relaxed) {
+                            if is_shutdown_requested(&self.shutdown_flag) {
                                 log::info!("W{}: Shutdown requested during error wait", self.id);
                                 return Ok(());
                             }
-                            std::thread::sleep(check_interval);
+
+                            interruptible_sleep(check_interval, &self.shutdown_flag);
                             elapsed += check_interval;
                         }
                     } else {
@@ -205,13 +217,19 @@ impl Worker for NNTPWorker {
                                 "W{}: Failed when closing connection with error {err}. Waiting before triggering a reconnection",
                                 self.id
                             );
-                            std::thread::sleep(Duration::from_secs(5));
+                            interruptible_sleep(
+                                Duration::from_secs(self.nntp_config.request_interval * 2),
+                                &self.shutdown_flag,
+                            );
                         }
                     }
                 }
             };
             // interval between tasks
-            std::thread::sleep(Duration::from_secs(1));
+            interruptible_sleep(
+                Duration::from_secs(self.nntp_config.request_interval),
+                &self.shutdown_flag,
+            );
         }
     }
 
@@ -267,7 +285,11 @@ impl NNTPWorker {
         list_name: String,
         writer: &ArchiveWriter,
     ) -> nntp::Result<NNTPWorkerGroupResult> {
-        let last_article_number = writer.last_processed_id();
+        let last_article_number = writer
+            .last_processed_id()
+            .unwrap_or("0".to_string())
+            .parse::<usize>()
+            .expect("IDs in NNTP should be numeric");
 
         if last_article_number == 0 {
             log::info!("W{}: Reading list {list_name} from mail 0", self.id);
@@ -355,6 +377,7 @@ impl NNTPWorker {
     ) -> nntp::Result<usize> {
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {
+            let current_mail_str = current_mail.to_string();
             // Check shutdown flag during email fetching
             if self.shutdown_flag.load(Ordering::Relaxed) {
                 log::info!(
@@ -367,13 +390,13 @@ impl NNTPWorker {
             match self.get_raw_article_by_number_retryable(current_mail as isize, 3) {
                 Ok(raw_article) => {
                     writer
-                        .archive_email(current_mail, &raw_article)
+                        .archive_email(&current_mail_str, raw_article)
                         .map_err(|e| nntp::NNTPError::Io(std::io::Error::other(e)))?;
                     num_emails_read += 1;
                 }
                 Err(e) => match e {
                     nntp::NNTPError::ArticleUnavailable => {
-                        writer.log_error(current_mail, &e.to_string());
+                        writer.log_error(&current_mail_str, &e.to_string());
                         log::warn!("W{}: Email with number {current_mail} unavailable", self.id);
                     }
                     _ => return Err(e),
@@ -427,9 +450,11 @@ impl NNTPWorker {
                         self.id,
                         (retry_delay_ms * (attempts + 1))
                     );
-                    sleep(Duration::from_millis(
-                        (retry_delay_ms * (attempts + 1)) as u64,
-                    ));
+
+                    interruptible_sleep(
+                        Duration::from_millis((retry_delay_ms * (attempts + 1)) as u64),
+                        &self.shutdown_flag,
+                    );
                 }
             }
         }

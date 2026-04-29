@@ -21,7 +21,7 @@ use std::{
 /// # Arguments
 ///
 /// * `file_path` - Path to the output file
-/// * `lines` - Slice of strings to write (without newlines)
+/// * `lines` - Iterator over lines to write (without newlines)
 ///
 /// # Returns
 ///
@@ -32,7 +32,11 @@ use std::{
 ///
 /// - Creates parent directories if they don't exist
 /// - Truncates existing file
-pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
+pub fn write_lines_file<I, L>(file_path: &Path, lines: I) -> io::Result<()>
+where
+    I: IntoIterator<Item = L>,
+    L: AsRef<str>,
+{
     // Create or open (truncate) a file for writing
     // check if parent folder need to be created first
     if let Some(parent) = file_path.parent() {
@@ -41,9 +45,9 @@ pub fn write_lines_file(file_path: &Path, lines: &[String]) -> io::Result<()> {
     let file = File::create(file_path)?;
     let mut file = LineWriter::new(file);
 
-    lines
-        .iter()
-        .for_each(|line| write!(file, "{}", line.as_str()).expect("Cannot write to file"));
+    for line in lines {
+        write!(file, "{}", line.as_ref())?;
+    }
 
     file.flush()?;
 
@@ -119,7 +123,7 @@ pub fn try_read_number(path: &Path) -> Result<usize, io::Error> {
     Err(io::Error::other("failed reading  last status"))
 }
 
-/// Writes a serializable value to a YAML file.
+/// Writes a serializable value to a YAML file (append mode, does not truncate).
 ///
 /// Used for persisting progress tracking data (`__progress.yaml`)
 /// and user list selections.
@@ -152,6 +156,43 @@ where
         .write(true)
         .create(true)
         .truncate(false)
+        .open(file_path)?;
+
+    serde_yaml::to_writer(f, value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    Ok(())
+}
+
+/// Writes a serializable value to a YAML file, truncating the file first.
+///
+/// Used for saving the full application configuration.
+///
+/// # Arguments
+///
+/// * `file_name` - Path to the output file
+/// * `value` - Value to serialize (must implement `serde::Serialize`)
+///
+/// # Returns
+///
+/// * `Ok(())` on success
+/// * `Err(io::Error)` on failure
+///
+/// # Side Effects
+///
+/// - Creates parent directories if needed
+/// - Truncates existing file before writing
+pub fn write_yaml_truncate<T>(file_name: &str, value: &T) -> io::Result<()>
+where
+    T: ?Sized + ser::Serialize,
+{
+    let file_path = Path::new(file_name);
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
         .open(file_path)?;
 
     serde_yaml::to_writer(f, value).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
