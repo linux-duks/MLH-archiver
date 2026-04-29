@@ -102,7 +102,10 @@ group_lists:
     assert_eq!(nntp.port, Some(563));
     assert_eq!(nntp.username, Some("myuser".to_string()));
     assert_eq!(nntp.password, Some("mypass".to_string()));
-    assert_eq!(config.group_lists.get("nntp"), Some(&vec!["list1".to_string()]));
+    assert_eq!(
+        config.group_lists.get("nntp"),
+        Some(&vec!["list1".to_string()])
+    );
 }
 
 #[test]
@@ -247,7 +250,10 @@ fn test_get_group_lists_star_glob() {
 #[test]
 fn test_get_group_lists_specific_lists() {
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), vec!["list1".to_string(), "list2".to_string()]);
+    group_lists.insert(
+        "nntp".to_string(),
+        vec!["list1".to_string(), "list2".to_string()],
+    );
 
     let mut config = AppConfig {
         nthreads: 1,
@@ -278,7 +284,10 @@ fn test_get_group_lists_specific_lists() {
 #[test]
 fn test_get_group_lists_filters_invalid() {
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), vec!["valid_list".to_string(), "invalid_list".to_string()]);
+    group_lists.insert(
+        "nntp".to_string(),
+        vec!["valid_list".to_string(), "invalid_list".to_string()],
+    );
 
     let mut config = AppConfig {
         nthreads: 1,
@@ -305,7 +314,10 @@ fn test_get_group_lists_filters_invalid() {
 fn test_get_group_lists_all_invalid() {
     // Configuring only invalid (non-existent) list names should return an error
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), vec!["invalid1".to_string(), "invalid2".to_string()]);
+    group_lists.insert(
+        "nntp".to_string(),
+        vec!["invalid1".to_string(), "invalid2".to_string()],
+    );
 
     let mut config = AppConfig {
         nthreads: 1,
@@ -332,7 +344,14 @@ fn test_get_group_lists_all_invalid() {
 #[test]
 fn test_get_group_lists_deduplicates() {
     let mut group_lists = std::collections::HashMap::new();
-    group_lists.insert("nntp".to_string(), vec!["list1".to_string(), "list2".to_string(), "list1".to_string()]);
+    group_lists.insert(
+        "nntp".to_string(),
+        vec![
+            "list1".to_string(),
+            "list2".to_string(),
+            "list1".to_string(),
+        ],
+    );
 
     let mut config = AppConfig {
         nthreads: 1,

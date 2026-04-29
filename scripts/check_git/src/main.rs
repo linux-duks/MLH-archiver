@@ -72,7 +72,9 @@ fn get_epoch_repos(inbox: &PublicInbox) -> anyhow::Result<Vec<EpochRepo>> {
 
 /// Collects all commit OIDs across all epochs, tagged with a global
 /// position (0 = newest overall) and the epoch they came from.
-fn collect_inbox_commits(inbox: &PublicInbox) -> anyhow::Result<Vec<(usize, EpochRepo, git2::Oid)>> {
+fn collect_inbox_commits(
+    inbox: &PublicInbox,
+) -> anyhow::Result<Vec<(usize, EpochRepo, git2::Oid)>> {
     let epochs = get_epoch_repos(inbox)?;
     let mut all: Vec<(usize, EpochRepo, git2::Oid)> = Vec::new();
     let mut global_pos = 0usize;
@@ -101,7 +103,11 @@ fn process_inbox_preview(inbox: &PublicInbox, count: usize) -> anyhow::Result<us
 
     let epochs = get_epoch_repos(inbox)?;
     let commits = collect_inbox_commits(inbox)?;
-    println!("  {} epoch(s), {} total commit(s)", epochs.len(), commits.len());
+    println!(
+        "  {} epoch(s), {} total commit(s)",
+        epochs.len(),
+        commits.len()
+    );
     let to_process: Vec<_> = commits.iter().take(count).collect();
 
     let mut email_count = 0;
@@ -176,7 +182,12 @@ fn browse_inbox(inbox: &PublicInbox) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    println!("Inbox: {} ({} commits across {} epochs)", inbox.name, total_commits, epochs.len());
+    println!(
+        "Inbox: {} ({} commits across {} epochs)",
+        inbox.name,
+        total_commits,
+        epochs.len()
+    );
 
     let page_size = 20;
     let mut current_page = 0;

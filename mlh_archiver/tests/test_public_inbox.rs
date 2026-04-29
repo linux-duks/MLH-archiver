@@ -1108,11 +1108,7 @@ fn add_emails_to_inbox(inbox_dir: &str, inbox_name: &str, start_num: usize, coun
 }
 
 /// Runs the archiver once against a local inbox directory.
-fn run_pi_archiver_once(
-    inbox_dir: &str,
-    output_dir: &str,
-    group_lists: Vec<String>,
-) {
+fn run_pi_archiver_once(inbox_dir: &str, output_dir: &str, group_lists: Vec<String>) {
     let abs_inbox = std::fs::canonicalize(inbox_dir).expect("canonicalize inbox_dir");
     let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
         std::fs::create_dir_all(output_dir).expect("create output_dir");
@@ -1181,11 +1177,7 @@ fn test_resume_only_collects_new_emails() {
 
     // Phase 2: Add 5 more emails (11-15), run archiver again
     add_emails_to_inbox(base_dir, inbox_name, 11, 5);
-    run_pi_archiver_once(
-        base_dir,
-        output_dir,
-        vec![inbox_name.to_string()],
-    );
+    run_pi_archiver_once(base_dir, output_dir, vec![inbox_name.to_string()]);
 
     let eml_count_2 = count_eml_files(&list_dir);
     assert_eq!(
@@ -1376,11 +1368,7 @@ fn test_broken_alternates_all_epochs_processed() {
     // Epochs 0 and 1 have broken alternates pointing to a non-existent path
     create_v2_multi_epoch_inbox(base_dir, inbox_name, &[4, 3, 2], &[0, 1]);
 
-    run_pi_archiver_once(
-        base_dir,
-        output_dir,
-        vec![inbox_name.to_string()],
-    );
+    run_pi_archiver_once(base_dir, output_dir, vec![inbox_name.to_string()]);
 
     let list_dir = format!("{}/{}", output_dir, inbox_name);
     let eml_count = count_eml_files(&list_dir);

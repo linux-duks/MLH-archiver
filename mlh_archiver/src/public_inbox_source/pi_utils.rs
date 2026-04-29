@@ -720,9 +720,7 @@ mod tests {
         }
 
         let mut remote = clone.find_remote("origin").unwrap();
-        remote
-            .push(&["HEAD:refs/heads/master"], None)
-            .unwrap();
+        remote.push(&["HEAD:refs/heads/master"], None).unwrap();
         std::fs::remove_dir_all(&work_dir).ok();
     }
 
@@ -741,10 +739,7 @@ mod tests {
     ///       2.git/   (epoch 2)
     ///
     /// Each epoch repo has the specified commit count.
-    fn create_v2_inbox_structure(
-        inbox_dir: &Path,
-        epoch_specs: &[(&str, usize)],
-    ) {
+    fn create_v2_inbox_structure(inbox_dir: &Path, epoch_specs: &[(&str, usize)]) {
         let git_dir = inbox_dir.join("git");
         std::fs::create_dir_all(&git_dir).unwrap();
         for (epoch_name, commit_count) in epoch_specs {
@@ -854,12 +849,10 @@ mod tests {
         create_v2_inbox_structure(&test_dir, &[("0", 2)]);
 
         let repo_path = test_dir.join("git").join("0.git");
-        write_alternates(
-            &repo_path,
-            "/nonexistent/objstore/deadbeef.git/objects\n",
-        );
+        write_alternates(&repo_path, "/nonexistent/objstore/deadbeef.git/objects\n");
 
-        let repo = git2::Repository::open_bare(&repo_path).expect("should open despite broken alternates");
+        let repo =
+            git2::Repository::open_bare(&repo_path).expect("should open despite broken alternates");
         let commits = collect_all_commits(&repo).expect("should collect commits");
         assert_eq!(commits.len(), 2, "Should have 2 commits");
 

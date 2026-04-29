@@ -324,7 +324,6 @@ impl PIWorker {
                 &article_range_positions,
                 &skip_until_sha,
                 global_position,
-                &self.shutdown_flag,
             )?;
 
             emails_processed += result.emails_processed;
@@ -371,7 +370,6 @@ impl PIWorker {
         article_range_positions: &Option<HashSet<usize>>,
         skip_until_sha: &Option<String>,
         global_position: usize,
-        shutdown_flag: &Arc<AtomicBool>,
     ) -> crate::Result<ProcessEpochResult> {
         let mut emails_processed = 0;
         let mut next_email_num = global_position + 1;
@@ -405,7 +403,12 @@ impl PIWorker {
                 let commit_id = match commit_id_result {
                     Ok(id) => id,
                     Err(e) => {
-                        log::error!("W{}: Revwalk error in epoch {} (first pass): {}", self.id, epoch.epoch_name, e);
+                        log::error!(
+                            "W{}: Revwalk error in epoch {} (first pass): {}",
+                            self.id,
+                            epoch.epoch_name,
+                            e
+                        );
                         break;
                     }
                 };
@@ -448,11 +451,16 @@ impl PIWorker {
             let commit_id = match commit_id_result {
                 Ok(id) => id,
                 Err(e) => {
-                    log::error!("W{}: Revwalk error in epoch {} (second pass): {}", self.id, epoch.epoch_name, e);
+                    log::error!(
+                        "W{}: Revwalk error in epoch {} (second pass): {}",
+                        self.id,
+                        epoch.epoch_name,
+                        e
+                    );
                     break;
                 }
             };
-            if is_shutdown_requested(shutdown_flag) {
+            if is_shutdown_requested(&self.shutdown_flag) {
                 log::info!(
                     "W{}: Shutdown requested during epoch {} processing",
                     self.id,
