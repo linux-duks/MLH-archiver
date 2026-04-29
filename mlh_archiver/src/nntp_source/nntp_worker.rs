@@ -1,4 +1,4 @@
-use crate::archive_writer::ArchiveWriter;
+use crate::archive_writer::{ArchiveWriter, WriteMode};
 use crate::config::RunModeConfig;
 use crate::errors;
 use crate::nntp_source::nntp_config::NntpConfig;
@@ -45,6 +45,7 @@ pub struct NNTPWorker {
     base_output_path: String,
     needs_reconnection: Cell<bool>,
     shutdown_flag: Arc<AtomicBool>,
+    write_mode: WriteMode,
 }
 
 impl NNTPWorker {
@@ -67,6 +68,7 @@ impl NNTPWorker {
     /// ```rust,no_run
     /// use std::sync::{Arc, atomic::AtomicBool};
     /// use mlh_archiver::nntp_source::{nntp_config::NntpConfig, nntp_worker::NNTPWorker};
+    /// use mlh_archiver::archive_writer::WriteMode;
     ///
     /// let config = NntpConfig {
     ///     hostname: "nntp://nntp.example.com".to_string(),
@@ -74,13 +76,14 @@ impl NNTPWorker {
     ///     ..NntpConfig::default()
     /// };
     /// let shutdown_flag = Arc::new(AtomicBool::new(false));
-    /// let worker = NNTPWorker::new(0, config, "./output".to_string(), shutdown_flag);
+    /// let worker = NNTPWorker::new(0, config, "./output".to_string(), shutdown_flag, WriteMode::RawEmails);
     /// ```
     pub fn new(
         id: u8,
         nntp_config: NntpConfig,
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
+        write_mode: WriteMode,
     ) -> NNTPWorker {
         // wait a bit to connect. This prevents multiple connections starting at once
         interruptible_sleep(
@@ -103,6 +106,7 @@ impl NNTPWorker {
             nntp_stream: RefCell::new(nntp_stream),
             needs_reconnection: Cell::new(false),
             shutdown_flag,
+            write_mode,
         }
     }
 }
@@ -228,10 +232,11 @@ impl Worker for NNTPWorker {
 
     #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
-        let writer = ArchiveWriter::new(
+        let mut writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             &list_name,
             RunModeConfig::NNTP(self.nntp_config.clone()),
+            self.write_mode,
         );
 
         log::info!("W{}: Checking group : {list_name}", self.id);
@@ -244,7 +249,7 @@ impl Worker for NNTPWorker {
             self.id
         );
         // Borrow is dropped, safe to call read_new_mails
-        self.read_new_mails(list_name.clone(), email_index, email_index, &writer)?;
+        self.read_new_mails(list_name.clone(), email_index, email_index, &mut writer)?;
         Ok(())
     }
 }
@@ -277,10 +282,11 @@ impl NNTPWorker {
     #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     pub fn handle_group(&self, list_name: String) -> nntp::Result<NNTPWorkerGroupResult> {
         // create ArchiveWriter instance for the new list
-        let writer = ArchiveWriter::new(
+        let mut writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             &list_name,
             RunModeConfig::NNTP(self.nntp_config.clone()),
+            self.write_mode,
         );
 
         let last_article_number = writer
@@ -322,7 +328,7 @@ impl NNTPWorker {
                 list_name.clone(),
                 last_article_number.max(low),
                 high,
-                &writer,
+                &mut writer,
             ) {
                 Ok(num_emails_read) => {
                     return Ok(NNTPWorkerGroupResult::Ok(list_name, num_emails_read));
@@ -372,7 +378,7 @@ impl NNTPWorker {
         list_name: String,
         low: usize,
         high: usize,
-        writer: &ArchiveWriter,
+        writer: &mut ArchiveWriter,
     ) -> nntp::Result<usize> {
         let mut num_emails_read: usize = 0;
         for current_mail in low..=high {

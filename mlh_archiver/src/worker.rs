@@ -207,6 +207,7 @@ impl WorkerManager {
                             nntp_config.clone(),
                             app_config.output_dir.clone(),
                             shutdown_flag.clone(),
+                            app_config.write_mode,
                         );
                         workers.push(Box::new(worker));
                     }
@@ -228,6 +229,7 @@ impl WorkerManager {
                             pi_config.clone(),
                             app_config.output_dir.clone(),
                             shutdown_flag.clone(),
+                            app_config.write_mode,
                         );
                         workers.push(Box::new(worker));
                     }

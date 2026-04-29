@@ -7,7 +7,7 @@ use log::{Level, log_enabled};
 use std::collections::HashSet;
 use std::sync::{Arc, atomic::AtomicBool};
 
-use crate::archive_writer::ArchiveWriter;
+use crate::archive_writer::{ArchiveWriter, WriteMode};
 use crate::config::RunModeConfig;
 use std::path::Path;
 
@@ -38,6 +38,7 @@ pub struct PIWorker {
     base_output_path: String,
     /// Flag used to signal the worker to shut down gracefully
     shutdown_flag: Arc<AtomicBool>,
+    write_mode: WriteMode,
 }
 
 impl PIWorker {
@@ -58,12 +59,14 @@ impl PIWorker {
         pi_config: PIConfig,
         base_output_path: String,
         shutdown_flag: Arc<AtomicBool>,
+        write_mode: WriteMode,
     ) -> PIWorker {
         return PIWorker {
             id,
             pi_config,
             base_output_path,
             shutdown_flag,
+            write_mode,
         };
     }
 }
@@ -135,10 +138,11 @@ impl Worker for PIWorker {
     /// * `Err` - If the inbox is not found, the index is out of bounds, or an error occurs
     #[cfg_attr(feature = "otel", tracing::instrument(skip(self)))]
     fn read_email_by_index(&self, list_name: String, email_index: usize) -> crate::Result<()> {
-        let writer = ArchiveWriter::new(
+        let mut writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             &list_name,
             RunModeConfig::PublicInbox(self.pi_config.clone()),
+            self.write_mode,
         );
 
         let inboxes = find_public_inboxes(std::path::Path::new(&self.pi_config.import_directory))?;
@@ -180,7 +184,7 @@ impl Worker for PIWorker {
                 let commit = repo.find_commit(commit_id)?;
                 let (commit_hash, raw_email) = extract_email_from_commit(&repo, &commit)?;
                 let email_id = format_email_id(email_index, &epoch.epoch_name, &commit_hash);
-                writer.archive_email(&email_id, [raw_email.as_str()])?;
+                writer.archive_email(&email_id, raw_email.lines())?;
                 log::info!(
                     "W{}: Successfully fetched email {} from {} (epoch {})",
                     self.id,
@@ -228,10 +232,11 @@ impl PIWorker {
             list_name
         );
 
-        let writer = ArchiveWriter::new(
+        let mut writer = ArchiveWriter::new(
             Path::new(&self.base_output_path),
             list_name,
             RunModeConfig::PublicInbox(self.pi_config.clone()),
+            self.write_mode,
         );
 
         // Check for progress to determine where to resume from
@@ -323,7 +328,7 @@ impl PIWorker {
             let result = self.process_epoch(
                 &repo,
                 epoch,
-                &writer,
+                &mut writer,
                 &email_range_positions,
                 &skip_until_sha,
                 global_position,
@@ -370,7 +375,7 @@ impl PIWorker {
         &self,
         repo: &git2::Repository,
         epoch: &EpochRepo,
-        writer: &ArchiveWriter,
+        writer: &mut ArchiveWriter,
         email_range_positions: &Option<HashSet<usize>>,
         skip_until_sha: &Option<String>,
         global_position: usize,

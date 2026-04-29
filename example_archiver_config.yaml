@@ -9,6 +9,10 @@ nthreads: 3
 output_dir: "./output"
 loop_groups: true
 
+# write_mode:
+#   "parquet:10000"
+#   or "raw_email"
+
 # read_lists delcaration is optional.
 # if empty, the user will be prompted with the options found
 # in the source to select
