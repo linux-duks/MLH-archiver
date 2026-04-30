@@ -109,7 +109,7 @@ impl Worker for PIWorker {
             match self.process_inbox(list_name.as_str()) {
                 Ok(mail_count) => {
                     log::info!(
-                        "W{}: completed a task with: {mail_count} emails saved",
+                        "W{}: completed a task with: {mail_count} emails saved from {list_name}",
                         self.id
                     );
                 }
@@ -257,7 +257,7 @@ impl PIWorker {
                 git_dir: inbox.git_dir.clone(),
             }]
         } else {
-            epochs
+            epochs.clone()
         };
 
         let mut emails_processed = 0;
@@ -311,6 +311,37 @@ impl PIWorker {
         }
 
         // Process each epoch in order
+        //
+        // When resuming, global_position holds the total number of emails
+        // already processed (1-indexed).  We need to know how many commits
+        // fall before the first epoch we'll actually visit (i.e. epochs
+        // filtered out by skip_until_epoch) so we can detect whether each
+        // remaining epoch has been fully processed.
+        let commits_before_first_epoch: usize = {
+            let mut before = 0usize;
+            if let Some(ref skip_epoch) = skip_until_epoch {
+                for ep in &epochs {
+                    // Stop once we reach the epoch we begin resuming from.
+                    if ep.epoch_name == *skip_epoch
+                        || (skip_epoch != "all"
+                            && ep.epoch_name
+                                .parse::<usize>()
+                                .ok()
+                                .zip(skip_epoch.parse::<usize>().ok())
+                                .map_or(false, |(a, b)| a >= b))
+                    {
+                        break;
+                    }
+                    if let Ok(r) = git2::Repository::open_bare(&ep.git_dir) {
+                        before += count_commits(&r).unwrap_or(0);
+                    }
+                }
+            }
+            before
+        };
+
+        let mut cumulative_emails_total: usize = commits_before_first_epoch;
+
         for epoch in &epochs_to_use {
             // Check for shutdown request
             if is_shutdown_requested(&self.shutdown_flag) {
@@ -324,6 +355,24 @@ impl PIWorker {
             }
 
             let repo = git2::Repository::open_bare(&epoch.git_dir)?;
+            let epoch_commits = count_commits(&repo)?;
+            cumulative_emails_total += epoch_commits;
+
+            // If every commit in this epoch falls at or before the resume
+            // point, skip the epoch entirely.  This prevents re-processing
+            // already-fetched emails when the service restarts after a
+            // complete run.
+            if global_position >= cumulative_emails_total {
+                skip_until_sha = None;
+                log::info!(
+                    "W{}: Skipping already-processed epoch {} ({} commits, cumulative={})",
+                    self.id,
+                    epoch.epoch_name,
+                    epoch_commits,
+                    cumulative_emails_total
+                );
+                continue;
+            }
 
             let result = self.process_epoch(
                 &repo,
