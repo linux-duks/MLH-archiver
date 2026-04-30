@@ -4,12 +4,13 @@ A Python tool for parsing raw email archives from the MLH Archiver into a struct
 
 ## Overview
 
-The MLH Parser processes raw RFC 822 email files produced by the MLH Archiver and converts them into an efficient, queryable Parquet dataset with Hive partitioning by mailing list name.
+The MLH Parser processes email files produced by the MLH Archiver and converts them into an efficient, queryable Parquet dataset with Hive partitioning by mailing list name. It automatically detects and reads both `.eml` (RFC 822) and `.parquet` (columnar) input formats.
 
 ## Features
 
 - **Parquet Output**: Columnar storage format optimized for analytics
 - **Hive Partitioning**: Data organized by mailing list for efficient querying
+- **Auto-detection of Input Format**: Reads `.eml` and `.parquet` files transparently from the same input directory
 - **Email Field Extraction**: Parses headers, body, attachments, and metadata
 - **Error Handling**: Failed parses are saved separately for review
 - **Containerized**: Runs consistently across different environments
@@ -73,6 +74,28 @@ INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
 | `../output/` | Input: Raw email files from archiver |
 | `../parser_output/parsed/` | Output: Parquet dataset |
 | `../parser_output/<list>/errors/` | Failed parses |
+
+### Input Formats
+
+The parser automatically detects and processes both input formats within each mailing list directory:
+
+| Format | Extension | Description |
+|--------|-----------|-------------|
+| Raw email | `.eml` | Individual RFC 822 email files (one file per email) |
+| Columnar | `.parquet` | Parquet files containing multiple emails in columnar form |
+
+#### Parquet Input
+
+When reading `.parquet` files, each file must contain the following columns:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `email_id` | string | Unique identifier for each email |
+| `content` | string / list\<string\> | Full raw email content |
+
+Each row in the parquet file is yielded as an individual email for parsing, with the composite name `{email_id}:{parquet_filename}` used for provenance tracking.
+
+Both `.eml` and `.parquet` files can coexist in the same input directory — the parser automatically dispatches to the correct reader based on file extension.
 
 ## Output Format
 

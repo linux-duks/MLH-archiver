@@ -4,7 +4,6 @@ import re
 import traceback
 import polars as pl
 from mlh_parser.date_parser import process_date
-from tqdm import tqdm
 import logging
 
 from mlh_parser.parser_algorithm import parse_email_bytes_to_dict
@@ -53,10 +52,13 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
 
     if REDO_FAILED_PARSES:
         all_emails = os.listdir(error_output_path)
+        email_files = (
+            f for f in all_emails if os.path.isfile(os.path.join(error_output_path, f))
+        )
+        input_dir_for_files = error_output_path
     else:
         all_emails = os.listdir(list_input_path)
-        # remove metadata files and directories (keep only email files)
-        all_emails = [
+        email_files = (
             f
             for f in all_emails
             if f
@@ -67,31 +69,41 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
                 "errors.txt",
             )
             and os.path.isfile(os.path.join(list_input_path, f))
-        ]
+        )
+        input_dir_for_files = list_input_path
 
-    email_dict_array = [None] * len(all_emails)
+    def _yield_email_items(file_path):
+        """Yield (file_name, content) tuples from an .eml or .parquet file."""
+        _, ext = os.path.splitext(file_path)
+        file_name = os.path.basename(file_path)
+        if ext == ".eml":
+            with open(file_path, mode="r", encoding="utf-8") as f:
+                yield (file_name, f.read())
+        elif ext == ".parquet":
+            df = pl.read_parquet(file_path)
+            for row in df.iter_rows(named=True):
+                yield (row["email_id"] + ":" + file_name, row["content"])
 
-    # TODO: this progress bar needs rework https://github.com/linux-duks/MLH-archiver/issues/11
-    for index, email_name in tqdm(
-        enumerate(all_emails),
-        total=len(all_emails),
-        desc=f"Reading emails from {mailing_list}",
-    ):
-        # Create context dictionary for tracking and logging
+    def email_name_iterator():
+        """Iterate over all files, yielding (file_name, content) from each."""
+        for email_file in email_files:
+            full_path = os.path.join(input_dir_for_files, email_file)
+            yield from _yield_email_items(full_path)
+
+    email_dict_list = []
+    error_files_to_delete = []
+
+    for email_name, email_content in email_name_iterator():
         ctx = {
             "file_name": email_name,
             "mailing_list": mailing_list,
             "errors": [],
         }
 
-        email_path = list_input_path + "/" + email_name
-        email_file = None
-        email_file_bytes = None
+        email_file = io.StringIO(email_content)
+        email_file_bytes = io.BytesIO(email_content.encode("utf-8"))
 
         try:
-            email_file = io.open(email_path, mode="r", encoding="utf-8")
-            email_file_bytes = io.open(email_path, mode="rb")
-
             email_as_dict = parse_email_bytes_to_dict(email_file_bytes.read(), ctx=ctx)
             email_as_dict = post_process_parsed_mail(email_as_dict, ctx=ctx)
         except Exception as parsing_error:
@@ -111,22 +123,17 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
                 continue
 
         email_as_dict = sanitize_surrogate_characters(email_as_dict)
-
-        # track the file name processed
         email_as_dict["__file_name"] = email_name
+        email_dict_list.append(email_as_dict)
 
-        email_dict_array[index] = email_as_dict
-
-        ERROR_FILES_TO_DELETE = []
         if REDO_FAILED_PARSES:
-            ERROR_FILES_TO_DELETE.append(error_output_path + "/" + email_name)
-            # os.remove(error_output_path + "/" + email_name)
+            error_files_to_delete.append(error_output_path + "/" + email_name)
 
         email_file.close()
         email_file_bytes.close()
 
     newly_parsed = pl.DataFrame(
-        email_dict_array, schema=PARQUET_COLS_SCHEMA
+        email_dict_list, schema=PARQUET_COLS_SCHEMA
     ).with_row_index()
 
     print(f"Converting {mailing_list} to Polars DataFrame")
@@ -136,8 +143,7 @@ def parse_mail_at(mailing_list, input_dir_path, output_dir_path, fail_on_parsing
     all_parsed.write_parquet(parquet_path)
 
     if REDO_FAILED_PARSES:
-        ERROR_FILES_TO_DELETE.append(error_output_path + "/" + email_name)
-        for error_file in ERROR_FILES_TO_DELETE:
+        for error_file in error_files_to_delete:
             os.remove(error_file)
 
     logger.info(f"Saved all parsed mail on list '{mailing_list}'")
