@@ -1,0 +1,71 @@
+From: Petr Baudis <pasky@xs26.net>
+Subject: Re: addrconf.c - possible bug
+Date: Sun, 31 Mar 2002 21:13:46 +0200
+Sender: owner-netdev@oss.sgi.com
+Message-ID: <20020331191346.GI1954@pasky.ji.cz>
+References: <20020323165921.GC1954@pasky.ji.cz> <Pine.LNX.4.44.0203231906560.29954-100000@netcore.fi> <20020323184451.GD1954@pasky.ji.cz> <20020324195737.GM1954@pasky.ji.cz>
+Reply-To: xs26-dev@xs26.net
+Mime-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Cc: Petr Baudis <pasky@xs26.net>, Pekka Savola <pekkas@netcore.fi>,
+   Jan Oravec <jan.oravec@xs26.net>, netdev@oss.sgi.com, kuznet@ms2.inr.ac.ru
+To: xs26-dev@xs26.net
+Content-Disposition: inline
+In-Reply-To: <20020324195737.GM1954@pasky.ji.cz>
+List-Id: netdev.vger.kernel.org
+Xref: nntp.lore.kernel.org org.kernel.vger.netdev:2
+Newsgroups: org.kernel.vger.netdev
+Path: nntp.lore.kernel.org!not-for-mail
+
+Dear diary, on Sun, Mar 24, 2002 at 08:57:37PM CET, I got a letter,
+where Petr Baudis <pasky@xs26.net> told me, that...
+> Dear diary, on Sat, Mar 23, 2002 at 07:44:51PM CET, I got a letter,
+> where Petr Baudis <pasky@xs26.net> told me, that...
+> > I started the tcpdump there, and we'll see. However, by looking into code, we
+> > found no possibility how would zebra want to mess with loopback.
+> > 
+> > Also, we discovered that just taking down and back up any ONE interface will
+> > fix this for ALL other interfaces as well.
+> 
+> It failed again and tcpdump still runs happily. Again, taking one of the
+> interfaces down and back up (maybe it's worth mentioning that the machine acts
+> as XS26 PoP, thus it have about 270 interfaces just now up) fixed the problem
+> and the machine started to reply to neighbor solicitations again.
+
+Just as a reminder and for a record, quite nice record of conversation of two
+such broken linuxes.
+
+20:43:48.596927 fe80::3e8c:1d09 > fe80::3e18:401b: OSPFv3-dd 28: rtrid secret.host backbone V6/E/R I/M/MS mtu 1480 S 3CA76B2D [hlim 1]
+20:43:51.433416 fe80::3e18:401b > fe80::3e8c:1d09: OSPFv3-ls_upd 1256: rtrid rover.dkm.cz backbone
+20:43:51.456066 fe80::3e8c:1d09 > fe80::3e18:401b: icmp6: redirect fe80::3e8c:1d09 to fe80::3e8c:1d09
+20:43:51.456147 fe80::3e18:401b > fe80::3e8c:1d09: icmp6: redirect fe80::3e18:401b to fe80::3e18:401b
+20:43:51.456176 fe80::3e8c:1d09 > fe80::3e18:401b: icmp6: redirect fe80::3e8c:1d09 to fe80::3e8c:1d09
+20:43:51.456758 fe80::3e18:401b > fe80::3e8c:1d09: OSPFv3-ls_upd 1256: rtrid rover.dkm.cz backbone
+20:43:51.456840 fe80::3e18:401b > fe80::3e8c:1d09: OSPFv3-ls_upd 1256: rtrid rover.dkm.cz backbone
+20:43:51.478662 fe80::3e8c:1d09 > fe80::3e18:401b: icmp6: redirect fe80::3e8c:1d09 to fe80::3e8c:1d09
+
+(as a result?)
+
+20:46:54.618539 fe80::3e8c:1d09 > fe80::3e8c:1d09: icmp6: time exceeded in-transit for fe80::3e18:401b
+20:46:54.618588 fe80::3e8c:1d09 > fe80::3e8c:1d09: icmp6: time exceeded in-transit for fe80::3e18:401b [hlim 1]
+...a lot of that..
+
+It looks they're not going to talk together :).
+
+And another excellent example of the problem:
+
+20:47:58.981124 fe80::2a0:c9ff:fea8:c91c > fe80::3e18:401b: icmp6: neighbor sol: who has fe80::3e18:401b
+20:47:58.981175 fe80::3e18:401b > fe80::2a0:c9ff:fea8:c91c: icmp6: redirect fe80::3e18:401b to fe80::3e18:401b
+
+Kind regards,
+
+-- 
+
+				Petr "Pasky" Baudis
+
+* ELinks maintainer                * IPv6 guy (XS26 co-coordinator)
+* IRCnet operator                  * FreeCiv AI hacker
+..
+Teamwork is essential -- it allows you to blame someone else.
+..
+Public PGP key && geekcode && homepage: http://pasky.ji.cz/~pasky/

@@ -1,0 +1,1145 @@
+["""diff --git a/fence/fenced/fd.h b/fence/fenced/fd.h
+index 7fa4b07..c1db728 100644
+--- a/fence/fenced/fd.h
++++ b/fence/fenced/fd.h
+@@ -262,6 +262,7 @@ void free_fd(struct fd *fd);
+ struct fd *find_fd(char *name);
+ void query_lock(void);
+ void query_unlock(void);
++void cluster_dead(int ci);
+ 
+ /* member_cman.c */
+ 
+diff --git a/fence/fenced/main.c b/fence/fenced/main.c
+index c4e1caf..bc7fb40 100644
+--- a/fence/fenced/main.c
++++ b/fence/fenced/main.c
+@@ -593,7 +593,7 @@ static int setup_queries(void)
+ 	return 0;
+ }
+ 
+-static void cluster_dead(int ci)
++void cluster_dead(int ci)
+ {
+ 	log_error("cluster is down, exiting");
+ 	daemon_quit = 1;
+@@ -688,6 +688,9 @@ static void loop(void)
+ 	close_logging();
+ 	close_ccs();
+ 	close_cman();
++
++	if (!list_empty(&domains))
++		log_error("domain abandoned");
+ }
+ 
+ static void lockfile(void)
+diff --git a/fence/fenced/member_cman.c b/fence/fenced/member_cman.c
+index 71d0caa..ae8957e 100644
+--- a/fence/fenced/member_cman.c
++++ b/fence/fenced/member_cman.c
+@@ -134,10 +134,8 @@ void process_cman(int ci)
+ 	int rv;
+ 
+ 	rv = cman_dispatch(ch, CMAN_DISPATCH_ALL);
+-	if (rv == -1 && errno == EHOSTDOWN) {
+-		log_error("cluster is down, exiting");
+-		exit(1);
+-	}
++	if (rv == -1 && errno == EHOSTDOWN)
++		cluster_dead(0);
+ }
+ 
+ int setup_cman(void)
+diff --git a/group/dlm_controld/action.c b/group/dlm_controld/action.c
+index 9f8f2a6..dea521a 100644
+--- a/group/dlm_controld/action.c
++++ b/group/dlm_controld/action.c
+@@ -253,7 +253,7 @@ int set_configfs_members(char *name, int new_count, int *new_members,
+ {
+ 	char path[PATH_MAX];
+ 	char buf[32];
+-	int i, w, fd, rv, id, cd = 0, old_count, *old_members;
++	int i, w, fd, rv, id, old_count, *old_members;
+ 	int do_renew;
+ 
+ 	/*
+@@ -378,10 +378,7 @@ int set_configfs_members(char *name, int new_count, int *new_members,
+ 		 * set node's weight
+ 		 */
+ 
+-		if (!cd)
+-			cd = open_ccs();
+-
+-		w = get_weight(cd, id, name);
++		w = get_weight(id, name);
+ 
+ 		memset(path, 0, PATH_MAX);
+ 		snprintf(path, PATH_MAX, "%s/%s/nodes/%d/weight",
+@@ -407,8 +404,6 @@ int set_configfs_members(char *name, int new_count, int *new_members,
+ 
+ 	rv = 0;
+  out:
+-	if (cd)
+-		close_ccs(cd);
+ 	return rv;
+ }
+ 
+@@ -554,13 +549,6 @@ static void clear_configfs_spaces(void)
+ 	closedir(d);
+ }
+ 
+-void clear_configfs(void)
+-{
+-	clear_configfs_comms();
+-	clear_configfs_spaces();
+-	rmdir("/sys/kernel/config/dlm/cluster");
+-}
+-
+ static int add_configfs_base(void)
+ {
+ 	int rv = 0;
+@@ -591,10 +579,6 @@ int add_configfs_node(int nodeid, char *addr, int addrlen, int local)
+ 	log_debug("set_configfs_node %d %s local %d",
+ 		  nodeid, str_ip(addr), local);
+ 
+-	rv = add_configfs_base();
+-	if (rv < 0)
+-		return rv;
+-
+ 	/*
+ 	 * create comm dir for this node
+ 	 */
+@@ -696,16 +680,12 @@ void del_configfs_node(int nodeid)
+ 		log_error("%s: rmdir failed: %d", path, errno);
+ }
+ 
+-int set_configfs_protocol(int proto)
++static int set_configfs_protocol(int proto)
+ {
+ 	char path[PATH_MAX];
+ 	char buf[32];
+ 	int fd, rv;
+ 
+-	rv = add_configfs_base();
+-	if (rv < 0)
+-		return rv;
+-
+ 	memset(path, 0, PATH_MAX);
+ 	snprintf(path, PATH_MAX, "%s/protocol", CLUSTER_DIR);
+ 
+@@ -728,16 +708,12 @@ int set_configfs_protocol(int proto)
+ 	return 0;
+ }
+ 
+-int set_configfs_timewarn(int cs)
++static int set_configfs_timewarn(int cs)
+ {
+ 	char path[PATH_MAX];
+ 	char buf[32];
+ 	int fd, rv;
+ 
+-	rv = add_configfs_base();
+-	if (rv < 0)
+-		return rv;
+-
+ 	memset(path, 0, PATH_MAX);
+ 	snprintf(path, PATH_MAX, "%s/timewarn_cs", CLUSTER_DIR);
+ 
+@@ -760,16 +736,12 @@ int set_configfs_timewarn(int cs)
+ 	return 0;
+ }
+ 
+-int set_configfs_debug(int val)
++static int set_configfs_debug(int val)
+ {
+ 	char path[PATH_MAX];
+ 	char buf[32];
+ 	int fd, rv;
+ 
+-	rv = add_configfs_base();
+-	if (rv < 0)
+-		return rv;
+-
+ 	memset(path, 0, PATH_MAX);
+ 	snprintf(path, PATH_MAX, "%s/log_debug", CLUSTER_DIR);
+ 
+@@ -792,3 +764,34 @@ int set_configfs_debug(int val)
+ 	return 0;
+ }
+ 
++void clear_configfs(void)
++{
++	clear_configfs_comms();
++	clear_configfs_spaces();
++	rmdir("/sys/kernel/config/dlm/cluster");
++}
++
++int setup_configfs(void)
++{
++	int rv;
++
++	clear_configfs();
++
++	rv = add_configfs_base();
++	if (rv < 0)
++		return rv;
++
++	/* the kernel has its own defaults for these values which we
++	   don't want to change unless these have been set; -1 means
++	   they have not been set on command line or config file */
++
++	if (cfgk_debug != -1)
++		set_configfs_debug(cfgk_debug);
++	if (cfgk_timewarn != -1)
++		set_configfs_timewarn(cfgk_timewarn);
++	if (cfgk_protocol != -1)
++		set_configfs_protocol(cfgk_protocol);
++
++	return 0;
++}
++
+diff --git a/group/dlm_controld/config.c b/group/dlm_controld/config.c
+index 8026ec2..c31c94f 100644
+--- a/group/dlm_controld/config.c
++++ b/group/dlm_controld/config.c
+@@ -28,6 +28,8 @@
+ #define PROTO_TCP  1
+ #define PROTO_SCTP 2
+ 
++static int ccs_handle;
++
+ /* was a config value set on command line?, 0 or 1.
+    optk is a kernel option, optd is a daemon option */
+ 
+@@ -64,7 +66,6 @@ int cfgd_drop_resources_time	= DEFAULT_DROP_RESOURCES_TIME;
+ int cfgd_drop_resources_count	= DEFAULT_DROP_RESOURCES_COUNT;
+ int cfgd_drop_resources_age	= DEFAULT_DROP_RESOURCES_AGE;
+ 
+-
+ /* when not set in cluster.conf, a node's default weight is 1 */
+ 
+ #define MASTER_PATH "/cluster/dlm/lockspace[@name=\"%s\"]/master"
+@@ -74,7 +75,7 @@ int cfgd_drop_resources_age	= DEFAULT_DROP_RESOURCES_AGE;
+ 
+ /* look for node's weight in the dlm/lockspace section */
+ 
+-static int get_weight_lockspace(int cd, char *node, char *lockspace)
++static int get_weight_lockspace(char *node, char *lockspace)
+ {
+ 	char path[PATH_MAX], *str;
+ 	int error, weight;
+@@ -84,7 +85,7 @@ static int get_weight_lockspace(int cd, char *node, char *lockspace)
+ 	sprintf(path, MASTER_NAME, lockspace);
+ 
+ 	while (1) {
+-		error = ccs_get_list(cd, path, &str);
++		error = ccs_get_list(ccs_handle, path, &str);
+ 		if (error || !str)
+ 			break;
+ 		master_count++;
+@@ -108,7 +109,7 @@ static int get_weight_lockspace(int cd, char *node, char *lockspace)
+ 	memset(path, 0, PATH_MAX);
+ 	sprintf(path, MASTER_WEIGHT, lockspace, node);
+ 
+-	error = ccs_get(cd, path, &str);
++	error = ccs_get(ccs_handle, path, &str);
+ 	if (error || !str)
+ 		return 1;
+ 
+@@ -119,7 +120,7 @@ static int get_weight_lockspace(int cd, char *node, char *lockspace)
+ 
+ /* look for node's weight on its clusternode line */
+ 
+-static int get_weight_clusternode(int cd, char *node, char *lockspace)
++static int get_weight_clusternode(char *node, char *lockspace)
+ {
+ 	char path[PATH_MAX], *str;
+ 	int error, weight;
+@@ -127,7 +128,7 @@ static int get_weight_clusternode(int cd, char *node, char *lockspace)
+ 	memset(path, 0, PATH_MAX);
+ 	sprintf(path, WEIGHT_PATH, node);
+ 
+-	error = ccs_get(cd, path, &str);
++	error = ccs_get(ccs_handle, path, &str);
+ 	if (error || !str)
+ 		return -1;
+ 
+@@ -136,7 +137,7 @@ static int get_weight_clusternode(int cd, char *node, char *lockspace)
+ 	return weight;
+ }
+ 
+-int get_weight(int cd, int nodeid, char *lockspace)
++int get_weight(int nodeid, char *lockspace)
+ {
+ 	char *node;
+ 	int w;
+@@ -148,11 +149,11 @@ int get_weight(int cd, int nodeid, char *lockspace)
+ 		goto out;
+ 	}
+ 
+-	w = get_weight_lockspace(cd, node, lockspace);
++	w = get_weight_lockspace(node, lockspace);
+ 	if (w >= 0)
+ 		goto out;
+ 
+-	w = get_weight_clusternode(cd, node, lockspace);
++	w = get_weight_clusternode(node, lockspace);
+ 	if (w >= 0)
+ 		goto out;
+ 
+@@ -162,31 +163,13 @@ int get_weight(int cd, int nodeid, char *lockspace)
+ 	return w;
+ }
+ 
+-int open_ccs(void)
+-{
+-	int i = 0, cd;
+-
+-	while ((cd = ccs_connect()) < 0) {
+-		sleep(1);
+-		if (++i > 9 && !(i % 10))
+-			log_error("connect to ccs error %d, "
+-				  "check ccsd or cluster status", cd);
+-	}
+-	return cd;
+-}
+-
+-void close_ccs(int cd)
+-{
+-	ccs_disconnect(cd);
+-}
+-
+-static void read_ccs_int(int cd, char *path, int *config_val)
++static void read_ccs_int(char *path, int *config_val)
+ {
+ 	char *str;
+ 	int val;
+ 	int error;
+ 
+-	error = ccs_get(cd, path, &str);
++	error = ccs_get(ccs_handle, path, &str);
+ 	if (error || !str)
+ 		return;
+ 
+@@ -202,13 +185,13 @@ static void read_ccs_int(int cd, char *path, int *config_val)
+ 	free(str);
+ }
+ 
+-static void read_ccs_protocol(int cd, char *path, int *config_val)
++static void read_ccs_protocol(char *path, int *config_val)
+ {
+ 	char *str;
+ 	int val;
+ 	int error;
+ 
+-	error = ccs_get(cd, path, &str);
++	error = ccs_get(ccs_handle, path, &str);
+ 	if (error || !str)
+ 		return;
+ 
+@@ -241,46 +224,56 @@ static void read_ccs_protocol(int cd, char *path, int *config_val)
+ #define DROP_RESOURCES_COUNT_PATH "/cluster/dlm/@drop_resources_count"
+ #define DROP_RESOURCES_AGE_PATH "/cluster/dlm/@drop_resources_age"
+ 
+-/* These config values are set from cluster.conf only if they haven't already
+-   been set on the command line. */
+-
+-void read_ccs(void)
++int setup_ccs(void)
+ {
+-	int cd;
++	int i = 0, cd;
+ 
+-	cd = open_ccs();
+-	if (cd < 0)
+-		return;
++	while ((cd = ccs_connect()) < 0) {
++		sleep(1);
++		if (++i > 9 && !(i % 10))
++			log_error("connect to ccs error %d, "
++				  "check cluster status", cd);
++	}
++
++	ccs_handle = cd;
++
++	/* These config values are set from cluster.conf only if they haven't
++	   already been set on the command line. */
+ 
+ 	if (!optk_debug)
+-		read_ccs_int(cd, DEBUG_PATH, &cfgk_debug);
++		read_ccs_int(DEBUG_PATH, &cfgk_debug);
+ 	if (!optk_timewarn)
+-		read_ccs_int(cd, TIMEWARN_PATH, &cfgk_timewarn);
++		read_ccs_int(TIMEWARN_PATH, &cfgk_timewarn);
+ 	if (!optk_protocol)
+-		read_ccs_protocol(cd, PROTOCOL_PATH, &cfgk_protocol);
++		read_ccs_protocol(PROTOCOL_PATH, &cfgk_protocol);
+ 	if (!optd_groupd_compat)
+-		read_ccs_int(cd, GROUPD_COMPAT_PATH, &cfgd_groupd_compat);
++		read_ccs_int(GROUPD_COMPAT_PATH, &cfgd_groupd_compat);
+ 	if (!optd_enable_fencing)
+-		read_ccs_int(cd, ENABLE_FENCING_PATH, &cfgd_enable_fencing);
++		read_ccs_int(ENABLE_FENCING_PATH, &cfgd_enable_fencing);
+ 	if (!optd_enable_quorum)
+-		read_ccs_int(cd, ENABLE_QUORUM_PATH, &cfgd_enable_quorum);
++		read_ccs_int(ENABLE_QUORUM_PATH, &cfgd_enable_quorum);
+ 	if (!optd_enable_deadlk)
+-		read_ccs_int(cd, ENABLE_DEADLK_PATH, &cfgd_enable_deadlk);
++		read_ccs_int(ENABLE_DEADLK_PATH, &cfgd_enable_deadlk);
+ 	if (!optd_enable_plock)
+-		read_ccs_int(cd, ENABLE_PLOCK_PATH, &cfgd_enable_plock);
++		read_ccs_int(ENABLE_PLOCK_PATH, &cfgd_enable_plock);
+ 	if (!optd_plock_debug)
+-		read_ccs_int(cd, PLOCK_DEBUG_PATH, &cfgd_plock_debug);
++		read_ccs_int(PLOCK_DEBUG_PATH, &cfgd_plock_debug);
+ 	if (!optd_plock_rate_limit)
+-		read_ccs_int(cd, PLOCK_RATE_LIMIT_PATH, &cfgd_plock_rate_limit);
++		read_ccs_int(PLOCK_RATE_LIMIT_PATH, &cfgd_plock_rate_limit);
+ 	if (!optd_plock_ownership)
+-		read_ccs_int(cd, PLOCK_OWNERSHIP_PATH, &cfgd_plock_ownership);
++		read_ccs_int(PLOCK_OWNERSHIP_PATH, &cfgd_plock_ownership);
+ 	if (!optd_drop_resources_time)
+-		read_ccs_int(cd, DROP_RESOURCES_TIME_PATH, &cfgd_drop_resources_time);
++		read_ccs_int(DROP_RESOURCES_TIME_PATH, &cfgd_drop_resources_time);
+ 	if (!optd_drop_resources_count)
+-		read_ccs_int(cd, DROP_RESOURCES_COUNT_PATH, &cfgd_drop_resources_count);
++		read_ccs_int(DROP_RESOURCES_COUNT_PATH, &cfgd_drop_resources_count);
+ 	if (!optd_drop_resources_age)
+-		read_ccs_int(cd, DROP_RESOURCES_AGE_PATH, &cfgd_drop_resources_age);
++		read_ccs_int(DROP_RESOURCES_AGE_PATH, &cfgd_drop_resources_age);
+ 
+-	ccs_disconnect(cd);
++	return 0;
++}
++
++void close_ccs(void)
++{
++	ccs_disconnect(ccs_handle);
+ }
+ 
+diff --git a/group/dlm_controld/config.h b/group/dlm_controld/config.h
+index 8dba693..fe4d5b5 100644
+--- a/group/dlm_controld/config.h
++++ b/group/dlm_controld/config.h
+@@ -1,3 +1,6 @@
++#ifndef __CONFIG_DOT_H__
++#define __CONFIG_DOT_H__
++
+ /* the kernel has default values for debug, timewarn and protocol;
+    we only change them if new values are given on command line or in ccs */
+ 
+@@ -43,8 +46,5 @@ extern int cfgd_drop_resources_time;
+ extern int cfgd_drop_resources_count;
+ extern int cfgd_drop_resources_age;
+ 
+-void read_ccs(void);
+-int open_ccs(void);
+-void close_ccs(int cd);
+-int get_weight(int cd, int nodeid, char *lockspace);
++#endif
+ 
+diff --git a/group/dlm_controld/dlm_daemon.h b/group/dlm_controld/dlm_daemon.h
+index 1e7b765..8c473ab 100644
+--- a/group/dlm_controld/dlm_daemon.h
++++ b/group/dlm_controld/dlm_daemon.h
+@@ -194,12 +194,15 @@ int set_sysfs_event_done(char *name, int val);
+ int set_sysfs_id(char *name, uint32_t id);
+ int set_configfs_members(char *name, int new_count, int *new_members,
+ 			int renew_count, int *renew_members);
+-void clear_configfs(void);
+ int add_configfs_node(int nodeid, char *addr, int addrlen, int local);
+ void del_configfs_node(int nodeid);
+-int set_configfs_protocol(int proto);
+-int set_configfs_timewarn(int cs);
+-int set_configfs_debug(int val);
++void clear_configfs(void);
++int setup_configfs(void);
++
++/* config.c */
++int get_weight(int nodeid, char *lockspace);
++int setup_ccs(void);
++void close_ccs(void);
+ 
+ /* cpg.c */
+ int setup_cpg(void);
+@@ -236,9 +239,11 @@ void client_back(int ci, int fd);
+ struct lockspace *find_ls(char *name);
+ struct lockspace *find_ls_id(uint32_t id);
+ char *dlm_mode_str(int mode);
++void cluster_dead(int ci);
+ 
+ /* member_cman.c */
+ int setup_cman(void);
++void close_cman(void);
+ void process_cman(int ci);
+ void cman_statechange(void);
+ int is_cman_member(int nodeid);
+@@ -265,6 +270,7 @@ int fill_plock_dump_buf(struct lockspace *ls);
+ 
+ /* group.c */
+ int setup_groupd(void);
++void close_groupd(void);
+ void process_groupd(int ci);
+ int dlm_join_lockspace_group(struct lockspace *ls);
+ int dlm_leave_lockspace_group(struct lockspace *ls);
+diff --git a/group/dlm_controld/group.c b/group/dlm_controld/group.c
+index 19716e8..88399df 100644
+--- a/group/dlm_controld/group.c
++++ b/group/dlm_controld/group.c
+@@ -228,6 +228,11 @@ int setup_groupd(void)
+ 	return rv;
+ }
+ 
++void close_groupd(void)
++{
++	group_exit(gh);
++}
++
+ /* FIXME: most of the query info doesn't apply in the LIBGROUP mode,
+    but we can emulate some basic parts of it */
+ 
+diff --git a/group/dlm_controld/main.c b/group/dlm_controld/main.c
+index aaaa2c4..ad359e1 100644
+--- a/group/dlm_controld/main.c
++++ b/group/dlm_controld/main.c
+@@ -786,20 +786,22 @@ static int setup_queries(void)
+ 	return 0;
+ }
+ 
+-static void cluster_dead(int ci)
++void cluster_dead(int ci)
+ {
+ 	log_error("cluster is down, exiting");
+-	clear_configfs();
+-	exit(1);
++	daemon_quit = 1;
+ }
+ 
+-static int loop(void)
++static void loop(void)
+ {
+ 	int poll_timeout = -1;
+ 	int rv, i;
+ 	void (*workfn) (int ci);
+ 	void (*deadfn) (int ci);
+ 
++	/* FIXME: add code that looks for uncontrolled instances of
++	   dlm lockspaces in the kernel */
++
+ 	rv = setup_queries();
+ 	if (rv < 0)
+ 		goto out;
+@@ -809,15 +811,23 @@ static int loop(void)
+ 		goto out;
+ 	client_add(rv, process_listener, NULL);
+ 
+-	rv = setup_uevent();
++	rv = setup_cman();
+ 	if (rv < 0)
+ 		goto out;
+-	client_add(rv, process_uevent, NULL);
++	client_add(rv, process_cman, cluster_dead);
+ 
+-	rv = setup_cman();
++	rv = setup_ccs();
+ 	if (rv < 0)
+ 		goto out;
+-	client_add(rv, process_cman, cluster_dead);
++
++	rv = setup_configfs();
++	if (rv < 0)
++		goto out;
++
++	rv = setup_uevent();
++	if (rv < 0)
++		goto out;
++	client_add(rv, process_uevent, NULL);
+ 
+ 	group_mode = GROUP_LIBCPG;
+ 
+@@ -880,10 +890,8 @@ static int loop(void)
+ 	for (;;) {
+ 		rv = poll(pollfd, client_maxi + 1, poll_timeout);
+ 		if (rv == -1 && errno == EINTR) {
+-			if (daemon_quit && list_empty(&lockspaces)) {
+-				clear_configfs();
+-				exit(1);
+-			}
++			if (daemon_quit && list_empty(&lockspaces))
++				goto out;
+ 			daemon_quit = 0;
+ 			continue;
+ 		}
+@@ -907,6 +915,10 @@ static int loop(void)
+ 				deadfn(i);
+ 			}
+ 		}
++		query_unlock();
++
++		if (daemon_quit)
++			break;
+ 
+ 		poll_timeout = -1;
+ 
+@@ -922,13 +934,16 @@ static int loop(void)
+ 			}
+ 			poll_timeout = 1000;
+ 		}
+-
+-		query_unlock();
+ 	}
+-	rv = 0;
+  out:
+-	free(pollfd);
+-	return rv;
++	if (cfgd_groupd_compat)
++		close_groupd();
++	clear_configfs();
++	close_ccs();
++	close_cman();
++
++	if (!list_empty(&lockspaces))
++		log_error("lockspaces abandoned");
+ }
+ 
+ static void lockfile(void)
+@@ -1167,24 +1182,12 @@ int main(int argc, char **argv)
+ 	openlog("dlm_controld", LOG_PID, LOG_DAEMON);
+ 	signal(SIGTERM, sigterm_handler);
+ 
+-	read_ccs();
+-
+-	clear_configfs();
+-
+-	/* the kernel has its own defaults for these values which we
+-	   don't want to change unless these have been set; -1 means
+-	   they have not been set on command line or config file */
+-	if (cfgk_debug != -1)
+-		set_configfs_debug(cfgk_debug);
+-	if (cfgk_timewarn != -1)
+-		set_configfs_timewarn(cfgk_timewarn);
+-	if (cfgk_protocol != -1)
+-		set_configfs_protocol(cfgk_protocol);
+-
+ 	set_scheduler();
+ 	set_oom_adj(-16);
+ 
+-	return loop();
++	loop();
++
++	return 0;
+ }
+ 
+ void daemon_dump_save(void)
+diff --git a/group/dlm_controld/member_cman.c b/group/dlm_controld/member_cman.c
+index 02956e7..0b925e6 100644
+--- a/group/dlm_controld/member_cman.c
++++ b/group/dlm_controld/member_cman.c
+@@ -118,7 +118,7 @@ static void statechange(void)
+ 	}
+ }
+ 
+-static void member_callback(cman_handle_t h, void *private, int reason, int arg)
++static void cman_callback(cman_handle_t h, void *private, int reason, int arg)
+ {
+ 	switch (reason) {
+ 	case CMAN_REASON_TRY_SHUTDOWN:
+@@ -140,27 +140,40 @@ void process_cman(int ci)
+ 	int rv;
+ 
+ 	rv = cman_dispatch(ch, CMAN_DISPATCH_ALL);
+-	if (rv == -1 && errno == EHOSTDOWN) {
+-		/* do we want to try to forcibly clean some stuff up
+-		   in the kernel here? */
+-		log_error("cluster is down, exiting");
+-		clear_configfs();
+-		exit(1);
+-	}
++	if (rv == -1 && errno == EHOSTDOWN)
++		cluster_dead(0);
+ }
+ 
+ int setup_cman(void)
+ {
+ 	cman_node_t node;
+ 	int rv, fd;
++	int init = 0, active = 0;
+ 
++ retry_init:
+ 	ch = cman_init(NULL);
+ 	if (!ch) {
+-		log_error("cman_init error %p %d", ch, errno);
++		if (init++ < 2) {
++			sleep(1);
++			goto retry_init;
++		}
++		log_error("cman_init error %d", errno);
++		return -ENOTCONN;
++	}
++
++ retry_active:
++	rv = cman_is_active(ch);
++	if (!rv) {
++		if (active++ < 2) {
++			sleep(1);
++			goto retry_active;
++		}
++		log_error("cman_is_active error %d", errno);
++		cman_finish(ch);
+ 		return -ENOTCONN;
+ 	}
+ 
+-	rv = cman_start_notification(ch, member_callback);
++	rv = cman_start_notification(ch, cman_callback);
+ 	if (rv < 0) {
+ 		log_error("cman_start_notification error %d %d", rv, errno);
+ 		cman_finish(ch);
+@@ -192,6 +205,11 @@ int setup_cman(void)
+ 	return fd;
+ }
+ 
++void close_cman(void)
++{
++	cman_finish(ch);
++}
++
+ /* Force re-read of cman nodes */
+ void cman_statechange(void)
+ {
+diff --git a/group/gfs_controld/config.c b/group/gfs_controld/config.c
+index d05ffc5..37d352d 100644
+--- a/group/gfs_controld/config.c
++++ b/group/gfs_controld/config.c
+@@ -25,6 +25,8 @@
+ #include "config.h"
+ #include "ccs.h"
+ 
++static int ccs_handle;
++
+ /* was a config value set on command line?, 0 or 1.
+    optk is a kernel option, optd is a daemon option */
+ 
+@@ -51,27 +53,41 @@ int cfgd_drop_resources_time	= DEFAULT_DROP_RESOURCES_TIME;
+ int cfgd_drop_resources_count	= DEFAULT_DROP_RESOURCES_COUNT;
+ int cfgd_drop_resources_age	= DEFAULT_DROP_RESOURCES_AGE;
+ 
+-
+-static int open_ccs(void)
++static void read_ccs_int(char *path, int *config_val)
+ {
+-	int i = 0, cd;
++	char *str;
++	int val;
++	int error;
++
++	error = ccs_get(ccs_handle, path, &str);
++	if (error || !str)
++		return;
++
++	val = atoi(str);
+ 
+-	while ((cd = ccs_connect()) < 0) {
+-		sleep(1);
+-		if (++i > 9 && !(i % 10))
+-			log_error("connect to ccs error %d, "
+-				  "check ccsd or cluster status", cd);
++	if (val < 0) {
++		log_error("ignore invalid value %d for %s", val, path);
++		return;
+ 	}
+-	return cd;
++
++	*config_val = val;
++	log_debug("%s is %u", path, val);
++	free(str);
+ }
+ 
+-static void read_ccs_int(int cd, char *path, int *config_val)
++#define LOCKSPACE_NODIR "/cluster/dlm/lockspace[@name=\"%s\"]/@nodir"
++
++void read_ccs_nodir(struct mountgroup *mg, char *buf)
+ {
++	char path[PATH_MAX];
+ 	char *str;
+ 	int val;
+ 	int error;
+ 
+-	error = ccs_get(cd, path, &str);
++	memset(path, 0, PATH_MAX);
++	sprintf(path, LOCKSPACE_NODIR, mg->name);
++
++	error = ccs_get(ccs_handle, path, &str);
+ 	if (error || !str)
+ 		return;
+ 
+@@ -82,7 +98,8 @@ static void read_ccs_int(int cd, char *path, int *config_val)
+ 		return;
+ 	}
+ 
+-	*config_val = val;
++	snprintf(buf, 32, ":nodir=%d", val);
++
+ 	log_debug("%s is %u", path, val);
+ 	free(str);
+ }
+@@ -97,72 +114,46 @@ static void read_ccs_int(int cd, char *path, int *config_val)
+ #define DROP_RESOURCES_COUNT_PATH "/cluster/gfs_controld/@drop_resources_count"
+ #define DROP_RESOURCES_AGE_PATH "/cluster/gfs_controld/@drop_resources_age"
+ 
+-/* These config values are set from cluster.conf only if they haven't already
+-   been set on the command line. */
+-
+-void read_ccs(void)
++int setup_ccs(void)
+ {
+-	int cd;
++	int i = 0, cd;
+ 
+-	cd = open_ccs();
+-	if (cd < 0)
+-		return;
++        while ((cd = ccs_connect()) < 0) {
++                sleep(1);
++                if (++i > 9 && !(i % 10))
++                        log_error("connect to ccs error %d, "
++                                  "check cluster status", cd);
++        }
++
++        ccs_handle = cd;
++
++	/* These config values are set from cluster.conf only if they haven't
++	   already been set on the command line. */
+ 
+ 	if (!optd_groupd_compat)
+-		read_ccs_int(cd, GROUPD_COMPAT_PATH, &cfgd_groupd_compat);
++		read_ccs_int(GROUPD_COMPAT_PATH, &cfgd_groupd_compat);
+ 	if (!optd_enable_withdraw)
+-		read_ccs_int(cd, ENABLE_WITHDRAW_PATH, &cfgd_enable_withdraw);
++		read_ccs_int(ENABLE_WITHDRAW_PATH, &cfgd_enable_withdraw);
+ 	if (!optd_enable_plock)
+-		read_ccs_int(cd, ENABLE_PLOCK_PATH, &cfgd_enable_plock);
++		read_ccs_int(ENABLE_PLOCK_PATH, &cfgd_enable_plock);
+ 	if (!optd_plock_debug)
+-		read_ccs_int(cd, PLOCK_DEBUG_PATH, &cfgd_plock_debug);
++		read_ccs_int(PLOCK_DEBUG_PATH, &cfgd_plock_debug);
+ 	if (!optd_plock_rate_limit)
+-		read_ccs_int(cd, PLOCK_RATE_LIMIT_PATH, &cfgd_plock_rate_limit);
++		read_ccs_int(PLOCK_RATE_LIMIT_PATH, &cfgd_plock_rate_limit);
+ 	if (!optd_plock_ownership)
+-		read_ccs_int(cd, PLOCK_OWNERSHIP_PATH, &cfgd_plock_ownership);
++		read_ccs_int(PLOCK_OWNERSHIP_PATH, &cfgd_plock_ownership);
+ 	if (!optd_drop_resources_time)
+-		read_ccs_int(cd, DROP_RESOURCES_TIME_PATH, &cfgd_drop_resources_time);
++		read_ccs_int(DROP_RESOURCES_TIME_PATH, &cfgd_drop_resources_time);
+ 	if (!optd_drop_resources_count)
+-		read_ccs_int(cd, DROP_RESOURCES_COUNT_PATH, &cfgd_drop_resources_count);
++		read_ccs_int(DROP_RESOURCES_COUNT_PATH, &cfgd_drop_resources_count);
+ 	if (!optd_drop_resources_age)
+-		read_ccs_int(cd, DROP_RESOURCES_AGE_PATH, &cfgd_drop_resources_age);
++		read_ccs_int(DROP_RESOURCES_AGE_PATH, &cfgd_drop_resources_age);
+ 
+-	ccs_disconnect(cd);
++	return 0;
+ }
+ 
+-#define LOCKSPACE_NODIR "/cluster/dlm/lockspace[@name=\"%s\"]/@nodir"
+-
+-void read_ccs_nodir(struct mountgroup *mg, char *buf)
++void close_ccs(void)
+ {
+-	char path[PATH_MAX];
+-	char *str;
+-	int val;
+-	int error;
+-	int cd;
+-
+-	cd = open_ccs();
+-	if (cd < 0)
+-		return;
+-
+-	memset(path, 0, PATH_MAX);
+-	sprintf(path, LOCKSPACE_NODIR, mg->name);
+-
+-	error = ccs_get(cd, path, &str);
+-	if (error || !str)
+-		return;
+-
+-	val = atoi(str);
+-
+-	if (val < 0) {
+-		log_error("ignore invalid value %d for %s", val, path);
+-		return;
+-	}
+-
+-	snprintf(buf, 32, ":nodir=%d", val);
+-
+-	log_debug("%s is %u", path, val);
+-	free(str);
+-
+-	ccs_disconnect(cd);
++	ccs_disconnect(ccs_handle);
+ }
+ 
+diff --git a/group/gfs_controld/gfs_daemon.h b/group/gfs_controld/gfs_daemon.h
+index 7b1983a..e90c983 100644
+--- a/group/gfs_controld/gfs_daemon.h
++++ b/group/gfs_controld/gfs_daemon.h
+@@ -196,7 +196,8 @@ struct mountgroup {
+ #define LM_RD_SUCCESS 309
+ 
+ /* config.c */
+-void read_ccs(void);
++int setup_ccs(void);
++void close_ccs(void);
+ void read_ccs_nodir(struct mountgroup *mg, char *buf);
+ 
+ /* cpg-new.c */
+@@ -235,6 +236,7 @@ int do_withdraw_old(char *table);
+ 
+ /* group.c */
+ int setup_groupd(void);
++void close_groupd(void);
+ void process_groupd(int ci);
+ int set_mountgroup_info_group(struct mountgroup *mg,
+ 	struct gfsc_mountgroup *out);
+@@ -261,9 +263,11 @@ void client_reply_join_full(struct mountgroup *mg, int result);
+ void query_lock(void);
+ void query_unlock(void);
+ void process_connection(int ci);
++void cluster_dead(int ci);
+ 
+ /* member_cman.c */
+ int setup_cman(void);
++void close_cman(void);
+ void process_cman(int ci);
+ 
+ /* plock.c */
+diff --git a/group/gfs_controld/group.c b/group/gfs_controld/group.c
+index 6707341..3baeb39 100644
+--- a/group/gfs_controld/group.c
++++ b/group/gfs_controld/group.c
+@@ -175,6 +175,11 @@ int setup_groupd(void)
+ 	return rv;
+ }
+ 
++void close_groupd(void)
++{
++	group_exit(gh);
++}
++
+ int set_mountgroup_info_group(struct mountgroup *mg, struct gfsc_mountgroup *out)
+ {
+ 	return 0;
+diff --git a/group/gfs_controld/main.c b/group/gfs_controld/main.c
+index 397662b..e2214d3 100644
+--- a/group/gfs_controld/main.c
++++ b/group/gfs_controld/main.c
+@@ -997,10 +997,10 @@ static int setup_queries(void)
+ 	return 0;
+ }
+ 
+-static void cluster_dead(int ci)
++void cluster_dead(int ci)
+ {
+ 	log_error("cluster is down, exiting");
+-	exit(1);
++	daemon_quit = 1;
+ }
+ 
+ static void dead_dlmcontrol(int ci)
+@@ -1008,7 +1008,7 @@ static void dead_dlmcontrol(int ci)
+ 	log_error("dlm_controld poll error %x", pollfd[ci].revents);
+ }
+ 
+-static int loop(void)
++static void loop(void)
+ {
+ 	int poll_timeout = -1;
+ 	int rv, i;
+@@ -1027,15 +1027,19 @@ static int loop(void)
+ 		goto out;
+ 	client_add(rv, process_listener, NULL);
+ 
+-	rv = setup_uevent();
++	rv = setup_cman();
+ 	if (rv < 0)
+ 		goto out;
+-	client_add(rv, process_uevent, NULL);
++	client_add(rv, process_cman, cluster_dead);
+ 
+-	rv = setup_cman();
++	rv = setup_ccs();
+ 	if (rv < 0)
+ 		goto out;
+-	client_add(rv, process_cman, cluster_dead);
++
++	rv = setup_uevent();
++	if (rv < 0)
++		goto out;
++	client_add(rv, process_uevent, NULL);
+ 
+ 	group_mode = GROUP_LIBCPG;
+ 
+@@ -1092,9 +1096,8 @@ static int loop(void)
+ 	for (;;) {
+ 		rv = poll(pollfd, client_maxi + 1, poll_timeout);
+ 		if (rv == -1 && errno == EINTR) {
+-			if (daemon_quit && list_empty(&mountgroups)) {
+-				exit(1);
+-			}
++			if (daemon_quit && list_empty(&mountgroups))
++				goto out;
+ 			daemon_quit = 0;
+ 			continue;
+ 		}
+@@ -1119,6 +1122,9 @@ static int loop(void)
+ 			}
+ 		}
+ 
++		if (daemon_quit)
++			break;
++
+ 		poll_timeout = -1;
+ 
+ 		if (poll_dlm) {
+@@ -1149,9 +1155,14 @@ static int loop(void)
+ 
+ 		query_unlock();
+ 	}
+-	rv = 0;
+  out:
+-	return rv;
++	if (cfgd_groupd_compat)
++		close_groupd();
++	close_ccs();
++	close_cman();
++
++	if (!list_empty(&mountgroups))
++		log_error("mountgroups abandoned");
+ }
+ 
+ static void lockfile(void)
+@@ -1367,12 +1378,12 @@ int main(int argc, char **argv)
+ 	openlog("gfs_controld", LOG_PID, LOG_DAEMON);
+ 	signal(SIGTERM, sigterm_handler);
+ 
+-	read_ccs();
+-
+ 	set_scheduler();
+ 	set_oom_adj(-16);
+ 
+-	return loop();
++	loop();
++
++	return 0;
+ }
+ 
+ void daemon_dump_save(void)
+diff --git a/group/gfs_controld/member_cman.c b/group/gfs_controld/member_cman.c
+index bd7aa1c..ccda450 100644
+--- a/group/gfs_controld/member_cman.c
++++ b/group/gfs_controld/member_cman.c
+@@ -16,46 +16,61 @@ static void cman_callback(cman_handle_t h, void *private, int reason, int arg)
+ 	}
+ }
+ 
+-static void exit_cman(void)
+-{
+-	log_error("cluster is down, exiting");
+-	exit(1);
+-}
+-
+ void process_cman(int ci)
+ {
+ 	int rv;
+ 
+ 	rv = cman_dispatch(ch, CMAN_DISPATCH_ALL);
+-
+ 	if (rv == -1 && errno == EHOSTDOWN)
+-		exit_cman();
++		cluster_dead(0);
+ }
+ 
+ int setup_cman(void)
+ {
+ 	cman_node_t node;
+ 	int rv, fd;
++	int init = 0, active = 0;
+ 
++ retry_init:
+ 	ch = cman_init(NULL);
+ 	if (!ch) {
++		if (init++ < 2) {
++			sleep(1);
++			goto retry_init;
++		}
+ 		log_error("cman_init error %d", errno);
+ 		return -ENOTCONN;
+ 	}
+ 
++ retry_active:
++	rv = cman_is_active(ch);
++	if (!rv) {
++		if (active++ < 2) {
++			sleep(1);
++			goto retry_active;
++		}
++		log_error("cman_is_active error %d", errno);
++		cman_finish(ch);
++		return -ENOTCONN;
++	}
++
+ 	rv = cman_start_notification(ch, cman_callback);
+ 	if (rv < 0) {
+ 		log_error("cman_start_notification error %d %d", rv, errno);
+-		goto fail_finish;
++		cman_finish(ch);
++		return rv;
+ 	}
+ 
+-	/* FIXME: wait here for us to be a member of the cluster */
++	fd = cman_get_fd(ch);
+ 
++	/* FIXME: wait here for us to be a member of the cluster */
+ 	memset(&cluster, 0, sizeof(cluster));
+ 	rv = cman_get_cluster(ch, &cluster);
+ 	if (rv < 0) {
+ 		log_error("cman_get_cluster error %d %d", rv, errno);
+-		goto fail_stop;
++		cman_stop_notification(ch);
++		cman_finish(ch);
++		return rv;
+ 	}
+ 	clustername = cluster.ci_name;
+ 
+@@ -63,17 +78,18 @@ int setup_cman(void)
+ 	rv = cman_get_node(ch, CMAN_NODEID_US, &node);
+ 	if (rv < 0) {
+ 		log_error("cman_get_node error %d %d", rv, errno);
+-		goto fail_stop;
++		cman_stop_notification(ch);
++		cman_finish(ch);
++		fd = rv;
++		goto out;
+ 	}
+ 	our_nodeid = node.cn_nodeid;
+-
+-	fd = cman_get_fd(ch);
++ out:
+ 	return fd;
++}
+ 
+- fail_stop:
+-	cman_stop_notification(ch);
+- fail_finish:
++void close_cman(void)
++{
+ 	cman_finish(ch);
+-	return rv;
+ }
+ 
+
+
+hooks/post-receive
+--"""]
+

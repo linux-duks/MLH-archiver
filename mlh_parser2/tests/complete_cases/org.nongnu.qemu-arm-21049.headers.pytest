@@ -1,0 +1,47 @@
+received: by 2002:a19:cb43:0:0:0:0:0 with SMTP id b64csp3835750lfg; Wed, 26 Feb 2020 18:36:02 -0800 (PST)
+received: from lists.gnu.org (lists.gnu.org. [209.51.188.17]) by mx.google.com with ESMTPS id i5si453155qvl.131.2020.02.26.18.36.02 for <alex.bennee@linaro.org> (version=TLS1_2 cipher=ECDHE-RSA-CHACHA20-POLY1305 bits=256/256); Wed, 26 Feb 2020 18:36:02 -0800 (PST)
+received: from localhost ([::1]:52940 helo=lists1p.gnu.org) by lists.gnu.org with esmtp (Exim 4.90_1) (envelope-from <qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org>) id 1j791t-0008WC-TG for alex.bennee@linaro.org; Wed, 26 Feb 2020 21:36:01 -0500
+received: from eggs.gnu.org ([2001:470:142:3::10]:60109) by lists.gnu.org with esmtp (Exim 4.90_1) (envelope-from <pannengyuan@huawei.com>) id 1j791S-0007xl-Al for qemu-arm@nongnu.org; Wed, 26 Feb 2020 21:35:36 -0500
+received: from Debian-exim by eggs.gnu.org with spam-scanned (Exim 4.71) (envelope-from <pannengyuan@huawei.com>) id 1j791P-0001XZ-BR for qemu-arm@nongnu.org; Wed, 26 Feb 2020 21:35:34 -0500
+received: from szxga07-in.huawei.com ([45.249.212.35]:39478 helo=huawei.com) by eggs.gnu.org with esmtps (TLS1.0:DHE_RSA_AES_256_CBC_SHA1:32) (Exim 4.71) (envelope-from <pannengyuan@huawei.com>) id 1j791O-0001P2-VQ; Wed, 26 Feb 2020 21:35:31 -0500
+received: from DGGEMS409-HUB.china.huawei.com (unknown [172.30.72.58]) by Forcepoint Email with ESMTP id B7EF74C9367B712C157E; Thu, 27 Feb 2020 10:35:26 +0800 (CST)
+received: from localhost.localdomain (10.175.104.216) by DGGEMS409-HUB.china.huawei.com (10.3.19.209) with Microsoft SMTP Server id 14.3.439.0; Thu, 27 Feb 2020 10:35:15 +0800
+x-google-smtp-source: APXvYqxspOVUpRpbw/GWjW1WDYpjxUPTRpNFKbMIELomIRbMTYirL+jKRk9RjKGUOR2h17fGoVup
+x-received: by 2002:a05:6214:2f0:: with SMTP id h16mr67017qvu.164.1582770962479; Wed, 26 Feb 2020 18:36:02 -0800 (PST)
+arc-seal: i=1; a=rsa-sha256; t=1582770962; cv=none; d=google.com; s=arc-20160816; b=WQotck+rzNB3wOnRhvdbtp+YPkbktWjDIo6YVQccYaTF6e391DFUyMjfBZBKCflAXr DEm1K7JRiZZggLtLAHzcUowtt+EAXZMkIGfLiJ33gw5hCvT0eV1B/tTn7jpnGE8p07rI Wk352d/bPi+3NTcvtdNyz1tkaykmh2NipP3bNWUQa+rPo7mBDTKZa+SK7CaIdonntcQR xBK/KNaV+VS5VwXSCLoeYkaocoJsGqfyWseZzVHUoDntV4ILgpB1Ut8To4BKUy+a+tI3 IHPfgEDxL4Mzff0O6SS9/5n1la8bMpXOIWMz7AJReYmxdmKqhcd7XVo/mZV6e0PnxeKY hUHA==
+arc-message-signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20160816; h=sender:errors-to:cc:list-subscribe:list-help:list-post:list-archive :list-unsubscribe:list-id:precedence:content-transfer-encoding :mime-version:references:in-reply-to:message-id:date:subject:to:from; bh=WqQY6qD1kwnAdaSRJROtAbfcE6gUoFD6xv01yhxFkK4=; b=iNUZPWBD1KMimegIwiZNWE8SKAhGWWNURJ+veHpMDv8HiSsGC0ECcfsr0mVhHjxQEW 4PMzW4WSEEW+cXNHPfsrfm9ZRsDbqyprtxJmUru06YTM73xbP4zQhAcpFAwxktMpurBK vhvcotSxHOpTYXn9S4Q+pgm7xVeIXmncnVT+J6J16A09D2EWFJiWpNlqDxSS47cbvZ8D pwFhC5wBz5l/2Cnx5BI9Ppxc08S5XgUovs8EKfE5UVQ3HnpTjGKVo+2o2jCz0pI83VLb bVEgGS5SQDtM4qJK8pYeLOHkSUxTQ3ve7Z+/AiTKmKOMPvuHs1UkuKE4PoQXqgJDeGoE r7lA==
+arc-authentication-results: i=1; mx.google.com; spf=pass (google.com: domain of qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org designates 209.51.188.17 as permitted sender) smtp.mailfrom="qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org"
+return-path: <qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org>
+received-spf: pass (google.com: domain of qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org designates 209.51.188.17 as permitted sender) client-ip=209.51.188.17;
+authentication-results: mx.google.com; spf=pass (google.com: domain of qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org designates 209.51.188.17 as permitted sender) smtp.mailfrom="qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org"
+to: <peter.maydell@linaro.org>
+subject: [PATCH v3 1/6] s390x: fix memleaks in cpu_finalize
+date: Thu, 27 Feb 2020 10:50:50 +0800
+message-id: <20200227025055.14341-2-pannengyuan@huawei.com>
+x-mailer: git-send-email 2.18.2
+in-reply-to: <20200227025055.14341-1-pannengyuan@huawei.com>
+references: <20200227025055.14341-1-pannengyuan@huawei.com>
+mime-version: 1.0
+content-type: text/plain; charset="base64"
+x-originating-ip: [10.175.104.216]
+x-cfilter-loop: Reflected
+content-transfer-encoding: quoted-printable
+x-detected-operating-system: by eggs.gnu.org: GNU/Linux 2.2.x-3.x [generic] [fuzzy]
+x-received-from: 45.249.212.35
+x-beenthere: qemu-arm@nongnu.org
+x-mailman-version: 2.1.23
+precedence: list
+list-id: <qemu-arm.nongnu.org>
+list-unsubscribe: <https://lists.nongnu.org/mailman/options/qemu-arm>, <mailto:qemu-arm-request@nongnu.org?subject=unsubscribe>
+list-archive: <https://lists.nongnu.org/archive/html/qemu-arm>
+list-post: <mailto:qemu-arm@nongnu.org>
+list-help: <mailto:qemu-arm-request@nongnu.org?subject=help>
+list-subscribe: <https://lists.nongnu.org/mailman/listinfo/qemu-arm>, <mailto:qemu-arm-request@nongnu.org?subject=subscribe>
+cc: zhang.zhanghailiang@huawei.com, David Hildenbrand <david@redhat.com>, Cornelia Huck <cohuck@redhat.com>, Pan Nengyuan <pannengyuan@huawei.com>, qemu-devel@nongnu.org, qemu-s390x@nongnu.org, qemu-arm@nongnu.org, euler.robot@huawei.com, Richard Henderson <rth@twiddle.net>
+errors-to: qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org
+sender: "Qemu-arm" <qemu-arm-bounces+alex.bennee=linaro.org@nongnu.org>
+x-tuid: eHWRSKZmrSoP
+xref: nntp.lore.kernel.org org.nongnu.qemu-arm:21049 org.nongnu.qemu-devel:713648
+newsgroups: org.nongnu.qemu-arm,org.nongnu.qemu-devel
+path: nntp.lore.kernel.org!not-for-mail
+from: Pan Nengyuan <pannengyuan@huawei.com>

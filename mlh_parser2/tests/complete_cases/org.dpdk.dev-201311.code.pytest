@@ -1,0 +1,501 @@
+["""---
+ app/test-pmd/cmdline.c                |  12 ++-
+ app/test-pmd/config.c                 |   9 ++-
+ app/test-pmd/parameters.c             |  11 +++
+ app/test-pmd/testpmd.c                | 138 ++++++++++++++++++++++------------
+ app/test-pmd/testpmd.h                |   7 ++
+ doc/guides/testpmd_app_ug/run_app.rst |  69 +++++++++++++++++
+ 6 files changed, 196 insertions(+), 50 deletions(-)
+
+diff --git a/app/test-pmd/cmdline.c b/app/test-pmd/cmdline.c
+index 14110eb..287d7a0 100644
+--- a/app/test-pmd/cmdline.c
++++ b/app/test-pmd/cmdline.c
+@@ -71,8 +71,6 @@
+ #include "cmdline_tm.h"
+ #include "bpf_cmd.h"
+ 
+-static struct cmdline *testpmd_cl;
+-
+ static void cmd_reconfig_device_queue(portid_t id, uint8_t dev, uint8_t queue);
+ 
+ /* *** Help command with introduction. *** */
+@@ -5351,6 +5349,12 @@ cmd_set_flush_rx_parsed(void *parsed_result,
+ 		__rte_unused void *data)
+ {
+ 	struct cmd_set_flush_rx *res = parsed_result;
++
++	if (num_procs > 1 && (strcmp(res->mode, "on") == 0)) {
++		printf("multi-process doesn't support to flush rx queues.\n");
++		return;
++	}
++
+ 	no_flush_rx = (uint8_t)((strcmp(res->mode, "on") == 0) ? 0 : 1);
+ }
+ 
+@@ -17227,6 +17231,10 @@ prompt(void)
+ 		printf("Cannot set exit function for cmdline\n");
+ 
+ 	cmdline_interact(testpmd_cl);
++	if (unlikely(f_quit == 1)) {
++		dup2(testpmd_fd_copy, testpmd_cl->s_in);
++		close(testpmd_fd_copy);
++	}
+ 	if (ret != 0)
+ 		cmdline_stdin_exit(testpmd_cl);
+ }
+diff --git a/app/test-pmd/config.c b/app/test-pmd/config.c
+index 576d5ac..9edf84a 100644
+--- a/app/test-pmd/config.c
++++ b/app/test-pmd/config.c
+@@ -2827,6 +2827,8 @@ rss_fwd_config_setup(void)
+ 	queueid_t  rxq;
+ 	queueid_t  nb_q;
+ 	streamid_t  sm_id;
++	int start;
++	int end;
+ 
+ 	nb_q = nb_rxq;
+ 	if (nb_q > nb_txq)
+@@ -2844,7 +2846,10 @@ rss_fwd_config_setup(void)
+ 	init_fwd_streams();
+ 
+ 	setup_fwd_config_of_each_lcore(&cur_fwd_config);
+-	rxp = 0; rxq = 0;
++	start = proc_id * nb_q / num_procs;
++	end = start + nb_q / num_procs;
++	rxp = 0;
++	rxq = start;
+ 	for (sm_id = 0; sm_id < cur_fwd_config.nb_fwd_streams; sm_id++) {
+ 		struct fwd_stream *fs;
+ 
+@@ -2861,6 +2866,8 @@ rss_fwd_config_setup(void)
+ 			continue;
+ 		rxp = 0;
+ 		rxq++;
++		if (rxq >= end)
++			rxq = start;
+ 	}
+ }
+ 
+diff --git a/app/test-pmd/parameters.c b/app/test-pmd/parameters.c
+index c8acd5d..1a5bf25 100644
+--- a/app/test-pmd/parameters.c
++++ b/app/test-pmd/parameters.c
+@@ -45,6 +45,8 @@
+ #include <rte_flow.h>
+ 
+ #include "testpmd.h"
++#define PARAM_PROC_ID "proc-id"
++#define PARAM_NUM_PROCS "num-procs"
+ 
+ static void
+ usage(char* progname)
+@@ -605,6 +607,8 @@ launch_args_parse(int argc, char** argv)
+ 		{ "rx-mq-mode",                 1, 0, 0 },
+ 		{ "record-core-cycles",         0, 0, 0 },
+ 		{ "record-burst-stats",         0, 0, 0 },
++		{ PARAM_NUM_PROCS,              1, 0, 0 },
++		{ PARAM_PROC_ID,                1, 0, 0 },
+ 		{ 0, 0, 0, 0 },
+ 	};
+ 
+@@ -1366,6 +1370,13 @@ launch_args_parse(int argc, char** argv)
+ 				record_core_cycles = 1;
+ 			if (!strcmp(lgopts[opt_idx].name, "record-burst-stats"))
+ 				record_burst_stats = 1;
++
++			if (strncmp(lgopts[opt_idx].name,
++				    PARAM_NUM_PROCS, 8) == 0)
++				num_procs = atoi(optarg);
++			if (strncmp(lgopts[opt_idx].name,
++				    PARAM_PROC_ID, 7) == 0)
++				proc_id = atoi(optarg);
+ 			break;
+ 		case 'h':
+ 			usage(argv[0]);
+diff --git a/app/test-pmd/testpmd.c b/app/test-pmd/testpmd.c
+index 1a57324..bbd45d9 100644
+--- a/app/test-pmd/testpmd.c
++++ b/app/test-pmd/testpmd.c
+@@ -63,6 +63,8 @@
+ 
+ #include "testpmd.h"
+ 
++int testpmd_fd_copy = 500; /* the copy of STDIN_FILENO */
++
+ #ifndef MAP_HUGETLB
+ /* FreeBSD may not have MAP_HUGETLB (in fact, it probably doesn't) */
+ #define HUGE_FLAG (0x40000)
+@@ -125,6 +127,9 @@ uint8_t port_numa[RTE_MAX_ETHPORTS];
+  */
+ uint8_t rxring_numa[RTE_MAX_ETHPORTS];
+ 
++int proc_id;
++unsigned int num_procs = 1;
++
+ /*
+  * Store specified sockets on which TX ring to be used by ports
+  * is allocated.
+@@ -982,16 +987,26 @@ mbuf_pool_create(uint16_t mbuf_seg_size, unsigned nb_mbuf,
+ 			/* wrapper to rte_mempool_create() */
+ 			TESTPMD_LOG(INFO, "preferred mempool ops selected: %s\n",
+ 					rte_mbuf_best_mempool_ops());
+-			rte_mp = rte_pktmbuf_pool_create(pool_name, nb_mbuf,
+-				mb_mempool_cache, 0, mbuf_seg_size, socket_id);
++			if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++				rte_mp = rte_pktmbuf_pool_create(pool_name,
++					 nb_mbuf, mb_mempool_cache, 0,
++					 mbuf_seg_size, socket_id);
++			else
++				rte_mp = rte_mempool_lookup(pool_name);
++
+ 			break;
+ 		}
+ 	case MP_ALLOC_ANON:
+ 		{
+-			rte_mp = rte_mempool_create_empty(pool_name, nb_mbuf,
+-				mb_size, (unsigned int) mb_mempool_cache,
+-				sizeof(struct rte_pktmbuf_pool_private),
+-				socket_id, mempool_flags);
++			if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++				rte_mp = rte_mempool_create_empty(pool_name,
++					nb_mbuf, mb_size,
++					(unsigned int)mb_mempool_cache,
++					sizeof(struct rte_pktmbuf_pool_private),
++					socket_id, mempool_flags);
++			else
++				rte_mp = rte_mempool_lookup(pool_name);
++
+ 			if (rte_mp == NULL)
+ 				goto err;
+ 
+@@ -1021,9 +1036,13 @@ mbuf_pool_create(uint16_t mbuf_seg_size, unsigned nb_mbuf,
+ 
+ 			TESTPMD_LOG(INFO, "preferred mempool ops selected: %s\n",
+ 					rte_mbuf_best_mempool_ops());
+-			rte_mp = rte_pktmbuf_pool_create(pool_name, nb_mbuf,
+-					mb_mempool_cache, 0, mbuf_seg_size,
+-					heap_socket);
++			if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++				rte_mp = rte_pktmbuf_pool_create(pool_name,
++					 nb_mbuf, mb_mempool_cache, 0,
++					 mbuf_seg_size, heap_socket);
++			else
++				rte_mp = rte_mempool_lookup(pool_name);
++
+ 			break;
+ 		}
+ 	case MP_ALLOC_XBUF:
+@@ -1994,6 +2013,12 @@ flush_fwd_rx_queues(void)
+ 	uint64_t prev_tsc = 0, diff_tsc, cur_tsc, timer_tsc = 0;
+ 	uint64_t timer_period;
+ 
++	if (num_procs > 1) {
++		printf("multi-process not support for flushing fwd rx "
++		       "queues, skip the below lines and return.\n");
++		return;
++	}
++
+ 	/* convert to number of cycles */
+ 	timer_period = rte_get_timer_hz(); /* 1 second timeout */
+ 
+@@ -2503,21 +2528,28 @@ start_port(portid_t pid)
+ 				return -1;
+ 			}
+ 			/* configure port */
+-			diag = rte_eth_dev_configure(pi, nb_rxq + nb_hairpinq,
++			if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
++				diag = rte_eth_dev_configure(pi,
++						     nb_rxq + nb_hairpinq,
+ 						     nb_txq + nb_hairpinq,
+ 						     &(port->dev_conf));
+-			if (diag != 0) {
+-				if (rte_atomic16_cmpset(&(port->port_status),
+-				RTE_PORT_HANDLING, RTE_PORT_STOPPED) == 0)
+-					printf("Port %d can not be set back "
+-							"to stopped\n", pi);
+-				printf("Fail to configure port %d\n", pi);
+-				/* try to reconfigure port next time */
+-				port->need_reconfig = 1;
+-				return -1;
++				if (diag != 0) {
++					if (rte_atomic16_cmpset(
++							&(port->port_status),
++							RTE_PORT_HANDLING,
++							RTE_PORT_STOPPED) == 0)
++						printf("Port %d can not be set "
++						       "back to stopped\n", pi);
++					printf("Fail to configure port %d\n",
++						pi);
++					/* try to reconfigure port next time */
++					port->need_reconfig = 1;
++					return -1;
++				}
+ 			}
+ 		}
+-		if (port->need_reconfig_queues > 0) {
++		if (port->need_reconfig_queues > 0 &&
++		    rte_eal_process_type() == RTE_PROC_PRIMARY) {
+ 			port->need_reconfig_queues = 0;
+ 			/* setup tx queues */
+ 			for (qi = 0; qi < nb_txq; qi++) {
+@@ -2618,15 +2650,18 @@ start_port(portid_t pid)
+ 		cnt_pi++;
+ 
+ 		/* start port */
+-		if (rte_eth_dev_start(pi) < 0) {
+-			printf("Fail to start port %d\n", pi);
++		if (rte_eal_process_type() == RTE_PROC_PRIMARY) {
++			diag = rte_eth_dev_start(pi);
++			if (diag < 0) {
++				printf("Fail to start port %d\n", pi);
+ 
+-			/* Fail to setup rx queue, return */
+-			if (rte_atomic16_cmpset(&(port->port_status),
+-				RTE_PORT_HANDLING, RTE_PORT_STOPPED) == 0)
+-				printf("Port %d can not be set back to "
++				/* Fail to setup rx queue, return */
++				if (rte_atomic16_cmpset(&(port->port_status),
++				    RTE_PORT_HANDLING, RTE_PORT_STOPPED) == 0)
++					printf("Port %d can not be set back to "
+ 							"stopped\n", pi);
+-			continue;
++				continue;
++			}
+ 		}
+ 
+ 		if (rte_atomic16_cmpset(&(port->port_status),
+@@ -2755,7 +2790,8 @@ stop_port(portid_t pid)
+ 		if (port->flow_list)
+ 			port_flow_flush(pi);
+ 
+-		if (rte_eth_dev_stop(pi) != 0)
++		if (rte_eal_process_type() == RTE_PROC_PRIMARY &&
++		    rte_eth_dev_stop(pi) != 0)
+ 			RTE_LOG(ERR, EAL, "rte_eth_dev_stop failed for port %u\n",
+ 				pi);
+ 
+@@ -2824,8 +2860,10 @@ close_port(portid_t pid)
+ 			continue;
+ 		}
+ 
+-		port_flow_flush(pi);
+-		rte_eth_dev_close(pi);
++		if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++			port_flow_flush(pi);
++		if (rte_eal_process_type() == RTE_PROC_PRIMARY)
++			rte_eth_dev_close(pi);
+ 	}
+ 
+ 	remove_invalid_ports();
+@@ -3089,7 +3127,7 @@ pmd_test_exit(void)
+ 		}
+ 	}
+ 	for (i = 0 ; i < RTE_DIM(mempools) ; i++) {
+-		if (mempools[i])
++		if (rte_eal_process_type() == RTE_PROC_PRIMARY && mempools[i])
+ 			rte_mempool_free(mempools[i]);
+ 	}
+ 
+@@ -3611,6 +3649,10 @@ init_port_dcb_config(portid_t pid,
+ 	int retval;
+ 	uint16_t i;
+ 
++	if (num_procs > 1) {
++		printf("The multi-process feature doesn't support dcb.\n");
++		return -ENOTSUP;
++	}
+ 	rte_port = &ports[pid];
+ 
+ 	memset(&port_conf, 0, sizeof(struct rte_eth_conf));
+@@ -3709,13 +3751,6 @@ init_port(void)
+ }
+ 
+ static void
+-force_quit(void)
+-{
+-	pmd_test_exit();
+-	prompt_exit();
+-}
+-
+-static void
+ print_stats(void)
+ {
+ 	uint8_t i;
+@@ -3746,12 +3781,16 @@ signal_handler(int signum)
+ 		if (latencystats_enabled != 0)
+ 			rte_latencystats_uninit();
+ #endif
+-		force_quit();
+ 		/* Set flag to indicate the force termination. */
+ 		f_quit = 1;
+-		/* exit with the expected status */
+-		signal(signum, SIG_DFL);
+-		kill(getpid(), signum);
++		if (interactive == 1) {
++			dup2(testpmd_cl->s_in, testpmd_fd_copy);
++			close(testpmd_cl->s_in);
++		} else {
++			dup2(0, testpmd_fd_copy);
++			close(0);
++		}
++
+ 	}
+ }
+ 
+@@ -3776,10 +3815,6 @@ main(int argc, char** argv)
+ 		rte_exit(EXIT_FAILURE, "Cannot init EAL: %s\n",
+ 			 rte_strerror(rte_errno));
+ 
+-	if (rte_eal_process_type() == RTE_PROC_SECONDARY)
+-		rte_exit(EXIT_FAILURE,
+-			 "Secondary process type not supported.\n");
+-
+ 	ret = register_eth_event_callback();
+ 	if (ret != 0)
+ 		rte_exit(EXIT_FAILURE, "Cannot register for ethdev events");
+@@ -3875,8 +3910,10 @@ main(int argc, char** argv)
+ 		}
+ 	}
+ 
+-	if (!no_device_start && start_port(RTE_PORT_ALL) != 0)
++	if (!no_device_start && start_port(RTE_PORT_ALL) != 0) {
++		pmd_test_exit();
+ 		rte_exit(EXIT_FAILURE, "Start ports failed\n");
++	}
+ 
+ 	/* set all ports to promiscuous mode by default */
+ 	RTE_ETH_FOREACH_DEV(port_id) {
+@@ -3922,6 +3959,8 @@ main(int argc, char** argv)
+ 		}
+ 		prompt();
+ 		pmd_test_exit();
++		if (unlikely(f_quit == 1))
++			prompt_exit();
+ 	} else
+ #endif
+ 	{
+@@ -3957,6 +3996,11 @@ main(int argc, char** argv)
+ 		printf("Press enter to exit\n");
+ 		rc = read(0, &c, 1);
+ 		pmd_test_exit();
++		if (unlikely(f_quit == 1)) {
++			dup2(testpmd_fd_copy, 0);
++			close(testpmd_fd_copy);
++			prompt_exit();
++		}
+ 		if (rc < 0)
+ 			return 1;
+ 	}
+diff --git a/app/test-pmd/testpmd.h b/app/test-pmd/testpmd.h
+index ce83f31..6d13417 100644
+--- a/app/test-pmd/testpmd.h
++++ b/app/test-pmd/testpmd.h
+@@ -13,6 +13,7 @@
+ #include <rte_gso.h>
+ #include <cmdline.h>
+ #include <sys/queue.h>
++#include  "cmdline.h"
+ 
+ #define RTE_PORT_ALL            (~(portid_t)0x0)
+ 
+@@ -24,6 +25,10 @@
+ #define RTE_PORT_CLOSED         (uint16_t)2
+ #define RTE_PORT_HANDLING       (uint16_t)3
+ 
++uint8_t f_quit;
++int testpmd_fd_copy;
++struct cmdline *testpmd_cl;
++
+ /*
+  * It is used to allocate the memory for hash key.
+  * The hash key size is NIC dependent.
+@@ -422,6 +427,8 @@ extern uint64_t noisy_lkup_mem_sz;
+ extern uint64_t noisy_lkup_num_writes;
+ extern uint64_t noisy_lkup_num_reads;
+ extern uint64_t noisy_lkup_num_reads_writes;
++extern int proc_id;
++extern unsigned int num_procs;
+ 
+ extern uint8_t dcb_config;
+ extern uint8_t dcb_test;
+diff --git a/doc/guides/testpmd_app_ug/run_app.rst b/doc/guides/testpmd_app_ug/run_app.rst
+index 6745072..7e1b95d 100644
+--- a/doc/guides/testpmd_app_ug/run_app.rst
++++ b/doc/guides/testpmd_app_ug/run_app.rst
+@@ -536,3 +536,72 @@ The command line options are:
+     bit 1 - two hairpin ports paired
+     bit 0 - two hairpin ports loop
+     The default value is 0. Hairpin will use single port mode and implicit Tx flow mode.
++
++
++Testpmd Support Multi Process Command-line Options
++----------------------------
++
++The following are the command-line options for the testpmd applications(support multi process).
++They must be separated from the EAL options, shown in the previous section, with a ``--`` separator:
++
++.. code-block:: console
++
++	primary process:
++    sudo ./dpdk-testpmd -a xxx --proc-type=auto -l 0-1 -- -i --rxq=4 --txq=4 --num-procs=2 --proc-id=0
++
++	secondary process:
++	sudo ./dpdk-testpmd -a xxx --proc-type=auto -l 2-3 -- -i --rxq=4 --txq=4 --num-procs=2 --proc-id=1
++
++The command line options are:
++
++*   ``-a, --allow``
++
++	Add a device to the allow list. ``xxx`` means device used which should be the same in primary process
++	and secondary process.
++
++*   ``--proc-type``
++	Specify a given process instance as the primary or secondary DPDK instance. ``auto`` set here is ok.
++
++*   ``-l CORELIST``
++	List of cores to run on. the corelist should be different in primary process and secondary process.
++
++*   ``--rxq=N``
++
++    Set the number of RX queues per port to N, where 1 <= N <= 65535.
++    The default value is 1. N is the sum of queues used by primary and secondary process.
++
++*   ``--txq=N``
++
++    Set the number of TX queues per port to N, where 1 <= N <= 65535.
++    The default value is 1. N is the sum of queues used by primary and secondary process.
++
++*   ``--num-procs=N``
++
++	The number of processes which will be used.
++
++*   ``--proc-id=id``
++
++	The id of the current process (id < num-procs). id should be different in primary process and secondary process.
++
++Calculation rule for queue:
++All queues are allocated to different processes based on proc_num and proc_id.
++Calculation rule for the Testpmd to allocate queues to each process:
++start(queue start id) = proc_id * nb_q / num_procs；
++end(queue end id) = start + nb_q / num_procs；
++
++For example, if supports 4 txq and rxq
++the 0~1 for primary process
++the 2~3 for secondary process
++
++Most dev ops is supported in primary and secondary process. While secondary process is not permitted
++to allocate or release shared memory, so some ops are not supported as follows:
++``dev_start``
++``dev_stop``
++``rx_queue_setup``
++``tx_queue_setup``
++``rx_queue_release``
++``tx_queue_release``
++
++RTE_FLOW supported, it applies only on its own process on SW side, but all on HW size.
++stats supported, stats will not change when one quit and start, As they share the same buffer to store the stats.
++RSS supported, Primary process and secondary process has separate queues to use, RSS will work in their own queues whether primary and secondary process.
+-- 
+2.7.4"""]

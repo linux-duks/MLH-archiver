@@ -1,0 +1,65 @@
+["""---
+ target/s390x/cpu.c | 22 ++++++++++++++++++----
+ 1 file changed, 18 insertions(+), 4 deletions(-)
+
+diff --git a/target/s390x/cpu.c b/target/s390x/cpu.c
+index cf84d307c6..cc63c9db22 100644
+--- a/target/s390x/cpu.c
++++ b/target/s390x/cpu.c
+@@ -170,7 +170,12 @@ static void s390_cpu_realizefn(DeviceState *dev, Err=
+or **errp)
+     S390CPUClass *scc =3D S390_CPU_GET_CLASS(dev);
+ #if !defined(CONFIG_USER_ONLY)
+     S390CPU *cpu =3D S390_CPU(dev);
++    cpu->env.tod_timer =3D
++        timer_new_ns(QEMU_CLOCK_VIRTUAL, s390x_tod_timer, cpu);
++    cpu->env.cpu_timer =3D
++        timer_new_ns(QEMU_CLOCK_VIRTUAL, s390x_cpu_timer, cpu);
+ #endif
++
+     Error *err =3D NULL;
+=20
+     /* the model has to be realized before qemu_init_vcpu() due to kvm *=
+/
+@@ -227,6 +232,18 @@ out:
+     error_propagate(errp, err);
+ }
+=20
++static void s390_cpu_unrealizefn(DeviceState *dev, Error **errp)
++{
++#if !defined(CONFIG_USER_ONLY)
++    S390CPU *cpu =3D S390_CPU(dev);
++
++    timer_del(cpu->env.tod_timer);
++    timer_del(cpu->env.cpu_timer);
++    timer_free(cpu->env.tod_timer);
++    timer_free(cpu->env.cpu_timer);
++#endif
++}
++
+ static GuestPanicInformation *s390_cpu_get_crash_info(CPUState *cs)
+ {
+     GuestPanicInformation *panic_info;
+@@ -279,10 +296,6 @@ static void s390_cpu_initfn(Object *obj)
+                         s390_cpu_get_crash_info_qom, NULL, NULL, NULL, N=
+ULL);
+     s390_cpu_model_register_props(obj);
+ #if !defined(CONFIG_USER_ONLY)
+-    cpu->env.tod_timer =3D
+-        timer_new_ns(QEMU_CLOCK_VIRTUAL, s390x_tod_timer, cpu);
+-    cpu->env.cpu_timer =3D
+-        timer_new_ns(QEMU_CLOCK_VIRTUAL, s390x_cpu_timer, cpu);
+     s390_cpu_set_state(S390_CPU_STATE_STOPPED, cpu);
+ #endif
+ }
+@@ -453,6 +466,7 @@ static void s390_cpu_class_init(ObjectClass *oc, void=
+ *data)
+=20
+     device_class_set_parent_realize(dc, s390_cpu_realizefn,
+                                     &scc->parent_realize);
++    dc->unrealize =3D s390_cpu_unrealizefn;
+     device_class_set_props(dc, s390x_cpu_properties);
+     dc->user_creatable =3D true;
+=20
+--=20
+2.18.2"""]

@@ -1,0 +1,53 @@
+["""diff --git a/drivers/of/property.c b/drivers/of/property.c
+--- a/drivers/of/property.c
++++ b/drivers/of/property.c
+@@ -1138,18 +1138,6 @@ static int of_link_to_phandle(struct device_node *con_np,
+ 		return -ENODEV;
+ 	}
+ 
+-	/*
+-	 * Don't allow linking a device node as a consumer of one of its
+-	 * descendant nodes. By definition, a child node can't be a functional
+-	 * dependency for the parent node.
+-	 */
+-	if (of_is_ancestor_of(con_np, sup_np)) {
+-		pr_debug("Not linking %pOFP to %pOFP - is descendant\n",
+-			 con_np, sup_np);
+-		of_node_put(sup_np);
+-		return -EINVAL;
+-	}
+-
+ 	/*
+ 	 * Don't create links to "early devices" that won't have struct devices
+ 	 * created for them.
+@@ -1163,9 +1151,27 @@ static int of_link_to_phandle(struct device_node *con_np,
+ 		of_node_put(sup_np);
+ 		return -ENODEV;
+ 	}
+-	put_device(sup_dev);
++
++	/*
++	 * Don't allow linking a device node as a consumer of one of its
++	 * descendant nodes. By definition, a child node can't be a functional
++	 * dependency for the parent node.
++	 *
++	 * However, if the child node already has a device while the parent is
++	 * in the process of being added, it's probably some weird quirk
++	 * handling. So, don't both checking if the consumer is an ancestor of
++	 * the supplier.
++	 */
++	if (!sup_dev && of_is_ancestor_of(con_np, sup_np)) {
++		pr_debug("Not linking %pOFP to %pOFP - is descendant\n",
++			 con_np, sup_np);
++		put_device(sup_dev);
++		of_node_put(sup_np);
++		return -EINVAL;
++	}
+ 
+ 	fwnode_link_add(of_fwnode_handle(con_np), of_fwnode_handle(sup_np));
++	put_device(sup_dev);
+ 	of_node_put(sup_np);
+ 
+ 	return 0;
+-- 
+2.36.1"""]

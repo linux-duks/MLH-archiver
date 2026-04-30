@@ -1,0 +1,230 @@
+Content-Type: multipart/mixed; boundary="===============1184715646109867569=="
+MIME-Version: 1.0
+From: ramesh.thomas at intel.com
+Subject: [Accel-config] [PATCH v2] accel-config/libaccel-config: Add IAX
+ support
+Date: Wed, 18 Nov 2020 15:39:56 -0500
+Message-ID: <20201118203955.174903-1-ramesh.thomas@intel.com>
+To: accel-config@lists.01.org
+List-ID: <accel-config@lists.01.org>
+Xref: nntp.lore.kernel.org dev.linux.lists.accel-config:14
+Newsgroups: dev.linux.lists.accel-config
+Path: nntp.lore.kernel.org!not-for-mail
+
+--===============1184715646109867569==
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: quoted-printable
+
+From: Ramesh Thomas <ramesh.thomas(a)intel.com>
+
+Add Intel Analytics Accelerator support.
+
+Changes in v2:
+- block on fault is available for IAX
+
+Signed-off-by: Ramesh Thomas <ramesh.thomas(a)intel.com>
+Signed-off-by: Dave Jiang <dave.jiang(a)intel.com>
+---
+ accfg/config.c          | 10 ++++++++++
+ accfg/lib/libaccfg.c    |  3 +++
+ accfg/libaccel_config.h |  1 +
+ accfg/list.c            | 31 +++++++++++++++++++------------
+ util/json.c             | 16 ++++++++++++----
+ 5 files changed, 45 insertions(+), 16 deletions(-)
+
+diff --git a/accfg/config.c b/accfg/config.c
+index 3887873..d36f1d9 100644
+--- a/accfg/config.c
++++ b/accfg/config.c
+@@ -296,6 +296,10 @@ static int group_json_set_val(struct accfg_group *grou=
+p,
+ 		json_object *jobj, char *key)
+ {
+ 	int rc, i;
++	struct accfg_device *dev =3D NULL;
++
++	if (group)
++		dev =3D accfg_group_get_device(group);
+ =
+
+ 	if (!group || !jobj || !key)
+ 		return -EINVAL;
+@@ -311,6 +315,12 @@ static int group_json_set_val(struct accfg_group *grou=
+p,
+ 						|| (val < 0))
+ 					return -EINVAL;
+ =
+
++				if ((accfg_device_get_type(dev) =3D=3D ACCFG_DEVICE_IAX)
++					&& ((!strcmp(group_table[i].name, "tokens_reserved"))
++					|| (!strcmp(group_table[i].name, "use_token_limit"))
++					|| (!strcmp(group_table[i].name, "tokens_allowed")))) {
++					return 0;
++				}
+ 				if (group_table[i].is_writable &&
+ 					!group_table[i].is_writable(group,
+ 						val))
+diff --git a/accfg/lib/libaccfg.c b/accfg/lib/libaccfg.c
+index 70553f7..cd9da42 100644
+--- a/accfg/lib/libaccfg.c
++++ b/accfg/lib/libaccfg.c
+@@ -39,6 +39,7 @@ static int filename_prefix_len;
+ =
+
+ ACCFG_EXPORT char *accfg_basenames[] =3D {
+         [ACCFG_DEVICE_DSA]      =3D "dsa",
++	[ACCFG_DEVICE_IAX]      =3D "iax",
+ 	NULL
+ };
+ =
+
+@@ -397,6 +398,8 @@ static int device_parse_type(struct accfg_device *devic=
+e)
+ =
+
+ 	if (!strcmp(device->device_type_str, "dsa"))
+ 		device->type =3D ACCFG_DEVICE_DSA;
++	else if (!strcmp(device->device_type_str, "iax"))
++		device->type =3D ACCFG_DEVICE_IAX;
+ 	else
+ 		device->type =3D ACCFG_DEVICE_TYPE_UNKNOWN;
+ =
+
+diff --git a/accfg/libaccel_config.h b/accfg/libaccel_config.h
+index 392188e..f85670c 100644
+--- a/accfg/libaccel_config.h
++++ b/accfg/libaccel_config.h
+@@ -31,6 +31,7 @@ extern "C" {
+ /* no need to save device state */
+ enum accfg_device_type {
+ 	ACCFG_DEVICE_DSA =3D 0,
++	ACCFG_DEVICE_IAX =3D 1,
+ 	ACCFG_DEVICE_TYPE_UNKNOWN =3D -1,
+ };
+ =
+
+diff --git a/accfg/list.c b/accfg/list.c
+index dfaac1f..c22da41 100644
+--- a/accfg/list.c
++++ b/accfg/list.c
+@@ -54,6 +54,10 @@ static struct json_object *group_to_json(struct accfg_gr=
+oup *group,
+ {
+ 	struct json_object *jgroup =3D json_object_new_object();
+ 	struct json_object *jobj =3D NULL;
++	struct accfg_device *dev =3D NULL;
++
++	if (group)
++		dev =3D accfg_group_get_device(group);
+ =
+
+ 	if (!jgroup)
+ 		return NULL;
+@@ -67,20 +71,23 @@ static struct json_object *group_to_json(struct accfg_g=
+roup *group,
+ 	if (!jobj)
+ 		goto err;
+ =
+
+-	json_object_object_add(jgroup, "tokens_reserved", jobj);
+-	jobj =3D json_object_new_int(accfg_group_get_use_token_limit(group));
+-	if (!jobj)
+-		goto err;
++	if (accfg_device_get_type(dev) !=3D ACCFG_DEVICE_IAX) {
++		json_object_object_add(jgroup, "tokens_reserved", jobj);
++		jobj =3D json_object_new_int(accfg_group_get_use_token_limit(group));
++		if (!jobj)
++			goto err;
+ =
+
+-	json_object_object_add(jgroup, "use_token_limit", jobj);
+-	jobj =3D json_object_new_int(accfg_group_get_tokens_allowed(group));
+-	if (!jobj)
+-		goto err;
++		json_object_object_add(jgroup, "use_token_limit", jobj);
++		jobj =3D json_object_new_int(accfg_group_get_tokens_allowed(group));
++		if (!jobj)
++			goto err;
+ =
+
+-	json_object_object_add(jgroup, "tokens_allowed", jobj);
+-	jobj =3D json_object_new_int(accfg_group_get_traffic_class_a(group));
+-	if (!jobj)
+-		goto err;
++		json_object_object_add(jgroup, "tokens_allowed", jobj);
++		jobj =3D json_object_new_int(accfg_group_get_traffic_class_a(
++				group));
++		if (!jobj)
++			goto err;
++	}
+ =
+
+ 	json_object_object_add(jgroup, "traffic_class_a", jobj);
+ 	jobj =3D json_object_new_int(accfg_group_get_traffic_class_b(
+diff --git a/util/json.c b/util/json.c
+index 3bf8950..bb3ee88 100644
+--- a/util/json.c
++++ b/util/json.c
+@@ -178,7 +178,8 @@ struct json_object *util_device_to_json(struct accfg_de=
+vice *device,
+ 	jobj =3D json_object_new_int(accfg_device_get_token_limit(device));
+ 	if (!jobj)
+ 		goto err;
+-	json_object_object_add(jdevice, "token_limit", jobj);
++	if (accfg_device_get_type(device) !=3D ACCFG_DEVICE_IAX)
++		json_object_object_add(jdevice, "token_limit", jobj);
+ =
+
+ 	if (flags & UTIL_JSON_SAVE) {
+ 		free(error);
+@@ -277,7 +278,8 @@ struct json_object *util_device_to_json(struct accfg_de=
+vice *device,
+ 	jobj =3D json_object_new_int(accfg_device_get_max_tokens(device));
+ 	if (!jobj)
+ 		goto err;
+-	json_object_object_add(jdevice, "max_tokens", jobj);
++	if (accfg_device_get_type(device) !=3D ACCFG_DEVICE_IAX)
++		json_object_object_add(jdevice, "max_tokens", jobj);
+ =
+
+ 	ulong_val =3D accfg_device_get_max_batch_size(device);
+ 	if (ulong_val > 0) {
+@@ -353,8 +355,12 @@ struct json_object *util_wq_to_json(struct accfg_wq *w=
+q,
+ 	unsigned long size =3D ULLONG_MAX;
+ 	enum accfg_wq_mode wq_mode;
+ 	enum accfg_wq_state wq_state;
++	struct accfg_device *dev =3D NULL;
+ 	int int_val;
+ =
+
++	if (wq)
++		dev =3D accfg_wq_get_device(wq);
++
+ 	if (!jaccfg)
+ 		return NULL;
+ =
+
+@@ -396,8 +402,10 @@ struct json_object *util_wq_to_json(struct accfg_wq *w=
+q,
+ 	}
+ =
+
+ 	jobj =3D json_object_new_int(accfg_wq_get_block_on_fault(wq));
+-	if (jobj)
+-		json_object_object_add(jaccfg, "block_on_fault", jobj);
++	if (jobj) {
++		if (accfg_device_get_type(dev) !=3D ACCFG_DEVICE_IAX)
++			json_object_object_add(jaccfg, "block_on_fault", jobj);
++	}
+ =
+
+ 	jobj =3D json_object_new_int(accfg_wq_get_max_batch_size(wq));
+ 	if (jobj)
+-- =
+
+2.26.2
+
+--===============1184715646109867569==--
+

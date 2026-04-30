@@ -1,0 +1,10 @@
+[
+    {
+        "attribution": "Signed-off-by",
+        "identification": "Mickaël Salaün <mic@linux.microsoft.com>",
+    },
+    {
+        "attribution": "Reviewed-by",
+        "identification": "Jann Horn <jannh@google.com>",
+    },
+]

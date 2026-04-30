@@ -1,0 +1,10 @@
+[
+    {
+        "attribution": "Reported-by",
+        "identification": "Abaci Robot <abaci@linux.alibaba.com>",
+    },
+    {
+        "attribution": "Signed-off-by",
+        "identification": "Jiapeng Chong <jiapeng.chong@linux.alibaba.com>",
+    },
+]

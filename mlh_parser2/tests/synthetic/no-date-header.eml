@@ -1,0 +1,12 @@
+From: developer@example.com
+To: linux-test@vger.kernel.org
+Subject: [PATCH] test: synthetic missing Date header
+Message-ID: <synthetic-no-date-header@example.com>
+Received: by relay.example.org (Postfix) with ESMTP id EEFF9012;
+	Mon, 15 Jan 2024 08:30:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Synthetic test email.
+This email has no Date header at all.
+The parser should fall back to the Received header for the date.

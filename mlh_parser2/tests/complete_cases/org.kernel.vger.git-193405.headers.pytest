@@ -1,0 +1,29 @@
+subject: Re: [PATCHv6 4/4] Write to $XDG_CONFIG_HOME/git/config file
+date: Tue, 12 Jun 2012 01:45:13 +0200
+message-id: <20120612014513.Horde.cXfsRXwdC4BP1oMJ5-cA9zA@webmail.minatec.grenoble-inp.fr>
+references: <1338754481-27012-1-git-send-email-Huynh-Khoi-Nguyen.Nguyen@ensimag.imag.fr> <1338988885-21933-1-git-send-email-Huynh-Khoi-Nguyen.Nguyen@ensimag.imag.fr> <1338988885-21933-4-git-send-email-Huynh-Khoi-Nguyen.Nguyen@ensimag.imag.fr> <CAJDDKr6sCrwy99-5-sOaAuNjYmnw73CicF3PyYMe8hvf38oFvg@mail.gmail.com> <7vipf1aty2.fsf@alter.siamese.dyndns.org> <vpqmx4bmhem.fsf@bauges.imag.fr>
+mime-version: 1.0
+content-type: text/plain; charset=";"; format=flowed	DelSp=Yes
+content-transfer-encoding: QUOTED-PRINTABLE
+cc: Junio C Hamano <gitster@pobox.com>, David Aguilar <davvid@gmail.com>, Huynh Khoi Nguyen NGUYEN  <Huynh-Khoi-Nguyen.Nguyen@ensimag.imag.fr>, git@vger.kernel.org, NGUYEN Huynh Khoi Nguyen <nguyenhu@ensibm.imag.fr>, Valentin Duperray <Valentin.Duperray@ensimag.imag.fr>, Franck Jonas <Franck.Jonas@ensimag.imag.fr>, Lucien Kong <Lucien.Kong@ensimag.imag.fr>, Thomas Nguy <Thomas.Nguy@ensimag.imag.fr>
+to: Matthieu Moy <Matthieu.Moy@grenoble-inp.fr>
+x-from: git-owner@vger.kernel.org Tue Jun 12 01:45:27 2012
+return-path: <git-owner@vger.kernel.org>
+envelope-to: gcvg-git-2@plane.gmane.org
+received: from vger.kernel.org ([209.132.180.67]) by plane.gmane.org with esmtp (Exim 4.69) (envelope-from <git-owner@vger.kernel.org>) id 1SeEIY-0001xK-21 for gcvg-git-2@plane.gmane.org; Tue, 12 Jun 2012 01:45:26 +0200
+received: (majordomo@vger.kernel.org) by vger.kernel.org via listexpand id S1752917Ab2FKXpR convert rfc822-to-quoted-printable (ORCPT <rfc822;gcvg-git-2@m.gmane.org>); Mon, 11 Jun 2012 19:45:17 -0400
+received: from v-smtp.minatec.grenoble-inp.fr ([147.173.216.28]:57682 "EHLO v-smtp.minatec.grenoble-inp.fr" rhost-flags-OK-OK-OK-OK) by vger.kernel.org with ESMTP id S1752906Ab2FKXpP (ORCPT <rfc822;git@vger.kernel.org>); Mon, 11 Jun 2012 19:45:15 -0400
+received: from localhost (www02.minatec.grenoble-inp.fr [147.173.216.15]) by v-smtp.minatec.grenoble-inp.fr (Postfix) with ESMTP id 0E41F1A02F6; Tue, 12 Jun 2012 01:45:14 +0200 (CEST)
+received: from etu-190-212.vpn-inp.grenoble-inp.fr (etu-190-212.vpn-inp.grenoble-inp.fr [147.171.190.212]) by webmail.minatec.grenoble-inp.fr (Horde Framework) with HTTP; Tue, 12 Jun 2012 01:45:13 +0200
+in-reply-to: <vpqmx4bmhem.fsf@bauges.imag.fr>
+user-agent: Internet Messaging Program (IMP) H4 (5.0.17)
+content-disposition: inline
+sender: git-owner@vger.kernel.org
+precedence: bulk
+list-id: <git.vger.kernel.org>
+x-mailing-list: git@vger.kernel.org
+archived-at: <http://permalink.gmane.org/gmane.comp.version-control.git/199754>
+xref: nntp.lore.kernel.org org.kernel.vger.git:193405
+newsgroups: org.kernel.vger.git
+path: nntp.lore.kernel.org!not-for-mail
+from: nguyenhu@minatec.inpg.fr
