@@ -1,6 +1,6 @@
 use super::email_store::{EmailData, EmailStore};
 
-use arrow::array::{ListBuilder, RecordBatch, StringBuilder};
+use arrow::array::{RecordBatch, StringBuilder};
 use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::{Compression, ZstdLevel};
@@ -26,14 +26,10 @@ impl ParquetEmailStore {
     /// until the first flush to ensure empty files aren't created unnecessarily.
     pub fn new(output_path: PathBuf, batch_size: usize) -> Self {
         // Define the Arrow Schema:
-        // email_id: Utf8, content: List<Utf8>
+        // email_id: Utf8, content: Utf8
         let schema = Arc::new(ArrowSchema::new(vec![
             Field::new("email_id", DataType::Utf8, false),
-            Field::new(
-                "content",
-                DataType::List(Arc::new(Field::new("item", DataType::Utf8, true))),
-                false,
-            ),
+            Field::new("content", DataType::Utf8, false),
         ]));
 
         Self {
@@ -136,21 +132,13 @@ impl ParquetEmailStore {
 
         //  Prepare Column Builders
         let mut id_builder = StringBuilder::new();
-        // ListBuilder wraps another builder for the items inside the list
-        let mut content_builder = ListBuilder::new(StringBuilder::new());
+        let mut content_builder = StringBuilder::new();
 
         // Drain the buffer and populate columnar builders
         for email in self.buffer.drain(..) {
-            // Push email ID
             synced_items.push(email.email_id.clone());
             id_builder.append_value(email.email_id);
-
-            // Push the list of content strings
-            let content_values = content_builder.values();
-            for line in email.content {
-                content_values.append_value(line);
-            }
-            content_builder.append(true); // Close this specific list record
+            content_builder.append_value(email.content);
         }
 
         // Finalize arrays
@@ -204,7 +192,7 @@ impl EmailStore for ParquetEmailStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arrow::array::{ListArray, StringArray};
+    use arrow::array::StringArray;
     use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
     struct TestDirGuard {
@@ -228,7 +216,8 @@ mod tests {
     fn create_dummy_email(id: &str, line_count: usize) -> EmailData {
         let content = (0..line_count)
             .map(|i| format!("This is line {} of email {}", i, id))
-            .collect();
+            .collect::<Vec<_>>()
+            .join("");
         EmailData {
             email_id: id.to_string(),
             content,
@@ -309,17 +298,17 @@ mod tests {
         let content_array = batch
             .column(1)
             .as_any()
-            .downcast_ref::<ListArray>()
-            .unwrap();
-
-        let email_1_content = content_array.value(0);
-        let email_1_strings = email_1_content
-            .as_any()
             .downcast_ref::<StringArray>()
             .unwrap();
 
-        assert_eq!(email_1_strings.value(0), "This is line 0 of email email_1");
-        assert_eq!(email_1_strings.value(1), "This is line 1 of email email_1");
+        assert_eq!(
+            content_array.value(0),
+            "This is line 0 of email email_1This is line 1 of email email_1"
+        );
+        assert_eq!(
+            content_array.value(1),
+            "This is line 0 of email email_2This is line 1 of email email_2This is line 2 of email email_2"
+        );
 
         assert!(reader.next().is_none());
     }
@@ -335,7 +324,7 @@ mod tests {
             store
                 .add_email(EmailData {
                     email_id: "1".into(),
-                    content: vec![],
+                    content: String::new(),
                 })
                 .unwrap();
             store.close().unwrap();
@@ -347,7 +336,7 @@ mod tests {
             store
                 .add_email(EmailData {
                     email_id: "2".into(),
-                    content: vec![],
+                    content: String::new(),
                 })
                 .unwrap();
             store.close().unwrap();
@@ -359,7 +348,7 @@ mod tests {
             store
                 .add_email(EmailData {
                     email_id: "3".into(),
-                    content: vec![],
+                    content: String::new(),
                 })
                 .unwrap();
             store.close().unwrap();

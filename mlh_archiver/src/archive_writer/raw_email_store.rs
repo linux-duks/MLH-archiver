@@ -18,7 +18,7 @@ use crate::archive_writer::{EmailData, EmailStore};
 /// let mut store = RawEmailStore::new(PathBuf::from("./output/test.list"));
 /// store.add_email(EmailData {
 ///     email_id: "42".to_string(),
-///     content: vec!["From: user@example.com".to_string()],
+///     content: "From: user@example.com".to_string(),
 /// }).unwrap();
 /// ```
 #[derive(std::fmt::Debug)]
@@ -46,8 +46,10 @@ impl EmailStore for RawEmailStore {
     /// * `lines` - Raw email lines (written without added newlines)
     fn add_email(&mut self, email: EmailData) -> crate::Result<Option<Vec<String>>> {
         let file_path = self.output_path.join(format!("{}.eml", email.email_id));
-        crate::file_utils::write_lines_file(&file_path, email.content)
-            .map_err(crate::errors::Error::Io)?;
+        if let Some(parent) = file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&file_path, &email.content)?;
         return Ok(Some(vec![email.email_id]));
     }
 

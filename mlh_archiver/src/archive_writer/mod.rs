@@ -166,7 +166,7 @@ impl ArchiveWriter {
         I: IntoIterator<Item = L>,
         L: AsRef<str>,
     {
-        let content: Vec<String> = lines.into_iter().map(|l| l.as_ref().to_string()).collect();
+        let content: String = lines.into_iter().map(|l| l.as_ref().to_string()).collect();
 
         let committed_emails = self.email_store.add_email(email_store::EmailData {
             email_id: email_id.to_string(),
