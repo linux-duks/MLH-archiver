@@ -196,6 +196,10 @@ impl Drop for ArchiveWriter {
         if let Ok(Some(committed_emails)) = self.email_store.close()
             && let Some(last_email) = committed_emails.last()
         {
+            log::debug!(
+                "Saving progress on drop of ArchiveWriter with: {}",
+                last_email
+            );
             let _ = self.progress.update(last_email);
         }
     }

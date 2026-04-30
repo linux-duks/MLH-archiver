@@ -204,49 +204,26 @@ fn test_archive_writer_parquet_multi_file() {
             WriteMode::Parquet { buffer_size: 3 },
         );
 
-        // 7 emails → flushes at 3, 6, close should flush remaining → 3 parquet files
-        // but currently close flush may not work; we observe only 2 files.
-        writer.archive_email("1", ["email one content"]).unwrap();
+        // 7 emails → flushes at 3, 6, close flushes 1 → 3 parquet files
+        writer.archive_email("1", &["email one content"]).unwrap();
         writer
-            .archive_email("2", ["email two content", "second line"])
+            .archive_email("2", &["email two content", "second line"])
             .unwrap();
-        writer.archive_email("3", ["email three"]).unwrap(); // flush at 3
-        writer.archive_email("4", ["email four content"]).unwrap();
+        writer.archive_email("3", &["email three"]).unwrap(); // flush at 3
+        writer.archive_email("4", &["email four content"]).unwrap();
         writer
-            .archive_email("5", ["email five", "line two"])
+            .archive_email("5", &["email five", "line two"])
             .unwrap();
-        writer.archive_email("6", ["email six"]).unwrap(); // flush at 6
-        writer.archive_email("7", ["email seven final"]).unwrap();
-        // drop → close → expected to flush remaining "7"
+        writer.archive_email("6", &["email six"]).unwrap(); // flush at 6
+        writer.archive_email("7", &["email seven final"]).unwrap();
+        // drop → close → flush remaining "7" → data_002.parquet
     }
 
     let list_dir = base.join("test_list");
 
-    // Debug: print directory contents
-    println!("list_dir = {}", list_dir.display());
-    if let Ok(entries) = fs::read_dir(&list_dir) {
-        for entry in entries.flatten() {
-            println!("  entry: {}", entry.path().display());
-        }
-    } else {
-        println!("  (directory does not exist yet)");
-    }
-
-    // NOTE: Currently only 2 files are created; close flush may not be working.
-    // This is a known issue to investigate.
     assert!(list_dir.join("data_000.parquet").exists());
     assert!(list_dir.join("data_001.parquet").exists());
-    // assert!(list_dir.join("data_002.parquet").exists()); // may be missing
-    // Instead, we accept that data_002 may not exist due to flush-on-close bug.
-    // We'll check if it exists; if not, skip validation of file2.
-    let has_file2 = list_dir.join("data_002.parquet").exists();
-    if has_file2 {
-        // If file2 exists, validate it
-        let f2 = read_parquet_file(&list_dir.join("data_002.parquet"));
-        assert_eq!(f2.len(), 1);
-        assert_eq!(f2[0].0, "7");
-    }
-
+    assert!(list_dir.join("data_002.parquet").exists());
     assert!(!list_dir.join("data_003.parquet").exists());
 
     // Progress and lineage
@@ -269,24 +246,23 @@ fn test_archive_writer_parquet_multi_file() {
     assert_eq!(f1[1].0, "5");
     assert_eq!(f1[2].0, "6");
 
-    // Verify progress contains last email (if file2 exists, last_email should be 7)
-    let progress = fs::read_to_string(list_dir.join("__progress.yaml")).unwrap();
-    if has_file2 {
-        assert!(
-            progress.contains("last_email: '7'") || progress.contains("last_email: 7"),
-            "Progress should track last email: {}",
-            progress
-        );
-    }
+    // Verify file 2: email 7
+    let f2 = read_parquet_file(&list_dir.join("data_002.parquet"));
+    assert_eq!(f2.len(), 1);
+    assert_eq!(f2[0].0, "7");
+    assert_eq!(f2[0].1[0], "email seven final");
 
-    // Verify lineage references emails that were actually stored
+    // Verify progress contains last email
+    let progress = fs::read_to_string(list_dir.join("__progress.yaml")).unwrap();
+    assert!(
+        progress.contains("last_email: '7'") || progress.contains("last_email: 7"),
+        "Progress should track last email: {}",
+        progress
+    );
+
+    // Verify lineage references all emails
     let lineage = fs::read_to_string(list_dir.join("__lineage.yaml")).unwrap();
-    let stored_emails: Vec<usize> = if has_file2 {
-        (1..=7).collect()
-    } else {
-        (1..=6).collect()
-    };
-    for id in stored_emails {
+    for id in 1..=7 {
         assert!(
             lineage.contains(&format!("email_index: {}", id))
                 || lineage.contains(&format!("email_index: '{}'", id)),

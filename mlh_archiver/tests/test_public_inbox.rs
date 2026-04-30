@@ -1238,8 +1238,345 @@ fn test_resume_only_collects_new_emails() {
 }
 
 // =============================================================================
-// Broken Alternates Integration Tests (local git repo, no container)
+// Overwrite prevention: restart after complete run should not modify files
 // =============================================================================
+
+/// Counts files with a given extension in a directory.
+fn count_files_by_ext(dir: &str, ext: &str) -> usize {
+    WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .filter(|e| {
+            e.path()
+                .extension()
+                .map(|ex| ex == ext)
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+/// Records file paths and content snapshots for later comparison.
+fn snapshot_files(dir: &str) -> Vec<(String, String)> {
+    let mut files: Vec<(String, String)> = WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().is_file())
+        .map(|e| {
+            let path = e.path().display().to_string();
+            let content = fs::read_to_string(e.path()).unwrap_or_default();
+            (path, content)
+        })
+        .collect();
+    files.sort_by(|a, b| a.0.cmp(&b.0));
+    files
+}
+
+#[test]
+fn test_no_overwrite_on_restart_raw() {
+    let base_dir = "./test_no_overwrite_raw_data";
+    let inbox_name = "test.nooverwrite.list";
+    let output_dir = "./test_no_overwrite_raw_output";
+
+    check_and_delete_folder(base_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+    std::fs::create_dir_all(base_dir).expect("create base_dir");
+
+    // Phase 1: Create inbox with 5 emails, run archiver
+    create_v1_inbox_with_emails(base_dir, inbox_name, 5);
+    run_pi_archiver_once(base_dir, output_dir, vec![inbox_name.to_string()]);
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+    let first_count = count_eml_files(&list_dir);
+    assert_eq!(first_count, 5, "Phase 1: expected 5 .eml files");
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 5);
+
+    // Snapshot files after phase 1
+    let snapshot = snapshot_files(&list_dir);
+
+    // Phase 2: Run archiver again (no new emails, same inbox)
+    run_pi_archiver_once(base_dir, output_dir, vec![inbox_name.to_string()]);
+
+    // Verify: same number of .eml files (no new files)
+    let second_count = count_eml_files(&list_dir);
+    assert_eq!(
+        second_count, 5,
+        "Phase 2: expected 5 .eml files, found {} (no re-processing)",
+        second_count
+    );
+
+    // Verify: progress file unchanged
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 5);
+
+    // Verify: all files identical (no overwriting)
+    let snapshot2 = snapshot_files(&list_dir);
+    assert_eq!(
+        snapshot.len(),
+        snapshot2.len(),
+        "File count should not change on restart"
+    );
+    for ((path1, content1), (path2, content2)) in snapshot.iter().zip(snapshot2.iter()) {
+        assert_eq!(path1, path2, "File list should be identical");
+        assert_eq!(
+            content1, content2,
+            "File content should not change: {}",
+            path1
+        );
+    }
+
+    // Verify no extra lineage entries (no duplicate processing)
+    let lineage_path = format!("{}/__lineage.yaml", list_dir);
+    let lineage = fs::read_to_string(&lineage_path).unwrap();
+    let entry_count = lineage.matches("email_index:").count();
+    assert_eq!(
+        entry_count, 5,
+        "Lineage should have 5 entries, found {}",
+        entry_count
+    );
+
+    check_and_delete_folder(base_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
+}
+
+#[test]
+fn test_no_overwrite_on_restart_parquet() {
+    let base_dir = "./test_no_overwrite_parquet_data";
+    let inbox_name = "test.nooverwrite.pq";
+    let output_dir = "./test_no_overwrite_parquet_output";
+
+    check_and_delete_folder(base_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+    std::fs::create_dir_all(base_dir).expect("create base_dir");
+
+    // Phase 1: Create inbox with 5 emails, run archiver with Parquet mode
+    create_v1_inbox_with_emails(base_dir, inbox_name, 5);
+    let abs_base = std::fs::canonicalize(base_dir).expect("canonicalize base_dir");
+    let abs_output = std::fs::canonicalize(output_dir).unwrap_or_else(|_| {
+        std::fs::create_dir_all(output_dir).expect("create output_dir");
+        std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
+    });
+
+    // Run with Parquet mode
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            write_mode: WriteMode::Parquet { buffer_size: 2 },
+            loop_groups: false,
+            read_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
+                m
+            },
+            public_inbox: Some(PIConfig {
+                import_directory: abs_base.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                email_range: None,
+            }),
+            ..Default::default()
+        };
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 1 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+
+    // Count parquet files (data_000, data_001, data_002 = 3 files for 5 emails with buffer=2)
+    let first_count = count_files_by_ext(&list_dir, "parquet");
+    assert_eq!(first_count, 3, "Phase 1: expected 3 .parquet files");
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 5);
+
+    // Snapshot
+    let snapshot = snapshot_files(&list_dir);
+
+    // Phase 2: Run archiver again (same inbox, no new emails)
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            write_mode: WriteMode::Parquet { buffer_size: 2 },
+            loop_groups: false,
+            read_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
+                m
+            },
+            public_inbox: Some(PIConfig {
+                import_directory: abs_base.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                email_range: None,
+            }),
+            ..Default::default()
+        };
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 2 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    // Verify: same number of parquet files
+    let second_count = count_files_by_ext(&list_dir, "parquet");
+    assert_eq!(
+        second_count, 3,
+        "Phase 2: expected 3 .parquet files, found {}",
+        second_count
+    );
+
+    // Verify progress unchanged
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 5);
+
+    // Verify: all files identical
+    let snapshot2 = snapshot_files(&list_dir);
+    assert_eq!(snapshot.len(), snapshot2.len());
+    for ((path1, content1), (path2, content2)) in snapshot.iter().zip(snapshot2.iter()) {
+        assert_eq!(path1, path2);
+        assert_eq!(content1, content2, "File changed: {}", path1);
+    }
+
+    // Verify no extra lineage entries
+    let lineage_path = format!("{}/__lineage.yaml", list_dir);
+    let lineage = fs::read_to_string(&lineage_path).unwrap();
+    let entry_count = lineage.matches("email_index:").count();
+    assert_eq!(entry_count, 5);
+
+    check_and_delete_folder(base_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
+}
+
+#[test]
+fn test_parquet_resume_continues_file_numbering() {
+    let base_dir = "./test_pq_resume_numbering_data";
+    let inbox_name = "test.pq.numbering";
+    let output_dir = "./test_pq_resume_numbering_output";
+
+    check_and_delete_folder(base_dir.to_string()).unwrap();
+    check_and_delete_folder(output_dir.to_string()).unwrap();
+    std::fs::create_dir_all(base_dir).expect("create base_dir");
+
+    let abs_base = std::fs::canonicalize(base_dir).expect("canonicalize base_dir");
+    let abs_output = {
+        std::fs::create_dir_all(output_dir).expect("create output_dir");
+        std::fs::canonicalize(output_dir).expect("canonicalize output_dir")
+    };
+
+    // Phase 1: Create inbox with 5 emails, run with Parquet (buffer_size=2)
+    create_v1_inbox_with_emails(base_dir, inbox_name, 5);
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            write_mode: WriteMode::Parquet { buffer_size: 2 },
+            loop_groups: false,
+            read_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
+                m
+            },
+            public_inbox: Some(PIConfig {
+                import_directory: abs_base.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                email_range: None,
+            }),
+            ..Default::default()
+        };
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 1 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    let list_dir = format!("{}/{}", output_dir, inbox_name);
+    let phase1_count = count_files_by_ext(&list_dir, "parquet");
+    // 5 emails, buffer_size=2: flushes at 2, 4, and close flushes remaining 1 → 3 files
+    assert_eq!(phase1_count, 3, "Phase 1: expected 3 parquet files");
+    assert!(Path::new(&format!("{}/data_000.parquet", list_dir)).exists());
+    assert!(Path::new(&format!("{}/data_001.parquet", list_dir)).exists());
+    assert!(Path::new(&format!("{}/data_002.parquet", list_dir)).exists());
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 5);
+
+    // Phase 2: Add 5 more emails (6-10), run again
+    add_emails_to_inbox(base_dir, inbox_name, 6, 5);
+    {
+        let mut app_config = AppConfig {
+            output_dir: abs_output.to_string_lossy().to_string(),
+            nthreads: 1,
+            write_mode: WriteMode::Parquet { buffer_size: 2 },
+            loop_groups: false,
+            read_lists: {
+                let mut m = std::collections::HashMap::new();
+                m.insert(
+                    RunMode::PublicInbox.to_string(),
+                    vec![inbox_name.to_string()],
+                );
+                m
+            },
+            public_inbox: Some(PIConfig {
+                import_directory: abs_base.to_string_lossy().to_string(),
+                origin: "local-test".to_owned(),
+                public_inbox_config: None,
+                email_range: None,
+            }),
+            ..Default::default()
+        };
+        let shutdown_flag = Arc::new(AtomicBool::new(false));
+        let child_handle = thread::spawn(move || {
+            let result = start(&mut app_config, shutdown_flag);
+            assert!(result.is_ok(), "Phase 2 should succeed");
+        });
+        child_handle.join().unwrap();
+    }
+
+    // Verify: 5 more emails → 3 more parquet files (data_003, data_004, data_005)
+    let phase2_count = count_files_by_ext(&list_dir, "parquet");
+    assert_eq!(phase2_count, 6, "Phase 2: expected 6 total parquet files");
+    assert!(Path::new(&format!("{}/data_003.parquet", list_dir)).exists());
+    assert!(Path::new(&format!("{}/data_004.parquet", list_dir)).exists());
+    assert!(Path::new(&format!("{}/data_005.parquet", list_dir)).exists());
+
+    // No overshoot
+    assert!(!Path::new(&format!("{}/data_006.parquet", list_dir)).exists());
+
+    // Progress should be at 10
+    validate_progress_file(&format!("{}/__progress.yaml", list_dir), 10);
+
+    // All original files still exist
+    for idx in 0..=5 {
+        assert!(
+            Path::new(&format!("{}/data_{:03}.parquet", list_dir, idx)).exists(),
+            "data_{:03}.parquet should exist",
+            idx
+        );
+    }
+
+    // Total lineage entries should be 10
+    let lineage_path = format!("{}/__lineage.yaml", list_dir);
+    let lineage = fs::read_to_string(&lineage_path).unwrap();
+    let entry_count = lineage.matches("email_index:").count();
+    assert_eq!(entry_count, 10);
+
+    check_and_delete_folder(base_dir.to_string()).ok();
+    check_and_delete_folder(output_dir.to_string()).ok();
+}
 
 /// Creates a single bare git repo epoch with the given number of emails at `repo_path`.
 fn create_epoch_repo(repo_path: &Path, email_count: usize, offset: usize) {
