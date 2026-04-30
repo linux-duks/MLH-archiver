@@ -4,7 +4,7 @@ use std::str::FromStr;
 
 pub struct EmailData {
     pub email_id: String,
-    pub content: Vec<String>,
+    pub content: String,
 }
 
 pub trait EmailStore: Send {

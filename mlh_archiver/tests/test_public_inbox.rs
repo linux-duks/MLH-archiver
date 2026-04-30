@@ -1247,12 +1247,7 @@ fn count_files_by_ext(dir: &str, ext: &str) -> usize {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| e.path().is_file())
-        .filter(|e| {
-            e.path()
-                .extension()
-                .map(|ex| ex == ext)
-                .unwrap_or(false)
-        })
+        .filter(|e| e.path().extension().map(|ex| ex == ext).unwrap_or(false))
         .count()
 }
 

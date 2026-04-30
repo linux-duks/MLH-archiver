@@ -15,7 +15,7 @@ use mlh_archiver::start;
 use walkdir::WalkDir;
 
 // Parquet reading helpers (for validating Parquet writer output)
-use arrow::array::{Array, ListArray, StringArray};
+use arrow::array::{Array, StringArray};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 fn file_list_dir(path: String) -> Vec<String> {
@@ -204,9 +204,9 @@ fn validate_lineage_file(path: &str, expected_list_name: &str, expected_email_in
     );
 }
 
-/// Reads a parquet file into a vec of (email_id, content_lines) pairs.
+/// Reads a parquet file into a vec of (email_id, content) pairs.
 /// Used to validate Parquet writer output.
-fn read_parquet_file(path: &std::path::Path) -> Vec<(String, Vec<String>)> {
+fn read_parquet_file(path: &std::path::Path) -> Vec<(String, String)> {
     let file = std::fs::File::open(path).expect("Parquet file should be readable");
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
     let reader = builder.build().unwrap();
@@ -222,19 +222,12 @@ fn read_parquet_file(path: &std::path::Path) -> Vec<(String, Vec<String>)> {
         let contents = batch
             .column(1)
             .as_any()
-            .downcast_ref::<ListArray>()
+            .downcast_ref::<StringArray>()
             .unwrap();
 
         for row in 0..batch.num_rows() {
             let id = ids.value(row).to_string();
-            let content_arr_ref = contents.value(row);
-            let content_arr = content_arr_ref
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
-            let content: Vec<String> = (0..content_arr.len())
-                .map(|j| content_arr.value(j).to_string())
-                .collect();
+            let content = contents.value(row).to_string();
             results.push((id, content));
         }
     }

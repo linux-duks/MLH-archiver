@@ -324,11 +324,12 @@ impl PIWorker {
                     // Stop once we reach the epoch we begin resuming from.
                     if ep.epoch_name == *skip_epoch
                         || (skip_epoch != "all"
-                            && ep.epoch_name
+                            && ep
+                                .epoch_name
                                 .parse::<usize>()
                                 .ok()
                                 .zip(skip_epoch.parse::<usize>().ok())
-                                .map_or(false, |(a, b)| a >= b))
+                                .is_some_and(|(a, b)| a >= b))
                     {
                         break;
                     }

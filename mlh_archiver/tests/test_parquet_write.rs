@@ -1,7 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use arrow::array::{Array, ListArray, StringArray};
+use arrow::array::{Array, StringArray};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 use mlh_archiver::archive_writer::{
@@ -35,15 +35,16 @@ impl Drop for TestDirGuard {
 fn create_dummy_email(id: &str, line_count: usize) -> EmailData {
     let content = (0..line_count)
         .map(|i| format!("Line {} of email {}", i, id))
-        .collect();
+        .collect::<Vec<_>>()
+        .join("");
     EmailData {
         email_id: id.to_string(),
         content,
     }
 }
 
-/// Reads a parquet file into a vec of (email_id, content_lines) pairs.
-fn read_parquet_file(path: &std::path::Path) -> Vec<(String, Vec<String>)> {
+/// Reads a parquet file into a vec of (email_id, content) pairs.
+fn read_parquet_file(path: &std::path::Path) -> Vec<(String, String)> {
     let file = std::fs::File::open(path).expect("Parquet file should be readable");
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
     let reader = builder.build().unwrap();
@@ -59,19 +60,12 @@ fn read_parquet_file(path: &std::path::Path) -> Vec<(String, Vec<String>)> {
         let contents = batch
             .column(1)
             .as_any()
-            .downcast_ref::<ListArray>()
+            .downcast_ref::<StringArray>()
             .unwrap();
 
         for row in 0..batch.num_rows() {
             let id = ids.value(row).to_string();
-            let content_arr_ref = contents.value(row);
-            let content_arr = content_arr_ref
-                .as_any()
-                .downcast_ref::<StringArray>()
-                .unwrap();
-            let content: Vec<String> = (0..content_arr.len())
-                .map(|j| content_arr.value(j).to_string())
-                .collect();
+            let content = contents.value(row).to_string();
             results.push((id, content));
         }
     }
@@ -162,26 +156,29 @@ fn test_parquet_store_content_integrity_across_files() {
     // File 0
     let f0 = read_parquet_file(&dir.join("emails_000.parquet"));
     assert_eq!(f0[0].0, "alpha");
-    assert_eq!(f0[0].1.len(), 2);
-    assert_eq!(f0[0].1[0], "Line 0 of email alpha");
-    assert_eq!(f0[0].1[1], "Line 1 of email alpha");
+    assert_eq!(f0[0].1, "Line 0 of email alphaLine 1 of email alpha");
     assert_eq!(f0[1].0, "beta");
-    assert_eq!(f0[1].1.len(), 3);
+    assert_eq!(
+        f0[1].1,
+        "Line 0 of email betaLine 1 of email betaLine 2 of email beta"
+    );
 
     // File 1
     let f1 = read_parquet_file(&dir.join("emails_001.parquet"));
     assert_eq!(f1.len(), 2, "File 1 should have 2 rows");
     assert_eq!(f1[0].0, "gamma");
-    assert_eq!(f1[0].1.len(), 1);
+    assert_eq!(f1[0].1, "Line 0 of email gamma");
     assert_eq!(f1[1].0, "delta");
-    assert_eq!(f1[1].1.len(), 2);
+    assert_eq!(f1[1].1, "Line 0 of email deltaLine 1 of email delta");
 
     // File 2
     let f2 = read_parquet_file(&dir.join("emails_002.parquet"));
     assert_eq!(f2.len(), 1, "File 2 should have 1 row");
     assert_eq!(f2[0].0, "epsilon");
-    assert_eq!(f2[0].1.len(), 4);
-    assert_eq!(f2[0].1[3], "Line 3 of email epsilon");
+    assert_eq!(
+        f2[0].1,
+        "Line 0 of email epsilonLine 1 of email epsilonLine 2 of email epsilonLine 3 of email epsilon"
+    );
 
     assert!(!dir.join("emails_003.parquet").exists());
 }
@@ -205,17 +202,17 @@ fn test_archive_writer_parquet_multi_file() {
         );
 
         // 7 emails → flushes at 3, 6, close flushes 1 → 3 parquet files
-        writer.archive_email("1", &["email one content"]).unwrap();
+        writer.archive_email("1", ["email one content"]).unwrap();
         writer
-            .archive_email("2", &["email two content", "second line"])
+            .archive_email("2", ["email two content", "second line"])
             .unwrap();
-        writer.archive_email("3", &["email three"]).unwrap(); // flush at 3
-        writer.archive_email("4", &["email four content"]).unwrap();
+        writer.archive_email("3", ["email three"]).unwrap(); // flush at 3
+        writer.archive_email("4", ["email four content"]).unwrap();
         writer
-            .archive_email("5", &["email five", "line two"])
+            .archive_email("5", ["email five", "line two"])
             .unwrap();
-        writer.archive_email("6", &["email six"]).unwrap(); // flush at 6
-        writer.archive_email("7", &["email seven final"]).unwrap();
+        writer.archive_email("6", ["email six"]).unwrap(); // flush at 6
+        writer.archive_email("7", ["email seven final"]).unwrap();
         // drop → close → flush remaining "7" → data_002.parquet
     }
 
@@ -234,9 +231,9 @@ fn test_archive_writer_parquet_multi_file() {
     let f0 = read_parquet_file(&list_dir.join("data_000.parquet"));
     assert_eq!(f0.len(), 3);
     assert_eq!(f0[0].0, "1");
-    assert_eq!(f0[0].1[0], "email one content");
+    assert_eq!(f0[0].1, "email one content");
     assert_eq!(f0[1].0, "2");
-    assert_eq!(f0[1].1[1], "second line");
+    assert_eq!(f0[1].1, "email two contentsecond line");
     assert_eq!(f0[2].0, "3");
 
     // Verify file 1: emails 4, 5, 6
@@ -250,7 +247,7 @@ fn test_archive_writer_parquet_multi_file() {
     let f2 = read_parquet_file(&list_dir.join("data_002.parquet"));
     assert_eq!(f2.len(), 1);
     assert_eq!(f2[0].0, "7");
-    assert_eq!(f2[0].1[0], "email seven final");
+    assert_eq!(f2[0].1, "email seven final");
 
     // Verify progress contains last email
     let progress = fs::read_to_string(list_dir.join("__progress.yaml")).unwrap();
@@ -296,9 +293,9 @@ fn test_archive_writer_small_batch_exact_boundary() {
     let f0 = read_parquet_file(&list_dir.join("data_000.parquet"));
     assert_eq!(f0.len(), 2, "Should have exactly 2 rows");
     assert_eq!(f0[0].0, "a");
-    assert_eq!(f0[0].1[0], "content a");
+    assert_eq!(f0[0].1, "content a");
     assert_eq!(f0[1].0, "b");
-    assert_eq!(f0[1].1[0], "content b");
+    assert_eq!(f0[1].1, "content b");
     assert!(!list_dir.join("data_001.parquet").exists());
 
     // Progress and lineage should exist
@@ -335,7 +332,7 @@ fn test_archive_writer_single_email_single_file() {
     let f0 = read_parquet_file(&list_dir.join("data_000.parquet"));
     assert_eq!(f0.len(), 1);
     assert_eq!(f0[0].0, "only");
-    assert_eq!(f0[0].1[0], "the only email");
+    assert_eq!(f0[0].1, "the only email");
     assert!(!list_dir.join("data_001.parquet").exists());
 
     let progress = fs::read_to_string(list_dir.join("__progress.yaml")).unwrap();
