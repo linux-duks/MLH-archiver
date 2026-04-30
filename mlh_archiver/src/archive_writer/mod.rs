@@ -132,7 +132,7 @@ impl ArchiveWriter {
             progress: ProgressTracker::new(base_output_path, list_name),
             error_log: ErrorLogger::new(base_output_path, list_name),
             email_store: storage,
-            data_lineage: DataLineageWriter::new(base_output_path, list_name, run_mode),
+            data_lineage: DataLineageWriter::new(base_output_path, list_name, run_mode, write_mode),
         }
     }
 
