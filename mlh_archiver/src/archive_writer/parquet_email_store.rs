@@ -1,7 +1,7 @@
 use super::email_store::{EmailData, EmailStore};
 
 use arrow::array::{RecordBatch, StringBuilder};
-use arrow::datatypes::{DataType, Field, Schema as ArrowSchema};
+use arrow::datatypes::{DataType, Field, Schema};
 use parquet::arrow::ArrowWriter;
 use parquet::basic::{Compression, ZstdLevel};
 use parquet::errors::ParquetError;
@@ -13,7 +13,7 @@ use std::sync::Arc;
 /// ParquetEmailStore stores the emails in memory and write batches to parquet files
 pub struct ParquetEmailStore {
     output_path: PathBuf,
-    schema: Arc<ArrowSchema>,
+    schema: Arc<Schema>,
     buffer: Vec<EmailData>,
     batch_size: usize,
     /// file write index keeps track of the number of files written
@@ -21,16 +21,20 @@ pub struct ParquetEmailStore {
     commited_files: Vec<String>,
 }
 
+/// email_id: Utf8, content: Utf8
+pub fn parquet_email_store_schema() -> Arc<Schema> {
+    Arc::new(Schema::new(vec![
+        Field::new("email_id", DataType::Utf8, false),
+        Field::new("content", DataType::Utf8, false),
+    ]))
+}
+
 impl ParquetEmailStore {
     /// Initializes the EmailStore with a schema, but delays file creation
     /// until the first flush to ensure empty files aren't created unnecessarily.
     pub fn new(output_path: PathBuf, batch_size: usize) -> Self {
         // Define the Arrow Schema:
-        // email_id: Utf8, content: Utf8
-        let schema = Arc::new(ArrowSchema::new(vec![
-            Field::new("email_id", DataType::Utf8, false),
-            Field::new("content", DataType::Utf8, false),
-        ]));
+        let schema = parquet_email_store_schema();
 
         Self {
             output_path,
@@ -38,7 +42,7 @@ impl ParquetEmailStore {
             buffer: Vec::with_capacity(batch_size),
             batch_size,
             writer_index: 0,
-            commited_files: vec![], // writer: None,
+            commited_files: vec![],
         }
     }
 

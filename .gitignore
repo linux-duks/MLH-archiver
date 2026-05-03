@@ -1,7 +1,9 @@
 **/target
 output*
 data*
-parser_output
+archiver_output**
+anonymizer_output**
+parser_output**
 anonymizer_output
 nohup.out
 **.tar.gz

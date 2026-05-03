@@ -12,6 +12,8 @@ fn main() -> Result<()> {
     let env = Env::default().filter_or("RUST_LOG", "info");
     env_logger::init_from_env(env);
 
+    log::info!("mlh_parser starting — build: {}", env!("CARGO_PKG_VERSION"));
+
     let mut app_config = match config::read_config() {
         Ok(cfg) => cfg,
         Err(e) => {

@@ -72,7 +72,7 @@
 mod data_lineage;
 mod email_store;
 mod error_log;
-mod parquet_email_store;
+pub mod parquet_email_store;
 mod progress;
 mod raw_email_store;
 
@@ -84,6 +84,7 @@ pub use error_log::ErrorLogger;
 pub use parquet_email_store::ParquetEmailStore;
 pub use progress::ProgressTracker;
 pub use raw_email_store::RawEmailStore;
+pub use parquet_email_store::parquet_email_store_schema;
 
 use std::path::Path;
 

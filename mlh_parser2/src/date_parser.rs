@@ -1,240 +1,197 @@
-// TODO: NEEDS REWRITE
+use chrono::{Datelike, DateTime, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use regex::Regex;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
-import datetime
-import re
-from email import utils
-from dateutil import parser as date_parser
-import datetime as dt
-import functools
-import logging
+static DATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    let rfc2822 = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s+([-\+][0-9]{2}[0-5][0-9]|(?:UT|GMT|(?:E|C|M|P)(?:ST|DT)|[A-IK-Z]))";
+    let rfc1123 = r"\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} \w{3}";
+    let rfc1036 = r"\w+?, \d{2}-\w{3}-\d{2} \d{2}:\d{2}:\d{2} \w{3}";
+    let ctime = r"\w{3} \w{3} \d+? \d{2}:\d{2}:\d{2} \d{4}";
+    Regex::new(&format!(
+        "(?:{})|(?:{})|(?:{})|(?:{})",
+        rfc2822, rfc1123, rfc1036, ctime
+    ))
+    .unwrap()
+});
 
-logger = logging.getLogger(__name__)
+fn find_date_in_string(text: &str) -> Option<String> {
+    DATE_REGEX.find(text).map(|m| m.as_str().to_string())
+}
 
+pub fn parse_date_tentative_raw(date: &str) -> Option<DateTime<FixedOffset>> {
+    if date.is_empty() {
+        return None;
+    }
 
-def process_date(email_as_dict):
-    if not isinstance(email_as_dict["date"], list):
-        email_as_dict["date"] = [email_as_dict["date"]]
+    let found = find_date_in_string(date)?;
 
-    # fill client-date column, with all dates reported by the client
-    email_as_dict["client-date"] = email_as_dict["date"]
-    # the "date" column will be replaced by our best-effort
-    #  to parse and correct the actual email date
+    // Handle "(" comments in date strings
+    let cleaned = if let Some(pos) = found.find('(') {
+        found[..pos].trim().to_string()
+    } else {
+        found.clone()
+    };
 
-    date_options = []
-    for date in email_as_dict["date"]:
-        if date is None:
-            continue
-        date = date.strip()
+    // Try RFC 2822 format first
+    if let Ok(dt) = DateTime::parse_from_rfc2822(&cleaned) {
+        if has_valid_utc_offset(&dt) {
+            return Some(dt);
+        }
+        return None;
+    }
 
-        res = StringDateFinder.search(date)
-        date_value = parse_date_tentative(res)
-        if date_value:
-            date_options.append(date_value)
+    // Try RFC 3339
+    if let Ok(dt) = DateTime::parse_from_rfc3339(&cleaned) {
+        if has_valid_utc_offset(&dt) {
+            return Some(dt);
+        }
+        return None;
+    }
 
-    # detect if found dates are valid
-    safe_options = [date for date in date_options if not check_date_issues(date)]
+    last_effort_date_finder(&found)
+}
 
-    # if declared dates are not trustworthy, lets try to find dates from other headers
-    if not safe_options:
-        options = find_other_date_entries(email_as_dict)
-        if options:
-            logging.debug(
-                f"Found {len(options)} other options when reading from other headers"
-            )
-            safe_options = options
+fn has_valid_utc_offset(dt: &DateTime<FixedOffset>) -> bool {
+    let offset_secs = dt.offset().local_minus_utc();
+    offset_secs > -24 * 3600 && offset_secs < 24 * 3600
+}
 
-    # if still no good options were found, letry try to fix "millennium dates"
-    if not safe_options:
-        millennium_dates = [date for date in date_options if is_date_too_old(date)]
-        for date in millennium_dates:
-            safe_options.append(fix_milenium_date(date))
-        logging.debug(
-            f"Found only millennium dates, and fixed {len(millennium_dates)} on them"
-        )
+fn last_effort_date_finder(date_text: &str) -> Option<DateTime<FixedOffset>> {
+    let cleaned = if let Some(pos) = date_text.find('(') {
+        date_text[..pos].trim().to_string()
+    } else {
+        date_text.to_string()
+    };
 
-    if safe_options:
-        # take the oldest date
-        safe_options.sort()
-        email_as_dict["date"] = safe_options[0]
-    else:
-        email_as_dict["date"] = None
+    let attempts = vec![
+        cleaned.clone(),
+        cleaned.replace('.', ":"),
+        cleaned
+            .chars()
+            .take("Fri, 15 Jun 2012 16:52:52".len())
+            .collect(),
+        cleaned
+            .chars()
+            .take("Fri, 5 Jun 2012 16:52:52".len())
+            .collect(),
+    ];
 
-    return email_as_dict
+    for attempt in attempts {
+        if let Ok(naive) = NaiveDateTime::parse_from_str(&attempt, "%a, %d %b %Y %H:%M:%S") {
+            let dt = Utc
+                .from_utc_datetime(&naive)
+                .with_timezone(&FixedOffset::east_opt(0)?);
+            return Some(dt);
+        }
+    }
 
+    None
+}
 
-## date parser functions
+pub fn is_date_too_old(date_obj: &DateTime<FixedOffset>) -> bool {
+    date_obj.year() < 1900
+}
 
+pub fn is_date_in_future(date_obj: &DateTime<FixedOffset>, now: DateTime<FixedOffset>) -> bool {
+    let max_future = now + chrono::Duration::days(3);
+    *date_obj > max_future
+}
 
-def last_effort_date_finder(date_text):
-    date = None
-    if "(" in date_text:
-        date_text = date_text[: date_text.index("(")].strip()
+pub fn check_date_issues(date_obj: &DateTime<FixedOffset>, now: DateTime<FixedOffset>) -> bool {
+    is_date_too_old(date_obj) || is_date_in_future(date_obj, now)
+}
 
-    try:
-        date = date_parser.parse(date_text)
-    except Exception:
-        try:
-            date = date_parser.parse(date_text.replace(".", ":"))
-        except Exception:
-            try:
-                date = date_parser.parse(
-                    date_text[: len("Fri, 15 Jun 2012 16:52:52")].strip(),
-                )
-            except Exception:
-                try:
-                    date = date_parser.parse(
-                        date_text[: len("Fri, 5 Jun 2012 16:52:52")].strip(),
-                    )
-                except Exception:
-                    date = None
-    return date
+pub fn fix_millennium_date(
+    date_obj: DateTime<FixedOffset>,
+    now: DateTime<FixedOffset>,
+) -> DateTime<FixedOffset> {
+    let year = date_obj.year();
+    let max_year = now.year();
+    let adjusted = year + 1900;
+    if year < 1900 && adjusted <= max_year
+        && let Some(new_date) = NaiveDate::from_ymd_opt(adjusted, date_obj.month(), date_obj.day())
+        {
+            let time = date_obj.time();
+            let naive = new_date.and_time(time);
+            let utc = Utc.from_utc_datetime(&naive);
+            let offset = date_obj.offset();
+            if let Some(fixed) = FixedOffset::east_opt(offset.local_minus_utc()) {
+                return utc.with_timezone(&fixed);
+            }
+        }
+    date_obj
+}
 
+pub fn find_other_date_entries(
+    email_dict: &HashMap<String, String>,
+) -> Vec<DateTime<FixedOffset>> {
+    let mut value_list = Vec::new();
+    for header in &["received", "x-received"] {
+        if let Some(values_str) = email_dict.get(*header) {
+            let res = find_date_in_string(values_str);
+            if let Some(date_str) = res
+                && let Some(parsed) = parse_date_tentative_raw(&date_str) {
+                    value_list.push(parsed);
+                }
+        }
+    }
+    value_list
+}
 
-def _has_valid_utc_offset(date_value) -> bool:
-    """Return False if the timezone offset is outside Python's valid ±24h range."""
-    try:
-        offset = date_value.utcoffset()
-    except ValueError:
-        return False
-    if offset is None:
-        return True
-    return dt.timedelta(hours=-24) < offset < dt.timedelta(hours=24)
+pub fn process_date(
+    email_dict: &mut HashMap<String, String>,
+    now: DateTime<FixedOffset>,
+) {
+    let raw_date = email_dict
+        .get("date")
+        .cloned()
+        .map(|d| vec![d])
+        .unwrap_or_default();
 
+    let client_date: Vec<String> = raw_date
+        .iter()
+        .filter(|d| !d.is_empty())
+        .cloned()
+        .collect();
+    email_dict.insert("client-date".to_string(), client_date.join("||"));
 
-def parse_date_tentative(date):
-    if not date:
-        return None
-    date_value = None
-    try:
-        date_value = date_parser.parse(date)
-    except Exception as e:
-        try:
-            date_value = utils.parsedate_to_datetime(date)
-        except Exception as ee:
-            date_value = last_effort_date_finder(date)
-            if not date_value:
-                logging.debug("failed reading date with all parsers: %s | %s", e, ee)
-                raise ValueError(f"Could not parse date {date!r}") from ee
-            else:
-                logging.debug(
-                    "failed reading date with standard parsers, used fallback: %s | %s",
-                    e,
-                    ee,
-                )
+    let mut date_options: Vec<DateTime<FixedOffset>> = Vec::new();
+    for date in &client_date {
+        if !date.is_empty() {
+            let trimmed = date.trim();
+            if let Some(date_str) = find_date_in_string(trimmed)
+                && let Some(dt) = parse_date_tentative_raw(&date_str) {
+                    date_options.push(dt);
+                }
+        }
+    }
 
-    if date_value is not None and not _has_valid_utc_offset(date_value):
-        logging.warning(f"Discarding date with invalid UTC offset: {date!r}")
-        return None
-    return date_value
+    let mut safe_options: Vec<DateTime<FixedOffset>> = date_options
+        .iter()
+        .filter(|d| !check_date_issues(d, now))
+        .cloned()
+        .collect();
 
+    if safe_options.is_empty() {
+        safe_options = find_other_date_entries(email_dict);
+    }
 
-# returns true if there are issues with the found dates
-@functools.lru_cache(maxsize=128)
-def check_date_issues(date_obj) -> bool:
-    return not date_obj or is_date_too_old(date_obj) or is_date_future(date_obj)
+    if safe_options.is_empty() {
+        let millennium_dates: Vec<DateTime<FixedOffset>> = date_options
+            .iter()
+            .filter(|d| is_date_too_old(d))
+            .cloned()
+            .collect();
+        for d in millennium_dates {
+            safe_options.push(fix_millennium_date(d, now));
+        }
+    }
 
-
-@functools.lru_cache(maxsize=128)
-def is_date_too_old(date_obj) -> bool:
-    return date_obj.year < 1900
-
-
-@functools.lru_cache(maxsize=128)
-def fix_milenium_date(date_obj) -> datetime.datetime:
-    # dates from 1999 may be represented by 99
-    # and the real millennium bug exists here:
-    # 100 represents year 2000
-
-    # for this to be considered, 1900 + the obj year should not be more than the current year
-    if date_obj.year < (get_forgiving_future_date().year - 1900):
-        date_obj = date_obj.replace(year=date_obj.year + 1900)
-    else:
-        logger.debug("Date is not a `millennium date`")
-    return date_obj
-
-
-@functools.lru_cache(maxsize=128)
-def is_date_future(date_obj) -> bool:
-    future = get_forgiving_future_date()
-    # Make comparison timezone-safe: if date_obj is aware, make future aware too
-    if date_obj.tzinfo is not None:
-        # Use UTC for the future date comparison
-        future = dt.datetime.now(dt.timezone.utc) + dt.timedelta(days=3)
-    return date_obj > future
-
-
-# singleton date. No need to reload it every time
-NEAR_NOW = None
-
-
-def get_forgiving_future_date():
-    global NEAR_NOW
-    if NEAR_NOW is None:
-        NEAR_NOW = datetime.datetime.now() + datetime.timedelta(days=3)
-    return NEAR_NOW
-
-
-# headers where dates can be found, besides "Date"
-fallback_date_headers = ["Received", "X-Received"]
-
-
-# find_other_date_entries looks for dates in other columns, and returns them parsed, if found
-def find_other_date_entries(email_as_dict):
-    value_list = []
-    logging.debug(f"emails header list: {email_as_dict.keys()}")
-    for col_opt in fallback_date_headers:
-        values = email_as_dict.get(col_opt.lower())
-
-        if values:
-            if not isinstance(values, list):
-                values = [values]
-
-            for val in values:
-                res = StringDateFinder.search(str(val).strip())
-                if res:
-                    parsed_res = parse_date_tentative(res)
-                    if parsed_res:
-                        value_list.append(parsed_res)
-    return value_list
-
-
-# StringDateFinder singleton instance
-find_date_in_string = None
-
-
-# StringDateFinder singleton date finder class
-class StringDateFinder:
-    compiled = False
-    datepattern = None
-
-    def __init__(self):
-        rfc2822 = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-1][0-9]{3}|[0-1][0-9]{2}|19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s+([-\+][0-9]{2}[0-5][0-9]|(?:UT|GMT|(?:E|C|M|P)(?:ST|DT)|[A-IK-Z]))(\s+|\(([^\(\)]+|\\\(|\\\))*\))*"
-        pat1123 = r"\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} \w{3}"
-        pat1036 = r"\w+?, \d{2}-\w{3}-\d{2} \d{2}:\d{2}:\d{2} \w{3}"
-        patc = r"\w{3} \w{3} \d+? \d{2}:\d{2}:\d{2} \d{4}"
-
-        self.datepattern = re.compile(
-            "(?:%s)|(?:%s)|(?:%s)|(?:%s)"
-            % (
-                rfc2822,
-                pat1123,
-                pat1036,
-                patc,
-            )
-        )
-        self.compiled = True
-
-    def get():
-        global find_date_in_string
-        if find_date_in_string is None:
-            find_date_in_string = StringDateFinder()
-        return find_date_in_string
-
-    def search(text):
-        self = StringDateFinder.get()
-
-        res = self.datepattern.search(text)
-        if res:
-            res = res.group()
-
-        return res
+    if !safe_options.is_empty() {
+        safe_options.sort();
+        email_dict.insert("date".to_string(), safe_options[0].to_rfc3339());
+    } else {
+        email_dict.insert("date".to_string(), String::new());
+    }
+}

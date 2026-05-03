@@ -1,130 +1,275 @@
-use mail_parser::*;
+use mail_parser::{Message, MessageParser};
+use regex::Regex;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
-pub fn parse_example() {
-    let input = br#"From: Art Vandelay <art@vandelay.com> (Vandelay Industries)
-To: "Colleagues": "James Smythe" <james@vandelay.com>; Friends:
-    jane@example.com, =?UTF-8?Q?John_Sm=C3=AEth?= <john@example.com>;
-Date: Sat, 20 Nov 2021 14:22:01 -0800
-Subject: Why not both importing AND exporting? =?utf-8?b?4pi6?=
-Content-Type: multipart/mixed; boundary="festivus";
+static HEADER_LINE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^(From|To|Cc|Subject|Date|Message-ID|In-Reply-To|References|User-Agent|X-Mailer):[ \t]*.*$",
+    )
+    .unwrap()
+});
 
---festivus
-Content-Type: text/html; charset="us-ascii"
-Content-Transfer-Encoding: base64
+static EMAIL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$",
+    )
+    .unwrap()
+});
 
-PGh0bWw+PHA+SSB3YXMgdGhpbmtpbmcgYWJvdXQgcXVpdHRpbmcgdGhlICZsZHF1bztle
-HBvcnRpbmcmcmRxdW87IHRvIGZvY3VzIGp1c3Qgb24gdGhlICZsZHF1bztpbXBvcnRpbm
-cmcmRxdW87LDwvcD48cD5idXQgdGhlbiBJIHRob3VnaHQsIHdoeSBub3QgZG8gYm90aD8
-gJiN4MjYzQTs8L3A+PC9odG1sPg==
---festivus
-Content-Type: message/rfc822
+static EMAIL_OBFUSCATED_A_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$",
+    )
+    .unwrap()
+});
 
-From: "Cosmo Kramer" <kramer@kramerica.com>
-Subject: Exporting my book about coffee tables
-Content-Type: multipart/mixed; boundary="giddyup";
+static EMAIL_OBFUSCATED_AT_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$",
+    )
+    .unwrap()
+});
 
---giddyup
-Content-Type: text/plain; charset="utf-16"
-Content-Transfer-Encoding: quoted-printable
+// --- Helper functions ---
 
-=FF=FE=0C!5=D8"=DD5=D8)=DD5=D8-=DD =005=D8*=DD5=D8"=DD =005=D8"=
-=DD5=D85=DD5=D8-=DD5=D8,=DD5=D8/=DD5=D81=DD =005=D8*=DD5=D86=DD =
-=005=D8=1F=DD5=D8,=DD5=D8,=DD5=D8(=DD =005=D8-=DD5=D8)=DD5=D8"=
-=DD5=D8=1E=DD5=D80=DD5=D8"=DD!=00
---giddyup
-Content-Type: image/gif; name*1="about "; name*0="Book ";
-              name*2*=utf-8''%e2%98%95 tables.gif
-Content-Transfer-Encoding: Base64
-Content-Disposition: attachment
+fn hdr_value_to_string(val: &mail_parser::HeaderValue<'_>) -> String {
+    match val {
+        mail_parser::HeaderValue::Text(s) => s.to_string(),
+        mail_parser::HeaderValue::TextList(v) => v.join(", "),
+        mail_parser::HeaderValue::Address(a) => {
+            if let Some(first) = a.first() {
+                addr_to_string(first)
+            } else {
+                String::new()
+            }
+        }
+        mail_parser::HeaderValue::DateTime(d) => d.to_rfc3339(),
+        mail_parser::HeaderValue::ContentType(ct) => {
+            let st = if let Some(ref s) = ct.c_subtype {
+                format!("{}/{}", ct.c_type, s)
+            } else {
+                ct.c_type.to_string()
+            };
+            if let Some(ref attrs) = ct.attributes {
+                let attr_strs: Vec<String> = attrs
+                    .iter()
+                    .map(|a| format!("{}={}", a.name, a.value))
+                    .collect();
+                format!("{}; {}", st, attr_strs.join("; "))
+            } else {
+                st
+            }
+        }
+        other => format!("{:?}", other),
+    }
+}
 
-R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
---giddyup--
---festivus--
-"#;
+fn addr_to_string(addr: &mail_parser::Addr<'_>) -> String {
+    let name = addr.name.as_deref().unwrap_or("").to_string();
+    let email = addr.address.as_deref().unwrap_or("").to_string();
+    if name.is_empty() {
+        email
+    } else if email.is_empty() {
+        name
+    } else {
+        format!("{} <{}>", name, email)
+    }
+}
 
-    let message = MessageParser::default().parse(input).unwrap();
+fn score_email_address(value: &str) -> (bool, bool, Option<&'static str>) {
+    if let Some(caps) = EMAIL_PATTERN.captures(value) {
+        let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+        return (!name.is_empty(), true, None);
+    }
+    if let Some(caps) = EMAIL_OBFUSCATED_A_PATTERN.captures(value) {
+        let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+        return (!name.is_empty(), false, Some("(a)"));
+    }
+    if let Some(caps) = EMAIL_OBFUSCATED_AT_PATTERN.captures(value) {
+        let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+        return (!name.is_empty(), false, Some(" at "));
+    }
+    (false, false, None)
+}
 
-    // Parses addresses (including comments), lists and groups
-    assert_eq!(
-        message.from().unwrap().first().unwrap(),
-        &Addr::new(
-            "Art Vandelay (Vandelay Industries)".into(),
-            "art@vandelay.com"
-        )
-    );
+fn normalize_email(value: &str) -> String {
+    if let Some(caps) = EMAIL_OBFUSCATED_A_PATTERN.captures(value) {
+        let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+        let email = format!(
+            "{}@{}",
+            caps.get(2).unwrap().as_str(),
+            caps.get(3).unwrap().as_str()
+        );
+        if name.is_empty() {
+            return email;
+        }
+        return format!("{} <{}>", name, email);
+    }
+    if let Some(caps) = EMAIL_OBFUSCATED_AT_PATTERN.captures(value) {
+        let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+        let email = format!(
+            "{}@{}",
+            caps.get(2).unwrap().as_str(),
+            caps.get(3).unwrap().as_str()
+        );
+        if name.is_empty() {
+            return email;
+        }
+        return format!("{} <{}>", name, email);
+    }
+    value.to_string()
+}
 
-    assert_eq!(
-        message.to().unwrap().as_group().unwrap(),
-        &[
-            Group::new(
-                "Colleagues",
-                vec![Addr::new("James Smythe".into(), "james@vandelay.com")]
-            ),
-            Group::new(
-                "Friends",
-                vec![
-                    Addr::new(None, "jane@example.com"),
-                    Addr::new("John Smîth".into(), "john@example.com"),
-                ]
-            )
-        ]
-    );
+fn select_best_from_header(values: &[String]) -> String {
+    if values.is_empty() {
+        return String::new();
+    }
+    if values.len() == 1 {
+        return normalize_email(&values[0]);
+    }
 
-    assert_eq!(
-        message.date().unwrap().to_rfc3339(),
-        "2021-11-20T14:22:01-08:00"
-    );
+    let mut scored: Vec<((bool, bool, Option<&str>), &String)> = values
+        .iter()
+        .map(|v| (score_email_address(v), v))
+        .collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    normalize_email(scored[0].1)
+}
 
-    // RFC2047 support for encoded text in message readers
-    assert_eq!(
-        message.subject().unwrap(),
-        "Why not both importing AND exporting? ☺"
-    );
+fn extract_all_from_from_body(raw_email: &[u8]) -> Vec<String> {
+    let email_text = String::from_utf8_lossy(raw_email);
+    let mut candidates = Vec::new();
 
-    // HTML and text body parts are returned conforming to RFC8621, Section 4.1.4
-    assert_eq!(
-        message.body_html(0).unwrap(),
-        concat!(
-            "<html><p>I was thinking about quitting the &ldquo;exporting&rdquo; to ",
-            "focus just on the &ldquo;importing&rdquo;,</p><p>but then I thought,",
-            " why not do both? &#x263A;</p></html>"
-        )
-    );
+    let from_patterns: &[&str] = &[
+        r"(?im)^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>",
+        r"(?im)^From:\s*([^<\n]*?)?\s*<([a-zA-Z0-9._%+-]+)\s*\(a\)\s*([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>",
+        r"(?im)^From:\s*([^<\n]*?)?\s*<?([a-zA-Z0-9._%+-]+)\s+at\s+([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?",
+    ];
 
-    // HTML parts are converted to plain text (and viceversa) when missing
-    assert_eq!(
-        message.body_text(0).unwrap(),
-        concat!(
-            "I was thinking about quitting the “exporting” to focus just on the",
-            " “importing”,\nbut then I thought, why not do both? ☺\n"
-        )
-    );
+    for pat_str in from_patterns {
+        let re = Regex::new(pat_str).unwrap();
+        for caps in re.captures_iter(&email_text) {
+            let name = caps.get(1).map_or("", |m| m.as_str()).trim();
+            let email = format!(
+                "{}@{}",
+                caps.get(2).unwrap().as_str(),
+                caps.get(3).unwrap().as_str()
+            );
+            if name.is_empty() {
+                candidates.push(email);
+            } else {
+                candidates.push(format!("{} <{}>", name, email));
+            }
+        }
+    }
 
-    // Supports nested messages as well as multipart/digest
-    let nested_message = message.attachment(0).unwrap().message().unwrap();
+    candidates
+}
 
-    assert_eq!(
-        nested_message.subject().unwrap(),
-        "Exporting my book about coffee tables"
-    );
+fn clean_body_leading_headers(body: &str) -> String {
+    if body.is_empty() {
+        return body.to_string();
+    }
 
-    // Handles UTF-* as well as many legacy encodings
-    assert_eq!(
-        nested_message.body_text(0).unwrap(),
-        "ℌ𝔢𝔩𝔭 𝔪𝔢 𝔢𝔵𝔭𝔬𝔯𝔱 𝔪𝔶 𝔟𝔬𝔬𝔨 𝔭𝔩𝔢𝔞𝔰𝔢!"
-    );
-    assert_eq!(
-        nested_message.body_html(0).unwrap(),
-        "<html><body>ℌ𝔢𝔩𝔭 𝔪𝔢 𝔢𝔵𝔭𝔬𝔯𝔱 𝔪𝔶 𝔟𝔬𝔬𝔨 𝔭𝔩𝔢𝔞𝔰𝔢!</body></html>"
-    );
+    let lines: Vec<&str> = body.lines().collect();
+    let mut start_idx = 0;
 
-    let nested_attachment = nested_message.attachment(0).unwrap();
+    for (i, line) in lines.iter().enumerate() {
+        let stripped = line.trim();
+        if stripped.is_empty() {
+            start_idx = i + 1;
+            break;
+        }
+        if HEADER_LINE_PATTERN.is_match(stripped) {
+            start_idx = i + 1;
+        } else {
+            break;
+        }
+    }
 
-    assert_eq!(nested_attachment.len(), 42);
+    while start_idx < lines.len() && lines[start_idx].trim().is_empty() {
+        start_idx += 1;
+    }
 
-    // Full RFC2231 support for continuations and character sets
-    assert_eq!(
-        nested_attachment.attachment_name().unwrap(),
-        "Book about ☕ tables.gif"
-    );
+    if start_idx == 0 {
+        body.to_string()
+    } else {
+        lines[start_idx..].join("\n")
+    }
+}
+
+// --- Public API ---
+
+pub fn decode_mail(email_raw: &[u8]) -> Option<Message<'_>> {
+    MessageParser::default().parse(email_raw)
+}
+
+pub fn get_headers(msg: &Message<'_>, raw_email: &[u8]) -> HashMap<String, String> {
+    let mut headers: HashMap<String, String> = HashMap::new();
+    let mut from_candidates: Vec<String> = Vec::new();
+
+    for header in msg.headers() {
+        let key = header.name().to_lowercase();
+        let val_str = hdr_value_to_string(header.value());
+
+        if key == "from" {
+            from_candidates.push(val_str);
+        } else if key == "date" {
+            headers.insert("date".to_string(), val_str);
+        } else {
+            headers
+                .entry(key)
+                .and_modify(|existing| {
+                    *existing = format!("{}, {}", existing, &val_str);
+                })
+                .or_insert(val_str);
+        }
+    }
+
+    if from_candidates.is_empty()
+        && let Some(from) = msg.from() {
+            for addr in from.iter() {
+                from_candidates.push(addr_to_string(addr));
+            }
+        }
+
+    let body_from = extract_all_from_from_body(raw_email);
+    from_candidates.extend(body_from);
+
+    if !from_candidates.is_empty() {
+        headers.insert("from".to_string(), select_best_from_header(&from_candidates));
+    }
+
+    headers
+}
+
+pub fn get_body(msg: &Message<'_>) -> String {
+    let mut body_parts: Vec<String> = Vec::new();
+
+    for i in 0.. {
+        if let Some(text) = msg.body_text(i) {
+            if !text.is_empty() {
+                body_parts.push(text.to_string());
+            }
+        } else {
+            break;
+        }
+    }
+
+    if body_parts.is_empty() {
+        for i in 0.. {
+            if let Some(html) = msg.body_html(i) {
+                if !html.is_empty() {
+                    body_parts.push(html.to_string());
+                }
+            } else {
+                break;
+            }
+        }
+    }
+
+    let body = body_parts.join("\n");
+    let body = body.replace("\r\n", "\n");
+    clean_body_leading_headers(&body)
 }
