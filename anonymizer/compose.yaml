@@ -5,11 +5,14 @@ services:
     build:
       context: .
       dockerfile: Containerfile
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        GIT_DATE: ${GIT_DATE:-unknown}
     environment:
       INPUT_DIR: "/input"
       OUTPUT_DIR: "/output"
     stdin_open: true
     user: "${UID}:${GID}"
     volumes:
-      - ../parser_output/parsed/:/input:z
+      - ../parser_output/dataset/:/input:z
       - ../anonymizer_output:/output:z

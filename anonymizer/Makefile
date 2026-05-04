@@ -36,6 +36,8 @@ run:
 
 .PHONY: rebuild
 rebuild:
+	GIT_COMMIT=$$(git rev-parse HEAD) \
+	GIT_DATE=$$(git log -1 --format=%ci) \
 	$(COMPOSE) build --no-cache
 
 
