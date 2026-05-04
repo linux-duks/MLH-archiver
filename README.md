@@ -20,7 +20,7 @@ This project consists of four main components:
 | Component | Description | Language |
 |-----------|-------------|----------|
 | **[MLH Archiver](mlh_archiver/)** | Downloads emails from NNTP servers and stores them as raw emails or Parquet (configurable) | Rust |
-| **[MLH Parser](mlh_parser/)** | Parses raw emails into structured Parquet datasets with Hive partitioning | Python |
+| **[MLH Parser](mlh_parser/)** | Parses raw emails into structured Parquet datasets with Hive partitioning | Rust |
 | **[MLH Anonymizer](anonymizer/)** | Pseudo-anonymizes personal identification using SHA1 digests | Python |
 | **[MLH Analysis](analysis/)** | Example analysis scripts for exploring mailing list data | Python |
 
@@ -219,10 +219,7 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 | `make` or `make all` | Build and run the archiver |
 | `make build` | Build the archiver (Rust) |
 | `make run` | Run the archiver |
-| `make parse` | Run the mailing list parser |
-| `make parse N_PROC=4` | Run parser with 4 parallel processes |
-| `make parse LISTS_TO_PARSE="list1,list2"` | Run parser for specific lists only |
-| `make parse REDO_FAILED_PARSES=true` | Re-parse only previously failed emails |
+| `make parse` | Run the mailing list parser (configure via `parser_config.yaml`) |
 | `make anonymize` | Run the anonymizer |
 | `make analysis` | Run example analyses |
 | `make rebuild` | Rebuild all components |
@@ -245,8 +242,8 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 
 | Component | Requirements |
 |-----------|--------------|
-| **Archiver** | Rust/Cargo, or Podman/Docker for containerized builds |
-| **Parser & Anonymizer** | Podman/Podman-compose or Docker/Docker-compose |
+| **Archiver & Parser** | Rust/Cargo, or Podman/Docker for containerized builds |
+| **Anonymizer** | Podman/Podman-compose or Docker/Docker-compose |
 
 ---
 
@@ -280,7 +277,7 @@ Quick inspection tool for Parquet files and directories located in [`scripts/pee
 
 ```bash
 # Inspect a single parquet file
-devbox run peek parser_output/parsed/list=dev.rcpassos.me.lists.gfs2/list_data.parquet
+devbox run peek parser_output/dataset/list=dev.rcpassos.me.lists.gfs2/list_data.parquet
 
 # Inspect a directory (finds all .parquet files under it)
 devbox run peek output/
@@ -390,11 +387,12 @@ See the [Archiver Documentation](mlh_archiver/README.md) for details.
 
 ### Parser Implementation
 
-The parser uses:
+The parser is implemented in Rust and uses:
 
-- **Polars**: Fast DataFrame library for data processing
-- **Hive Partitioning**: Data organized by mailing list name for efficient querying
-- **Error Handling**: Failed parses are saved to `parser_output/<mailing_list>/errors/`
+- **Arrow + Parquet**: Columnar storage format via the Apache Arrow ecosystem
+- **Hive Partitioning**: Data organized by mailing list name (`list=<name>/`) for efficient querying
+- **Error Handling**: Failed parses are saved per mailing list under `<output_dir>/errors/list=<name>/`
+- **Batch Processing**: Large datasets are automatically split into multiple row groups to stay within Arrow's 2 GB offset limits
 
 ### Anonymizer Implementation
 

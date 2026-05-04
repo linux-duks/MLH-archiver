@@ -75,14 +75,14 @@ devbox run anonymize
 # Debug mode (native execution)
 make debug-anonymizer
 # or
-INPUT_DIR="../parser_output/parsed" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
+INPUT_DIR="../parser_output/dataset" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
 ```
 
 ### Input/Output Directories
 
 | Directory | Purpose |
 |-----------|---------|
-| `../parser_output/parsed/` | Input: Non-anonymized Parquet dataset |
+| `../parser_output/dataset/` | Input: Non-anonymized Parquet dataset |
 | `../anonymizer_output/` | Output: Anonymized dataset |
 
 ## Output Format
@@ -125,7 +125,7 @@ The `compose.yaml` file configures volume mounts:
 
 ```yaml
 volumes:
-  - ../parser_output/parsed/:/input:z    # Input dataset
+  - ../parser_output/dataset/:/input:z    # Input dataset
   - ../anonymizer_output:/output:z       # Output directory
 ```
 
@@ -152,7 +152,7 @@ uv run pytest
 Run the anonymizer directly without containers:
 
 ```bash
-INPUT_DIR="../parser_output/parsed" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
+INPUT_DIR="../parser_output/dataset" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
 ```
 
 ### Project Structure

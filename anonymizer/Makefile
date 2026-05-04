@@ -24,8 +24,8 @@ test:
 
 .PHONY: run
 run:
-	@if [ ! -d "../parser_output/parsed" ] || [ -z "$$(ls ../parser_output/parsed 2>/dev/null)" ]; then \
-		echo "==> Error: '../parser_output/parsed' directory is missing or empty."; \
+	@if [ ! -d "../parser_output/dataset" ] || [ -z "$$(ls ../parser_output/dataset 2>/dev/null)" ]; then \
+		echo "==> Error: '../parser_output/dataset' directory is missing or empty."; \
 		echo "==> Please run the parser first to generate the dataset."; \
 		exit 1; \
 	else \
@@ -41,7 +41,7 @@ rebuild:
 
 .PHONY: debug
 debug:
-	INPUT_DIR="../parser_output/parsed" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
+	INPUT_DIR="../parser_output/dataset" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
 
 
 .PHONY: clean

@@ -1,6 +1,6 @@
 # MLH Parser
 
-A Python tool for parsing raw email archives from the MLH Archiver into a structured Parquet columnar dataset.
+A Rust tool for parsing raw email archives from the MLH Archiver into a structured Parquet columnar dataset.
 
 ## Overview
 
@@ -8,25 +8,23 @@ The MLH Parser processes email files produced by the MLH Archiver and converts t
 
 ## Features
 
-- **Parquet Output**: Columnar storage format optimized for analytics
-- **Hive Partitioning**: Data organized by mailing list for efficient querying
+- **Parquet Output**: Columnar storage format optimized for analytics via Apache Arrow
+- **Hive Partitioning**: Data organized by mailing list (`list=<name>/`) for efficient querying
 - **Auto-detection of Input Format**: Reads `.eml` and `.parquet` files transparently from the same input directory
-- **Email Field Extraction**: Parses headers, body, attachments, and metadata
-- **Error Handling**: Failed parses are saved separately for review
-- **Containerized**: Runs consistently across different environments
+- **Email Field Extraction**: Parses headers, body, attachments, and metadata (including trailers, patches, and code snippets)
+- **Error Handling**: Failed parses are saved separately per mailing list for review
+- **Multi-threaded**: Configurable thread pool for parallel processing of mailing lists
+- **Batch Processing**: Auto-splits large datasets into multiple Parquet row groups to stay within Arrow's 2 GB offset limits
 
 ## Prerequisites
 
-### Container Runtime (Required)
+- Rust toolchain (cargo, rustc) 1.80+
 
-- Podman with Podman Compose, or
-- Docker with Docker Compose
+### Container Build (Alternative)
 
-### Native Development (Optional)
+If you don't have Rust installed, the parser can be built in a container:
 
-- Python 3.14+
-- [uv](https://docs.astral.sh/uv/) package manager
-- Nox (for testing)
+- Podman or Docker
 
 ## Installation
 
@@ -34,46 +32,58 @@ The MLH Parser processes email files produced by the MLH Archiver and converts t
 
 ```bash
 devbox shell
+devbox run build
 ```
 
-This sets up Python 3.14, uv, and all required dependencies automatically.
-
-### Manual Setup
+### Manual Build
 
 ```bash
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-
-# Install dependencies
-uv sync --locked
+cargo build --release
 ```
+
+The compiled binary will be at `target/release/mlh_parser`.
 
 ## Usage
 
 ### Running the Parser
 
-The parser expects raw email files from the archiver in the `../output` directory.
+The parser reads all settings from a YAML (or JSON/TOML) configuration file.
+Create your config from the example:
 
 ```bash
-# Using Make
-make run
-
-# Using Devbox
-devbox run parse
-
-# Debug mode (native execution)
-make debug-parser
-# or
-INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+cp example_parser_config.yaml parser_config.yaml
 ```
+
+Then run:
+
+```bash
+# Uses default glob pattern: parser_config* (matches parser_config.yaml)
+./target/release/mlh_parser
+
+# With a specific config file
+./target/release/mlh_parser -c my_config.yaml
+./target/release/mlh_parser --config-file my_config.yaml
+
+# With debug logging
+RUST_LOG=debug ./target/release/mlh_parser
+```
+
+All configuration is in the config file — no environment variables are used
+for parser settings (only `RUST_LOG` controls log verbosity).
 
 ### Input/Output Directories
 
+Defaults as set in `example_parser_config.yaml`:
+
 | Directory | Purpose |
 |-----------|---------|
-| `../output/` | Input: Raw email files from archiver |
-| `../parser_output/parsed/` | Output: Parquet dataset |
-| `../parser_output/<list>/errors/` | Failed parses |
+| `./archiver_output/` | Input: Root directory with mailing list subdirectories from archiver |
+| `./parser_output/dataset/` | Output: Parquet dataset (Hive partitioned by list) |
+| `./parser_output/errors/` | Failed parses per mailing list |
+| `./parser_output/lineage/` | Audit trail (reserved) |
+
+All paths can be changed via the `input_dir_path` and `output_dir_path` options
+in `parser_config.yaml`.
 
 ### Input Formats
 
@@ -99,17 +109,9 @@ Both `.eml` and `.parquet` files can coexist in the same input directory — the
 
 ## Output Format
 
-The parser produces a Parquet dataset with Hive partitioning:
-
-```
-parser_output/parsed/
-├── mailing_list=dev.rcpassos.me.lists.gfs2/
-│   ├── part-0.parquet
-│   └── part-1.parquet
-├── mailing_list=dev.rcpassos.me.lists.iommu/
-│   └── part-0.parquet
-└── _common_metadata
-```
+The output is written to `<output_dir_path>/dataset/list=<mailing_list>/list_data.parquet`.
+Each mailing list gets its own Hive-partitioned directory with a single Parquet
+file containing all parsed emails (split into multiple row groups as needed).
 
 ### Schema
 
@@ -122,7 +124,7 @@ The Parquet dataset includes the following columns:
 | `to` | list\<string\> | Recipients (To field) |
 | `cc` | list\<string\> | CC recipients |
 | `subject` | string | Email subject line |
-| `date` | datetime | Parsed email date (corrected) |
+| `date` | datetime | dataset email date (corrected) |
 | `client-date` | list\<string\> | Raw date from email client (may be incorrect) |
 | `in-reply-to` | string | In-Reply-To header |
 | `references` | list\<string\> | References headers |
@@ -133,158 +135,137 @@ The Parquet dataset includes the following columns:
 
 ## Configuration
 
-Configuration is done via environment variables. These can be set in your shell, in a `.env` file, or passed directly to the command.
+All operational settings are in a YAML (or JSON/TOML) configuration file matched
+by the glob pattern `parser_config*`. No environment variables are used for
+parser settings — only `RUST_LOG` controls log verbosity.
 
-### Runtime Environment Variables
+### Configuration Options
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `INPUT_DIR` | `/parser/input` | Directory containing raw emails (container mode) |
-| `OUTPUT_DIR` | `/parser/output` | Output directory for Parquet files (container mode) |
-| `DEBUG` | `False` | Enable debug mode (sets `N_PROC=1` and enables verbose logging) |
-| `N_PROC` | `cpu_count() / 2` | Number of parallel processes to use (ignored if `DEBUG=True`) |
-| `REDO_FAILED_PARSES` | `False` | If `True`, re-parse only emails that previously failed |
-| `LISTS_TO_PARSE` | `""` (all lists) | Comma-separated list of mailing lists to parse. Empty means parse all available lists. |
+| Option | Type | Required | Default | Description |
+|--------|------|----------|---------|-------------|
+| `nthreads` | integer | **Yes** | — | Number of worker threads. `<= 1` runs sequentially; `2+` spawns a thread pool |
+| `input_dir_path` | string | **Yes** | — | Root directory containing mailing list subdirectories from the archiver |
+| `output_dir_path` | string | **Yes** | — | Root directory for parsed output (dataset, errors, lineage) |
+| `fail_on_parsing_error` | boolean | **Yes** | — | If `true`, abort on first parse error. If `false`, log the error and continue |
+| `lists_to_parse` | list of strings | No | `null` (all subdirectories) | Specific mailing list directories to parse. Omit or leave empty to parse all |
 
-### Examples
+### Example Configuration
 
-```bash
-# Run with debug mode (single process, verbose logging)
-DEBUG=True uv run src/main.py
-
-# Parse only specific mailing lists
-LISTS_TO_PARSE="list1,list2,list3" uv run src/main.py
-
-# Re-parse only failed emails from previous run
-REDO_FAILED_PARSES=True uv run src/main.py
-
-# Use 4 parallel processes
-N_PROC=4 uv run src/main.py
-
-# Native execution with custom directories
-INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
-
-# Using Make with environment variables
-make parse N_PROC=4
-make parse LISTS_TO_PARSE="list1,list2,list3"
-make parse REDO_FAILED_PARSES=true N_PROC=2
-make debug-parser N_PROC=1 LISTS_TO_PARSE="dev.rcpassos.me.lists.gfs2"
+```yaml
+# parser_config.yaml
+nthreads: 4
+input_dir_path: "./archiver_output/"
+output_dir_path: "./parser_output/"
+fail_on_parsing_error: false
+# lists_to_parse applies to all input subdirectories:
+# lists_to_parse:
+#   - dev.example.me.lists.gfs2
+#   - dev.example.me.lists.iommu
 ```
 
-### Notes
+### Logging
 
-- **`DEBUG` mode**: When enabled, forces single-threaded execution (`N_PROC=1`) for easier debugging
-- **`N_PROC`**: Defaults to half of available CPU cores for balanced performance
-- **`LISTS_TO_PARSE`**: Useful for testing or incremental parsing of specific lists
-- **`REDO_FAILED_PARSES`**: Reads from the `errors/` directory instead of the main input directory
+Set `RUST_LOG` to control log verbosity (standard `env_logger` levels):
+
+```bash
+RUST_LOG=debug mlh_parser    # Verbose: shows per-email parsing detail
+RUST_LOG=info mlh_parser     # Normal (default)
+RUST_LOG=error mlh_parser    # Errors only
+```
+
+### Internal Constants
+
+The following are hardcoded in the source and not configurable:
+
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `BATCH_MAX_RECORDS` | 50,000 | Max emails per Parquet row group before flushing |
+| `BATCH_MAX_RAW_BYTES` | 400 MB | Max cumulative raw body bytes per row group before flushing |
+| `PARQUET_FILE_NAME` | `list_data.parquet` | Output filename inside each list's partition directory |
+
 
 ## Development
 
 ### Running Tests
 
 ```bash
-# Using Make
-make test
-
-# Using Devbox
-devbox run test-parser
-
-# Native with nox
-nox
-
-# Native with pytest
-uv run pytest
+cargo test
 ```
 
 ### Debug Mode
 
-Run the parser directly without containers for debugging:
+Run the parser with verbose logging:
 
 ```bash
-INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
+RUST_LOG=debug cargo run
 ```
 
 ### Project Structure
 
-```
-mlh_parser/
-├── src/
-│   ├── mlh_parser/
-│   │   ├── __init__.py      # Module exports
-│   │   ├── parser.py        # Main parsing logic
-│   │   ├── parser_algorithm.py  # Core algorithm
-│   │   ├── email_reader.py  # Email file reading
-│   │   ├── date_parser.py   # Date parsing utilities
-│   │   └── constants.py     # Configuration constants
-│   ├── main.py              # Entry point
-│   └── sanity_check.py      # Validation utilities
-├── tests/                   # Test suite
-├── Containerfile            # Docker/Podman image
-├── compose.yaml             # Container orchestration
-├── pyproject.toml           # Python project configuration
-├── uv.lock                  # Locked dependencies
-├── noxfile.py               # Test automation
-└── Makefile                 # Build automation
-```
+- `src/main.rs` — Entry point and Ctrl+C signal handling
+- `src/config.rs` — CLI argument parsing (`clap`) and config file loading (`config` crate)
+- `src/lib.rs` — Core `start()` function, thread pool, batch flush orchestration
+- `src/parser.rs` — Email parsing: headers, body, dates, trailers, patches, code
+- `src/dataset_writer.rs` — Parquet output with batched row group writes
+- `src/email_file_reader.rs` — `.eml` and `.parquet` file reader with unified iterator
+- `src/entities.rs` — `ParsedEmail` and `Attribution` data types
+- `src/constants.rs` — Parquet schema, batch limits, column definitions
+- `tests/` — Integration test suite with real email fixtures
 
 ## Dependencies
 
-- `polars` (~1.39) - Fast DataFrame library for data processing
-- `python-dateutil` (>=2.9.0) - Date parsing utilities
-- `tqdm` (~4.67) - Progress bars
+- [`arrow` + `parquet`](https://docs.rs/arrow/) — Apache Arrow columnar storage backend
+- [`mail-parser`](https://docs.rs/mail-parser/) — RFC 822 / MIME email parsing
+- [`config`](https://docs.rs/config/) — YAML/JSON/TOML configuration file loading
+- [`clap`](https://docs.rs/clap/) — CLI argument parsing
+- [`env_logger`](https://docs.rs/env_logger/) — Log level control via `RUST_LOG`
+- [`chrono`](https://docs.rs/chrono/) — Date/time parsing and formatting
+- [`glob`](https://docs.rs/glob/) — Config file glob pattern matching
+- [`ctrlc`](https://docs.rs/ctrlc/) — Graceful Ctrl+C shutdown
 
 ### Development Dependencies
 
-- `pytest` (>=9.0) - Testing framework
-- `nox` (>=2026.2) - Test automation
-- `freezegun` (>=1.5) - Time mocking for tests
+- [`tempfile`](https://docs.rs/tempfile/) — Temporary directories for integration tests
 
 ## Container Build
 
-The parser runs in a container using the `ghcr.io/astral-sh/uv:python3.14-trixie-slim` base image.
+If you don't have Rust installed, build using Podman or Docker:
 
 ```bash
-# Rebuild container image
-make rebuild
-
-# Or with devbox
-devbox run rebuild
+make build CONTAINER=podman
+# or
+make build CONTAINER=docker
 ```
+
+The build uses the `docker.io/rust:1.94-slim` image and mounts the workspace
+read/write for incremental compilation caching.
 
 ## Error Handling
 
-Emails that fail to parse are saved to:
+Emails that fail to parse are logged to stderr. Previous errors are cleaned
+automatically on re-run. When `fail_on_parsing_error` is `false` (default),
+processing continues past errors; when `true`, the process stops on the first
+failure.
+
+Failed parses are tracked per mailing list under:
 
 ```
-parser_output/<mailing_list>/errors/
+<output_dir_path>/errors/list=<mailing_list>/
 ```
-
-This allows you to:
-
-- Identify problematic emails
-- Debug parsing issues
-- Re-process fixed emails separately
 
 ## Integration with Other Components
 
-```
-┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
-│  MLH Archiver   │ ──► │   MLH Parser    │ ──► │   Anonymizer    │
-│  (raw emails)   │     │  (Parquet DS)   │     │ (anonymized DS) │
-└─────────────────┘     └─────────────────┘     └─────────────────┘
-```
-
 1. Run archiver to collect raw emails: `make run`
-2. Run parser to create dataset: `make parse`
+2. Configure and run parser: copy `example_parser_config.yaml` → `parser_config.yaml`, then `./target/release/mlh_parser`
 3. Run anonymizer for privacy: `make anonymize`
 
-## Example Usage with Polars
+### Example Usage with Polars
 
 ```python
 import polars as pl
 
-# Read the parsed dataset
-df = pl.scan_parquet("../parser_output/parsed/**/*.parquet")
+# Read the dataset dataset
+df = pl.scan_parquet("../parser_output/dataset/**/*.parquet")
 
 # Query emails by subject
 result = (
@@ -295,101 +276,45 @@ result = (
 )
 ```
 
-### Test Structure
+### Example Usage with Rust Polars
 
-The test suite uses real email samples (`.eml` files) paired with expected output files (`.pytest` extension). This approach allows testing with actual mailing list emails while maintaining readable expected values.
+```Rust
 
-#### Test File Organization
+use polars::prelude::*;
 
+fn main() -> PolarsResult<()> {
+    // Read the dataset dataset
+    let mut args = ScanArgsParquet::default();
+    let df = LazyFrame::scan_parquet("../parser_output/dataset/**/*.parquet", args)?
+        .filter(col("subject").str().contains(lit("example"), true))
+        .select([col("date"), col("from"), col("subject")])
+        .collect()?;
+
+    println!("{:?}", df);
+    Ok(())
+}
 ```
-tests/
-├── complete_cases/          # Full email parsing tests (trailers + code)
-│   ├── 14.eml              # Raw email file
-│   ├── 14.trailers.pytest  # Expected trailers (Python literal)
-│   ├── 14.code.pytest      # Expected code/patches (Python literal)
-│   ├── 14.body.pytest      # Expected email body
-│   └── 14.headers.pytest   # Expected headers (raw format)
-├── date_cases/              # Date parsing test cases
-│   ├── org.kernel...6592.eml           # Raw email file
-│   └── org.kernel...6592.date.pytest   # Expected parsed date
-├── test_complete_parsers.py  # Test runner for complete cases
-├── test_base_email_parsers.py  # Tests for body and header parsing
-├── test_dates.py             # Test runner for date parsing
-├── test_attributions.py      # Unit tests for attribution extraction
-├── test_patches.py           # Unit tests for patch extraction
-└── helpers.py                # Test utilities
-```
-
-#### File Naming Convention
-
-Test files are grouped by a common prefix:
-
-| File Pattern | Purpose |
-|--------------|---------|
-| `<prefix>.eml` | Raw RFC 822 email input |
-| `<prefix>.trailers.pytest` | Expected trailers (Python list literal) |
-| `<prefix>.code.pytest` | Expected code patches (Python list literal) |
-| `<prefix>.body.pytest` | Expected email body |
-| `<prefix>.headers.pytest` | Expected headers (raw format) |
-| `<prefix>.date.pytest` | Expected parsed date (first line is the date) |
-| `<prefix>.client-date.pytest` | Expected raw client dates (one per line) |
-
-#### Adding New Test Cases
-
-1. **Save the raw email**: Place your `.eml` file in the appropriate directory (`complete_cases/` or `date_cases/`)
-
-2. **Create expected output files**: For each `.eml` file, create corresponding `.pytest` files with the expected parsed values as Python literals:
-
-   ```python
-   # Example: 14.trailers.pytest
-   [
-       {
-           "attribution": "Signed-off-by",
-           "identification": "Example Developer <example-dev@company.com>",
-       },
-   ]
-   
-   # Example: 14.code.pytest
-   [
-       """---
-   drivers/file.c | 10 ++++++++++
-   1 file changed, 10 insertions(+)
-   ...
-   """
-   ]
-   
-   # Example: email.date.pytest
-   Tue,  4 Nov 2025 22:14:47 +0000
-   # Note: Additional lines are treated as comments
-   ```
-
-3. **Run tests**: The test runners automatically discover files by extension and match them by prefix.
-
-#### Test Helpers
-
-The `helpers.py` module provides utilities:
-
-- `list_files_with_extension(directory, ext)`: List all files with given extension
-- `map_to_file_extensions(email_file, extensions)`: Map `.eml` to its `.pytest` counterparts
-- `resolve_test_file_path(directory, filename)`: Resolve absolute path to test file
 
 ## Troubleshooting
 
-### "Input directory is missing or empty"
+### "No items found to parse"
 
-Run the archiver first to generate raw email files:
+The input directory has no subdirectories (mailing lists). Run the archiver
+first (`make run`), or check that `input_dir_path` in your config points to
+the correct archiver output.
+
+### Config not loaded
+
+The parser looks for files matching `parser_config*` (glob). Verify your file
+matches the pattern, or pass an explicit path with `-c`:
 
 ```bash
-make run
+mlh_parser -c my_parser_config.yaml
 ```
 
-### Container Permission Issues
+### Parsing errors
 
-The compose file uses `user: "${UID}:${GID}"` to match your user ID. Ensure your user has read/write access to the input/output directories.
-
-### Parsing Errors
-
-Check the `errors/` directory for failed emails. Common issues:
+Check the error log output (stderr). Common issues:
 
 - Malformed email headers
 - Unsupported character encodings

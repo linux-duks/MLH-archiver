@@ -12,14 +12,15 @@ permissions:
 
 jobs:
   parser-tests:
-    uses: ./.github/workflows/py-tests.yaml
+    uses: ./.github/workflows/rust-tests.yaml
     name: parser-tests
     with:
       path: ./mlh_parser
       project-name: mlh_parser
 
   parser-lint:
-    uses: ./.github/workflows/py-lint.yaml
+    uses: ./.github/workflows/rust-lint.yaml
+    name: parser-lint
     with:
       path: ./mlh_parser
-
+      project-name: mlh_parser

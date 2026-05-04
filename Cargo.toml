@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 
-members = ["mlh_archiver", "scripts/check_nntp", "scripts/check_git", "mlh_parser2"]
+members = ["mlh_archiver", "scripts/check_nntp", "scripts/check_git", "mlh_parser"]
 
 [profile.release]
 lto = "fat"

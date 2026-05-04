@@ -1,4 +1,0 @@
-Fri, 01 Mar 2024 09:00:00 +0000
-# Date header (Fri, 01 Mar 2024 12:00:00 +9900) is discarded: +9900 is an
-# out-of-range timezone offset (99 hours). The parser falls back to the
-# Received header: Fri, 01 Mar 2024 09:00:00 +0000
