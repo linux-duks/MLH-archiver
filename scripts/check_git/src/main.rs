@@ -44,13 +44,19 @@ struct Args {
     #[arg(long = "test")]
     test: bool,
 
-    /// Specify list name for test fetch (requires --test)
+    /// Specify list (folder) name for --test or --email-id lookups
     #[arg(long = "list")]
     list_name: Option<String>,
 
     /// Article number (position) to fetch (requires --test)
     #[arg(long = "article")]
     article: Option<usize>,
+
+    /// Look up and print a single email by its formatted identifier
+    /// Format: {10-digit-padded}-e{epoch}-{commit_sha}
+    /// Example: 0000000056-e0-5dadd9f0f9884ed3852f090bd05eed898db64966
+    #[arg(long = "email-id")]
+    email_id: Option<String>,
 }
 
 // ── helpers ────────────────────────────────────────────────────────────
@@ -370,6 +376,27 @@ fn run_test_mode(
     fetch_single_commit(inbox, position)
 }
 
+// ── email-id lookup ────────────────────────────────────────────────────
+
+fn lookup_email_by_id(
+    valid_inboxes: &[PublicInbox],
+    list_name: &str,
+    email_id_str: &str,
+) -> anyhow::Result<()> {
+    let parsed = parse_email_id(email_id_str)
+        .ok_or_else(|| anyhow::anyhow!("Invalid email ID format: {}", email_id_str))?;
+
+    let inbox = valid_inboxes
+        .iter()
+        .find(|inbox| inbox.name == list_name)
+        .ok_or_else(|| anyhow::anyhow!("List '{}' not found", list_name))?;
+
+    let raw_email = find_email_by_id(inbox, &parsed)?;
+
+    print!("{}", raw_email);
+    Ok(())
+}
+
 // ── config export ──────────────────────────────────────────────────────
 
 fn generate_config_yaml(inboxes: &[PublicInbox], inbox_dir: &Path) -> anyhow::Result<()> {
@@ -466,6 +493,14 @@ fn run(args: Args) -> anyhow::Result<()> {
 
     if args.test {
         return run_test_mode(&valid_inboxes, args.list_name.as_deref(), args.article);
+    }
+
+    if let Some(ref email_id) = args.email_id {
+        let list_name = args
+            .list_name
+            .as_deref()
+            .ok_or_else(|| anyhow::anyhow!("--list is required when using --email-id"))?;
+        return lookup_email_by_id(&valid_inboxes, list_name, email_id);
     }
 
     println!(

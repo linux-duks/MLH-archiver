@@ -599,6 +599,66 @@ pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::O
     Ok(commits)
 }
 
+/// Look up and retrieve raw email content by its parsed email identifier.
+///
+/// Given a parsed email identifier and a public inbox, this function locates the
+/// correct epoch repository, finds the commit by its full SHA, and extracts the
+/// raw RFC 822 email content from the commit's tree.
+///
+/// # Arguments
+///
+/// * `inbox` - The public inbox to search in
+/// * `email_id` - Parsed components of the email identifier (number, epoch, commit SHA)
+///
+/// # Returns
+///
+/// * `Ok(String)` - The raw email content
+/// * `Err` - If the epoch is not found, the commit SHA can't be resolved,
+///           or the email can't be extracted from the commit
+pub fn find_email_by_id(inbox: &PublicInbox, email_id: &ParsedEmailId) -> crate::Result<String> {
+    let epochs = find_epochs(&inbox.git_dir)?;
+
+    let epoch_repo = if epochs.is_empty() {
+        EpochRepo {
+            epoch_name: "all".to_string(),
+            git_dir: inbox.git_dir.clone(),
+        }
+    } else {
+        epochs
+            .iter()
+            .find(|e| e.epoch_name == email_id.epoch_name)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Epoch '{}' not found in inbox '{}'",
+                    email_id.epoch_name,
+                    inbox.name
+                )
+            })?
+            .clone()
+    };
+
+    let repo = git2::Repository::open_bare(&epoch_repo.git_dir)?;
+
+    let obj = repo.revparse_single(&email_id.commit_sha).map_err(|e| {
+        anyhow::anyhow!(
+            "Commit SHA '{}' not found in epoch '{}': {}",
+            email_id.commit_sha,
+            email_id.epoch_name,
+            e
+        )
+    })?;
+
+    let commit = obj.as_commit().ok_or_else(|| {
+        anyhow::anyhow!(
+            "SHA '{}' resolved to a non-commit object",
+            email_id.commit_sha
+        )
+    })?;
+
+    let (_hash, raw_email) = extract_email_from_commit(&repo, commit)?;
+    Ok(raw_email)
+}
+
 /// Finds all epoch repositories within a V2 public inbox's git/ directory.
 ///
 /// This function scans the git/ directory of a V2 public inbox for all epoch

@@ -307,6 +307,52 @@ devbox run peek-files parser_output/parsed/
 devbox run peek-files ./output/
 ```
 
+### check-git
+
+CLI tool for browsing and inspecting local public-inbox git repositories located in [`scripts/check_git/`](scripts/check_git/). Provides an interactive TUI and a CLI mode for precise email lookups.
+
+**Email Identifier Format:**
+
+```
+{10-digit-padded}-e{epoch}-{commit_sha}
+```
+
+- **10-digit-padded**: Sequential email number (e.g., `0000000056`)
+- **e{epoch}**: Epoch repository identifier (e.g., `e0`, `eall`)
+- **{commit_sha}**: Full 40-character commit SHA
+
+Example: `0000000056-e0-5dadd9f0f9884ed3852f090bd05eed898db64966`
+
+**Build:**
+
+```bash
+cargo build --release --package check_git
+```
+
+**Usage:**
+
+```bash
+# Interactive mode
+check_git --inbox-dir /path/to/inboxes
+
+# Test fetch by position
+check_git --inbox-dir /path/to/inboxes --test --list my.list.name --article 1
+
+# Look up and print a single email by its formatted identifier
+check_git --inbox-dir /path/to/inboxes --email-id 0000000056-e0-5dadd9f0f9884ed3852f090bd05eed898db64966 --list my.list.name
+```
+
+| Option | Description |
+|--------|-------------|
+| `--inbox-dir <PATH>` | **Required.** Path to public-inbox directories |
+| `--count <N>` | Number of recent emails to preview (default: 5) |
+| `--test` | Run a non-interactive test fetch |
+| `--list <NAME>` | List (folder) name for test or email-id lookup |
+| `--article <N>` | Article position for test fetch (1-indexed) |
+| `--email-id <ID>` | Look up and print a single email by its formatted identifier |
+| `--export-config` | Export configuration to YAML after browsing |
+| `--verbose` | Enable verbose (debug) logging |
+
 ---
 
 ## Architecture Details
