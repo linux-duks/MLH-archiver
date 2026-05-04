@@ -203,13 +203,17 @@ RUST_LOG=debug cargo run
 ### Project Structure
 
 - `src/main.rs` — Entry point and Ctrl+C signal handling
-- `src/config.rs` — CLI argument parsing (`clap`) and config file loading (`config` crate)
 - `src/lib.rs` — Core `start()` function, thread pool, batch flush orchestration
-- `src/parser.rs` — Email parsing: headers, body, dates, trailers, patches, code
+- `src/email_parser.rs` — Top-level email parsing: headers, body, dates, trailers, patches
+- `src/email_reader.rs` — Low-level mail-parser integration: decode, headers, body text
+- `src/extractors.rs` — Trailer and patch extraction from email body text
+- `src/date_parser.rs` — Date parsing, validation, and millennium correction
 - `src/dataset_writer.rs` — Parquet output with batched row group writes
 - `src/email_file_reader.rs` — `.eml` and `.parquet` file reader with unified iterator
 - `src/entities.rs` — `ParsedEmail` and `Attribution` data types
 - `src/constants.rs` — Parquet schema, batch limits, column definitions
+- `src/config.rs` — CLI argument parsing (`clap`) and config file loading (`config` crate)
+- `src/errors.rs` — `ConfigError` and `ParseError` error types
 - `tests/` — Integration test suite with real email fixtures
 
 ## Dependencies

@@ -10,7 +10,7 @@ use crate::nntp_source::nntp_utils::server_address;
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone, Default)]
 pub struct NntpConfig {
     /// nntp server domain/ip
-    /// can be prefixed by [`nntp://`] or [`nntps://`]
+    /// can be prefixed by `nntp://` or `nntps://`
     /// to indicate PLAINTEXT or TLS
     pub hostname: String,
     /// nntp server port

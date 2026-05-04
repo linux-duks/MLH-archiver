@@ -1,3 +1,5 @@
+//! Reads `.eml` and `.parquet` files into a unified email iterator.
+
 use arrow::array::{Array, StringArray};
 use mlh_archiver::archive_writer::{EmailData, parquet_email_store_schema};
 use parquet::arrow::arrow_reader::{
@@ -6,6 +8,10 @@ use parquet::arrow::arrow_reader::{
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 
+/// An iterator over rows in a Parquet file containing archived emails.
+///
+/// Each row yields an [`EmailData`] with `email_id` (column 0) and `content`
+/// (column 1). The iterator transparently reads batches as needed.
 pub struct ParquetEmailReader {
     reader: ParquetRecordBatchReader,
     current_batch: Option<arrow::array::RecordBatch>,
@@ -51,6 +57,9 @@ impl Iterator for ParquetEmailReader {
     }
 }
 
+/// Opens a Parquet file and returns a row-by-row [`ParquetEmailReader`].
+///
+/// Uses [`parquet_email_store_schema`] to set the expected schema on the reader.
 pub fn read_parquet_emails(path: &Path) -> Result<ParquetEmailReader, Box<dyn std::error::Error>> {
     let file = File::open(path)?;
     let schema = parquet_email_store_schema();
@@ -65,6 +74,9 @@ pub fn read_parquet_emails(path: &Path) -> Result<ParquetEmailReader, Box<dyn st
     })
 }
 
+/// Reads a single `.eml` file and returns an [`EmailData`] record.
+///
+/// The `email_id` is derived from the file stem (name without extension).
 pub fn read_eml_email(path: &Path) -> Result<EmailData, Box<dyn std::error::Error>> {
     let bytes = fs::read(path)?;
     let email_id = path
@@ -76,6 +88,11 @@ pub fn read_eml_email(path: &Path) -> Result<EmailData, Box<dyn std::error::Erro
     Ok(EmailData { email_id, content })
 }
 
+/// An iterator that chains multiple `.eml` and `.parquet` files together.
+///
+/// For `.eml` files, each file produces one email. For `.parquet` files,
+/// each row in the file produces one email. Unknown extensions are silently
+/// skipped.
 pub struct MultiFileEmailReader {
     file_paths: std::vec::IntoIter<PathBuf>,
     current_parquet_reader: Option<ParquetEmailReader>,
@@ -125,6 +142,10 @@ impl Iterator for MultiFileEmailReader {
     }
 }
 
+/// Creates a [`MultiFileEmailReader`] that yields emails from the given file paths.
+///
+/// Files must have extension `.eml` or `.parquet`. Unknown extensions are
+/// silently skipped. File order is preserved from the input vector.
 pub fn file_iterator(file_paths: Vec<PathBuf>) -> MultiFileEmailReader {
     MultiFileEmailReader {
         file_paths: file_paths.into_iter(),

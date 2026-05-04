@@ -1,23 +1,40 @@
+//! Configuration loading from YAML/JSON/TOML files via glob matching.
+
 use crate::errors::ConfigError;
 use clap::{Parser, ValueHint};
 use config::Config;
 use glob::glob;
 
+/// CLI arguments for the parser binary.
 #[derive(Debug, Parser, Default)]
 pub struct Opts {
+    /// Glob pattern for config file(s). Defaults to `parser_config*`.
     #[arg(short, long, default_value = "parser_config*", value_hint = ValueHint::FilePath)]
     pub config_file: String,
 }
 
+/// Parser configuration deserialized from a YAML/JSON/TOML file.
+///
+/// All fields except `lists_to_parse` are required. See the example config:
+/// [`example_parser_config.yaml`](https://github.com/linux-duks/MLH-archiver/blob/main/example_parser_config.yaml).
 #[derive(Debug, serde::Deserialize, serde::Serialize, PartialEq, Eq, Clone)]
 pub struct AppConfig {
+    /// Number of worker threads. `<= 1` runs sequentially; `2+` spawns a thread pool.
     pub nthreads: u8,
+    /// Root directory containing mailing list subdirectories from the archiver.
     pub input_dir_path: String,
+    /// Root directory for parsed output (dataset, errors, lineage).
     pub output_dir_path: String,
+    /// If `true`, abort on first parse error. If `false`, log and continue.
     pub fail_on_parsing_error: bool,
+    /// Specific mailing list directories to parse. `None` parses all subdirectories.
     pub lists_to_parse: Option<Vec<String>>,
 }
 
+/// Reads configuration from files matching the glob pattern in [`Opts::config_file`].
+///
+/// Supports YAML, JSON, and TOML. Multiple files can be matched and are merged
+/// in glob-sorted order.
 pub fn read_config() -> Result<AppConfig, ConfigError> {
     let opts = Opts::parse();
 

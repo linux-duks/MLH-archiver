@@ -1,3 +1,5 @@
+//! Parquet output — Arrow record batch construction and batched row-group writes.
+
 use crate::ParsedEmail;
 use crate::constants;
 
@@ -13,10 +15,20 @@ use std::io::BufWriter;
 use std::path::Path;
 use std::sync::Arc;
 
+/// Type alias for a buffered Arrow Parquet writer.
 pub type DatasetWriter = ArrowWriter<BufWriter<fs::File>>;
 
+/// Create a new dataset writer (not yet implemented).
 pub fn create_writer() {}
 
+/// Flushes accumulated parsed emails into a Parquet row group.
+///
+/// If the writer hasn't been created yet, it opens (or creates) the output
+/// file at `parquet_path`. Subsequent calls write additional row groups into
+/// the same file via the reused writer.
+///
+/// After flushing, `batch_emails` and `batch_raw_body_bytes` are cleared,
+/// and `total_parsed` is incremented.
 pub fn flush_batch(
     mailing_list: &str,
     parquet_path: &Path,
@@ -53,6 +65,12 @@ pub fn flush_batch(
     Ok(())
 }
 
+/// Builds an Arrow [`RecordBatch`] from a slice of `(ParsedEmail, file_name)` pairs.
+///
+/// Uses the fixed schema defined in [`PARQUET_SCHEMA`](crate::constants::PARQUET_SCHEMA).
+/// Each parsed email becomes one row; list-valued columns (to, cc, references,
+/// client-date, trailers, code) are delimited, and the `date` column is
+/// parsed from RFC 3339.
 pub fn build_record_batch(
     emails: &[(ParsedEmail, String)],
 ) -> Result<RecordBatch, Box<dyn std::error::Error>> {

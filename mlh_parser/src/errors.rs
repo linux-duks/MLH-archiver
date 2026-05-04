@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Errors that occur during configuration loading and deserialization.
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("IO error: {0}")]
@@ -12,6 +13,10 @@ pub enum ConfigError {
     Other(String),
 }
 
+/// Errors that occur during email parsing.
+///
+/// These are recoverable when [`fail_on_parsing_error`](crate::config::AppConfig::fail_on_parsing_error)
+/// is `false` — the email is skipped and processing continues.
 #[derive(Error, Debug)]
 pub enum ParseError {
     #[error("Failed to decode email: {0}")]

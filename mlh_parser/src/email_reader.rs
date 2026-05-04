@@ -1,14 +1,11 @@
+//! Low-level RFC 822 email decoding and header/body extraction via `mail-parser`.
+//!
+//! Also handles obfuscated email addresses (e.g. `user (a) domain.tld` → `user@domain.tld`).
+
 use mail_parser::{Message, MessageParser};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
-
-static HEADER_LINE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^(From|To|Cc|Subject|Date|Message-ID|In-Reply-To|References|User-Agent|X-Mailer):[ \t]*.*$",
-    )
-    .unwrap()
-});
 
 static EMAIL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$")
@@ -164,11 +161,16 @@ fn extract_all_from_from_body(raw_email: &[u8]) -> Vec<String> {
     candidates
 }
 
+/// Decodes raw email bytes into a [`Message`] using the default parser.
 pub fn decode_mail(email_raw: &[u8]) -> Option<Message<'_>> {
     MessageParser::default().parse(email_raw)
 }
 
-/// evaluate the headers using some info from the body to beter guide selection
+/// Extracts all headers from a parsed message into a `HashMap`.
+///
+/// Evaluates headers using body information to better guide `From` selection.
+/// The `From` header is chosen by scoring candidates (name presence, valid
+/// email address). Obfuscated addresses are normalized.
 pub fn get_headers(msg: &Message<'_>) -> HashMap<String, String> {
     let mut headers: HashMap<String, String> = HashMap::new();
     let mut from_candidates: Vec<String> = Vec::new();
@@ -213,6 +215,11 @@ pub fn get_headers(msg: &Message<'_>) -> HashMap<String, String> {
     headers
 }
 
+/// Extracts the body text from a parsed message.
+///
+/// Prefers `text/plain` parts. Falls back to `text/html` if no plain text
+/// is found. Multi-part bodies are joined with newlines, and CRLF is
+/// normalized to LF.
 pub fn get_body(msg: &Message<'_>) -> String {
     let mut body_parts: Vec<String> = Vec::new();
 

@@ -1,3 +1,18 @@
+//! MLH Parser — converts raw mailing list emails into a structured Parquet dataset.
+//!
+//! # Pipeline
+//!
+//! ```text
+//! raw .eml / .parquet  →  parse_email()  →  ParsedEmail  →  build_record_batch()  →  .parquet
+//! ```
+//!
+//! The main entry point is [`start`], which orchestrates thread-pool dispatch
+//! across mailing lists. Individual emails are parsed via [`parse_email`]
+//! and collected into batched Arrow record batches via [`flush_batch`].
+//!
+//! [`parse_email`]: crate::email_parser::parse_email
+//! [`flush_batch`]: crate::dataset_writer::flush_batch
+
 pub mod config;
 pub mod constants;
 pub mod dataset_writer;
@@ -22,6 +37,7 @@ use std::sync::{
 };
 use std::thread;
 
+/// Convenience result type used throughout the crate.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
 
 /// Starts the parsing routine according to the configs
@@ -136,6 +152,14 @@ fn process_mailing_list_wrap(
     .map_err(|e| Box::<dyn std::error::Error>::from(e.to_string()))
 }
 
+/// Parses all emails in a single mailing list directory into a Parquet file.
+///
+/// Reads `.eml` and `.parquet` files from `input_dir/<mailing_list>/`, writes
+/// the output to `output_dir/dataset/list=<mailing_list>/list_data.parquet`.
+///
+/// Emails are accumulated into batches and flushed when either
+/// `max_records_per_batch` or `max_raw_bytes_per_batch` is reached, keeping
+/// Arrow row groups under the `i32` offset ceiling.
 pub fn process_mailing_list(
     mailing_list: &str,
     input_dir: &Path,
@@ -247,6 +271,9 @@ pub fn process_mailing_list(
     Ok(())
 }
 
+/// Extracts the `Message-ID` header value from raw email content.
+///
+/// Returns [`ParseError::NoMessageId`] if the header is missing.
 pub fn get_email_id(email_content: &str) -> std::result::Result<String, ParseError> {
     for line in email_content.lines() {
         if line.to_lowercase().starts_with("message-id:") {
@@ -257,6 +284,7 @@ pub fn get_email_id(email_content: &str) -> std::result::Result<String, ParseErr
     Err(ParseError::NoMessageId)
 }
 
+/// Deletes all files inside a given errors directory (cleans previous run errors).
 pub fn remove_previous_errors(errors_dir: &Path) -> std::result::Result<(), std::io::Error> {
     if errors_dir.is_dir() {
         for entry in fs::read_dir(errors_dir)? {

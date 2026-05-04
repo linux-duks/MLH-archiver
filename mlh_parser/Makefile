@@ -35,6 +35,9 @@ build:
 			cargo build --release; \
 	fi
 
+.PHONY: rebuild
+rebuild: clean build
+
 .PHONY: run
 run:
 	@if [ ! -f $(TARGET_PATH) ]; then \
@@ -49,12 +52,11 @@ run:
 debug:
 	@if command -v cargo >/dev/null 2>&1; then \
 		echo "==> Found Rust toolchain, building natively..."; \
-		cd $(REPO_ROOT) && DEBUG=true RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
+		cd $(REPO_ROOT) && RUST_LOG=debug cargo run --bin $(BINARY_NAME); \
 	else \
 		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
-			-e DEBUG=true \
 			-e RUST_LOG=debug \
 			--network=host \
 			-v $(REPO_ROOT):/usr/src/app:z \
@@ -66,7 +68,7 @@ debug:
 
 .PHONY: test
 test:
-	@echo "==> Running archiver tests..."
+	@echo "==> Running parser tests..."
 	@cargo test
 
 .PHONY: doc
@@ -76,7 +78,7 @@ doc:
 
 .PHONY: clean
 clean:
-	@echo "==> Cleaning up archiver build artifacts..."
+	@echo "==> Cleaning up parser build artifacts..."
 	@cargo clean
 	@rm -f ./$(BINARY_NAME).out
 

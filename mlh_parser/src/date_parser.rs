@@ -1,3 +1,9 @@
+//! Date parsing, validation, and correction for email headers.
+//!
+//! Handles RFC 2822, RFC 3339, and various malformed date formats found in
+//! mailing list archives. Includes millennium-year correction and fallback
+//! date discovery from `Received` headers.
+
 use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
 use std::collections::HashMap;
@@ -19,6 +25,9 @@ fn find_date_in_string(text: &str) -> Option<String> {
     DATE_REGEX.find(text).map(|m| m.as_str().to_string())
 }
 
+/// Attempts to parse `date` with RFC 2822, RFC 3339, and fallback heuristics.
+///
+/// Returns `None` if no recognizable date could be extracted.
 pub fn parse_date_tentative_raw(date: &str) -> Option<DateTime<FixedOffset>> {
     if date.is_empty() {
         return None;
@@ -89,19 +98,26 @@ fn last_effort_date_finder(date_text: &str) -> Option<DateTime<FixedOffset>> {
     None
 }
 
+/// Returns `true` if the date's year is before 1900 (likely malformed).
 pub fn is_date_too_old(date_obj: &DateTime<FixedOffset>) -> bool {
     date_obj.year() < 1900
 }
 
+/// Returns `true` if `date_obj` is more than 3 days after `now`.
 pub fn is_date_in_future(date_obj: &DateTime<FixedOffset>, now: DateTime<FixedOffset>) -> bool {
     let max_future = now + chrono::Duration::days(3);
     *date_obj > max_future
 }
 
+/// Returns `true` if the date is too old OR too far in the future.
 pub fn check_date_issues(date_obj: &DateTime<FixedOffset>, now: DateTime<FixedOffset>) -> bool {
     is_date_too_old(date_obj) || is_date_in_future(date_obj, now)
 }
 
+/// Corrects dates where the year was accidentally stored modulo 100.
+///
+/// For example, `2011-09-01` stored as `0111-09-01` is corrected by adding
+/// 1900 to the year, provided the adjusted year is not in the future.
 pub fn fix_millennium_date(
     date_obj: DateTime<FixedOffset>,
     now: DateTime<FixedOffset>,
@@ -124,6 +140,7 @@ pub fn fix_millennium_date(
     date_obj
 }
 
+/// Searches `Received` and `X-Received` headers for fallback date values.
 pub fn find_other_date_entries(email_dict: &HashMap<String, String>) -> Vec<DateTime<FixedOffset>> {
     let mut value_list = Vec::new();
     for header in &["received", "x-received"] {
@@ -139,6 +156,12 @@ pub fn find_other_date_entries(email_dict: &HashMap<String, String>) -> Vec<Date
     value_list
 }
 
+/// Processes the `date` and `client-date` entries in an email header map.
+///
+/// Selects the best date from the available options, applying millennium
+/// correction and `Received`-header fallback in that order. The result is
+/// stored back into `email_dict["date"]` as RFC 3339 and the raw client
+/// dates in `email_dict["client-date"]` as `||`-delimited strings.
 pub fn process_date(email_dict: &mut HashMap<String, String>, now: DateTime<FixedOffset>) {
     let raw_date = email_dict
         .get("date")

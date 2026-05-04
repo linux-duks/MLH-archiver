@@ -1,3 +1,5 @@
+//! Top-level email parsing: decodes raw bytes into a [`ParsedEmail`].
+
 use crate::ParsedEmail;
 use crate::constants::SINGLE_VALUED_COLS;
 use crate::date_parser;
@@ -8,6 +10,11 @@ use crate::extractors::{self};
 use chrono::{DateTime, FixedOffset};
 use parquet::errors::Result;
 
+/// Parses a raw RFC 822 email byte slice into a [`ParsedEmail`].
+///
+/// Extracts headers, body text, trailers, and code patches. Dates are
+/// normalized by [`process_date`](crate::date_parser::process_date). Missing
+/// single-valued columns are populated with empty strings.
 pub fn parse_email(
     email_data: &[u8],
     now: DateTime<FixedOffset>,

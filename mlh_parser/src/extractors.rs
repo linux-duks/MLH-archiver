@@ -1,7 +1,14 @@
+//! Extracts trailers (Signed-off-by, Reviewed-by, etc.) and patch diffs from
+//! email body text.
+
 use regex::Regex;
 
 use crate::Attribution;
 
+/// Extracts git-style trailer lines from a commit message / email body.
+///
+/// Matches patterns like `Signed-off-by: Name <email>` and `Reviewed-by: Name <email>`.
+/// Handles common copy-paste line wrapping and broken signature lines.
 pub fn extract_attributions(commit_message: &str) -> Vec<Attribution> {
     let mut attributions = Vec::new();
 
@@ -34,6 +41,12 @@ pub fn extract_attributions(commit_message: &str) -> Vec<Attribution> {
     attributions
 }
 
+/// Extracts patch diffs from an email body.
+///
+/// Searches for common patch markers: `---`/`+++` headers, `diff --git` lines,
+/// and email-style `-- ` signature separators. Patterns are tried in order;
+/// the first pattern that produces matches is returned.
+///
 /// TODO: improve patch capturing
 pub fn extract_patches(email_body: &str) -> Vec<String> {
     let regexes: &[&str] = &[

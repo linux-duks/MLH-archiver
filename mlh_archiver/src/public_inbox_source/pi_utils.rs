@@ -614,7 +614,7 @@ pub fn collect_all_commits(repo: &git2::Repository) -> crate::Result<Vec<git2::O
 ///
 /// * `Ok(String)` - The raw email content
 /// * `Err` - If the epoch is not found, the commit SHA can't be resolved,
-///           or the email can't be extracted from the commit
+///   or the email can't be extracted from the commit
 pub fn find_email_by_id(inbox: &PublicInbox, email_id: &ParsedEmailId) -> crate::Result<String> {
     let epochs = find_epochs(&inbox.git_dir)?;
 
