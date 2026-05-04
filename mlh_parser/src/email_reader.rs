@@ -72,20 +72,27 @@ fn addr_to_string(addr: &mail_parser::Addr<'_>) -> String {
     }
 }
 
-fn score_email_address(value: &str) -> (bool, bool, Option<&'static str>) {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct EmailScore {
+    has_name: bool,
+    is_standard: bool,
+    obfuscation: Option<&'static str>,
+}
+
+fn score_email_address(value: &str) -> EmailScore {
     if let Some(caps) = EMAIL_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return (!name.is_empty(), true, None);
+        return EmailScore { has_name: !name.is_empty(), is_standard: true, obfuscation: None };
     }
     if let Some(caps) = EMAIL_OBFUSCATED_A_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return (!name.is_empty(), false, Some("(a)"));
+        return EmailScore { has_name: !name.is_empty(), is_standard: false, obfuscation: Some("(a)") };
     }
     if let Some(caps) = EMAIL_OBFUSCATED_AT_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return (!name.is_empty(), false, Some(" at "));
+        return EmailScore { has_name: !name.is_empty(), is_standard: false, obfuscation: Some(" at ") };
     }
-    (false, false, None)
+    EmailScore { has_name: false, is_standard: false, obfuscation: None }
 }
 
 fn select_best_from_header(values: &[String]) -> String {
@@ -96,9 +103,9 @@ fn select_best_from_header(values: &[String]) -> String {
         return normalize_email(&values[0]);
     }
 
-    let mut scored: Vec<((bool, bool, Option<&str>), &String)> =
+    let mut scored: Vec<(EmailScore, &String)> =
         values.iter().map(|v| (score_email_address(v), v)).collect();
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    scored.sort_by_key(|b| std::cmp::Reverse(b.0));
     normalize_email(scored[0].1)
 }
 

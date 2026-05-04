@@ -1,7 +1,6 @@
 #![allow(clippy::needless_return)]
 
 #[cfg(not(feature = "otel"))]
-#[cfg(not(feature = "otel"))]
 use env_logger::Env;
 use std::sync::{
     Arc,
@@ -24,6 +23,8 @@ fn main() -> Result<()> {
         let env = Env::default().filter_or("RUST_LOG", "info");
         env_logger::init_from_env(env);
     }
+
+    log::info!("mlh_archiver starting — build: {}", env!("CARGO_PKG_VERSION"));
 
     let mut app_config = match config::read_config() {
         Ok(cfg) => cfg,
