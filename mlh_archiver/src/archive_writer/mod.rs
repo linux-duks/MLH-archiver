@@ -82,9 +82,9 @@ pub use data_lineage::DataLineageWriter;
 pub use email_store::{EmailData, EmailStore, WriteMode};
 pub use error_log::ErrorLogger;
 pub use parquet_email_store::ParquetEmailStore;
+pub use parquet_email_store::parquet_email_store_schema;
 pub use progress::ProgressTracker;
 pub use raw_email_store::RawEmailStore;
-pub use parquet_email_store::parquet_email_store_schema;
 
 use std::path::Path;
 

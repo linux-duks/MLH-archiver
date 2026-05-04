@@ -31,18 +31,16 @@ fn test_correct_email() {
         let expected_date = parse_date_tentative_raw(&expected_date_str);
 
         let msg = decode_mail(&mail_bytes).unwrap();
-        let mut headers = get_headers(&msg, &mail_bytes);
+        let mut headers = get_headers(&msg);
 
-        let now = DateTime::from_timestamp(1734748800, 0)
-            .unwrap()
-            .into();
+        let now = DateTime::from_timestamp(1734748800, 0).unwrap().into();
         process_date(&mut headers, now);
 
-        if let (Some(expected), Some(actual_str)) =
-            (expected_date, headers.get("date"))
-            && let Ok(actual) = DateTime::parse_from_rfc3339(actual_str) {
-                assert_eq!(actual, expected, "Date mismatch for {:?}", email_file);
-            }
+        if let (Some(expected), Some(actual_str)) = (expected_date, headers.get("date"))
+            && let Ok(actual) = DateTime::parse_from_rfc3339(actual_str)
+        {
+            assert_eq!(actual, expected, "Date mismatch for {:?}", email_file);
+        }
     }
 }
 
@@ -58,9 +56,7 @@ fn test_millennium_dates() {
         ("Mon, 3 Jan 0120 18:27:37", "Mon, 3 Jan 2020 18:27:37"),
     ];
 
-    let now = DateTime::from_timestamp(1734748800, 0)
-        .unwrap()
-        .into();
+    let now = DateTime::from_timestamp(1734748800, 0).unwrap().into();
 
     for (found_str, expected_str) in millennium_cases {
         let found_date = parse_date_tentative_raw(found_str).unwrap();

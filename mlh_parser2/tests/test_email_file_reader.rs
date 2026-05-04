@@ -4,10 +4,10 @@ use std::fs::File;
 
 use arrow::array::StringArray;
 use mlh_archiver::archive_writer::{EmailData, EmailStore, ParquetEmailStore};
-use mlh_parser2::email_file_reader::{
-    file_iterator, read_eml_email, read_parquet_emails,
+use mlh_parser2::{
+    email_file_reader::{file_iterator, read_eml_email, read_parquet_emails},
+    process_mailing_list,
 };
-use mlh_parser2::parser;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 
 #[test]
@@ -216,9 +216,7 @@ fn test_large_parquet_across_batches() {
         .collect();
     paths.sort();
 
-    let results: Vec<EmailData> = file_iterator(paths)
-        .map(|r| r.unwrap())
-        .collect();
+    let results: Vec<EmailData> = file_iterator(paths).map(|r| r.unwrap()).collect();
 
     assert_eq!(results.len(), 10);
     for (i, row) in results.iter().enumerate() {
@@ -331,18 +329,18 @@ fn test_parse_mail_batched() {
     }
 
     // Parse with max_records_per_batch = 10 (forces 3+ batches over 30 emails)
-    parser::parse_mail_at(
+    process_mailing_list(
         mailing_list,
         &input_dir,
         &output_dir,
-        true,    // fail_on_error
-        10,      // max_records_per_batch
-        50_000,  // max_raw_bytes_per_batch
+        true,   // fail_on_error
+        10,     // max_records_per_batch
+        50_000, // max_raw_bytes_per_batch
     )
     .unwrap();
 
     let output_parquet = output_dir
-        .join("parsed")
+        .join("dataset")
         .join(format!("list={}", mailing_list))
         .join("list_data.parquet");
 

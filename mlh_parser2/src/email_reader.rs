@@ -11,10 +11,8 @@ static HEADER_LINE_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 static EMAIL_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$",
-    )
-    .unwrap()
+    Regex::new(r"^[\s]*([^<]*?)?\s*<?([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})>?\s*$")
+        .unwrap()
 });
 
 static EMAIL_OBFUSCATED_A_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
@@ -93,6 +91,20 @@ fn score_email_address(value: &str) -> (bool, bool, Option<&'static str>) {
     (false, false, None)
 }
 
+fn select_best_from_header(values: &[String]) -> String {
+    if values.is_empty() {
+        return String::new();
+    }
+    if values.len() == 1 {
+        return normalize_email(&values[0]);
+    }
+
+    let mut scored: Vec<((bool, bool, Option<&str>), &String)> =
+        values.iter().map(|v| (score_email_address(v), v)).collect();
+    scored.sort_by(|a, b| b.0.cmp(&a.0));
+    normalize_email(scored[0].1)
+}
+
 fn normalize_email(value: &str) -> String {
     if let Some(caps) = EMAIL_OBFUSCATED_A_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
@@ -121,22 +133,7 @@ fn normalize_email(value: &str) -> String {
     value.to_string()
 }
 
-fn select_best_from_header(values: &[String]) -> String {
-    if values.is_empty() {
-        return String::new();
-    }
-    if values.len() == 1 {
-        return normalize_email(&values[0]);
-    }
-
-    let mut scored: Vec<((bool, bool, Option<&str>), &String)> = values
-        .iter()
-        .map(|v| (score_email_address(v), v))
-        .collect();
-    scored.sort_by(|a, b| b.0.cmp(&a.0));
-    normalize_email(scored[0].1)
-}
-
+/// some malformed emails leak the From headers into the body
 fn extract_all_from_from_body(raw_email: &[u8]) -> Vec<String> {
     let email_text = String::from_utf8_lossy(raw_email);
     let mut candidates = Vec::new();
@@ -167,45 +164,12 @@ fn extract_all_from_from_body(raw_email: &[u8]) -> Vec<String> {
     candidates
 }
 
-fn clean_body_leading_headers(body: &str) -> String {
-    if body.is_empty() {
-        return body.to_string();
-    }
-
-    let lines: Vec<&str> = body.lines().collect();
-    let mut start_idx = 0;
-
-    for (i, line) in lines.iter().enumerate() {
-        let stripped = line.trim();
-        if stripped.is_empty() {
-            start_idx = i + 1;
-            break;
-        }
-        if HEADER_LINE_PATTERN.is_match(stripped) {
-            start_idx = i + 1;
-        } else {
-            break;
-        }
-    }
-
-    while start_idx < lines.len() && lines[start_idx].trim().is_empty() {
-        start_idx += 1;
-    }
-
-    if start_idx == 0 {
-        body.to_string()
-    } else {
-        lines[start_idx..].join("\n")
-    }
-}
-
-// --- Public API ---
-
 pub fn decode_mail(email_raw: &[u8]) -> Option<Message<'_>> {
     MessageParser::default().parse(email_raw)
 }
 
-pub fn get_headers(msg: &Message<'_>, raw_email: &[u8]) -> HashMap<String, String> {
+/// evaluate the headers using some info from the body to beter guide selection
+pub fn get_headers(msg: &Message<'_>) -> HashMap<String, String> {
     let mut headers: HashMap<String, String> = HashMap::new();
     let mut from_candidates: Vec<String> = Vec::new();
 
@@ -228,17 +192,22 @@ pub fn get_headers(msg: &Message<'_>, raw_email: &[u8]) -> HashMap<String, Strin
     }
 
     if from_candidates.is_empty()
-        && let Some(from) = msg.from() {
-            for addr in from.iter() {
-                from_candidates.push(addr_to_string(addr));
-            }
+        && let Some(from) = msg.from()
+    {
+        for addr in from.iter() {
+            from_candidates.push(addr_to_string(addr));
         }
+    }
 
-    let body_from = extract_all_from_from_body(raw_email);
+    let body_from = extract_all_from_from_body(&msg.raw_message);
+
     from_candidates.extend(body_from);
 
     if !from_candidates.is_empty() {
-        headers.insert("from".to_string(), select_best_from_header(&from_candidates));
+        headers.insert(
+            "from".to_string(),
+            select_best_from_header(&from_candidates),
+        );
     }
 
     headers
@@ -269,7 +238,8 @@ pub fn get_body(msg: &Message<'_>) -> String {
         }
     }
 
+    // join multi part messages
     let body = body_parts.join("\n");
-    let body = body.replace("\r\n", "\n");
-    clean_body_leading_headers(&body)
+    // replace CRLF for line feed
+    body.replace("\r\n", "\n")
 }

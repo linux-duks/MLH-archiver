@@ -1,5 +1,5 @@
 use arrow::array::{Array, StringArray};
-use mlh_archiver::archive_writer::{parquet_email_store_schema, EmailData};
+use mlh_archiver::archive_writer::{EmailData, parquet_email_store_schema};
 use parquet::arrow::arrow_reader::{
     ArrowReaderOptions, ParquetRecordBatchReader, ParquetRecordBatchReaderBuilder,
 };

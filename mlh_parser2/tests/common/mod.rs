@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+// why cant clippy not find these functions being used in other test files ?
+
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -32,10 +35,7 @@ pub fn list_files_with_extension(directory: &str, extension: &str) -> Vec<PathBu
     files
 }
 
-pub fn map_to_file_extensions(
-    email_file_path: &Path,
-    extensions: &[&str],
-) -> Vec<PathBuf> {
+pub fn map_to_file_extensions(email_file_path: &Path, extensions: &[&str]) -> Vec<PathBuf> {
     let stem = email_file_path
         .file_stem()
         .unwrap_or_default()

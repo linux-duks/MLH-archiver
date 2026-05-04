@@ -1,4 +1,4 @@
-use chrono::{Datelike, DateTime, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveDateTime, TimeZone, Utc};
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -109,51 +109,44 @@ pub fn fix_millennium_date(
     let year = date_obj.year();
     let max_year = now.year();
     let adjusted = year + 1900;
-    if year < 1900 && adjusted <= max_year
+    if year < 1900
+        && adjusted <= max_year
         && let Some(new_date) = NaiveDate::from_ymd_opt(adjusted, date_obj.month(), date_obj.day())
-        {
-            let time = date_obj.time();
-            let naive = new_date.and_time(time);
-            let utc = Utc.from_utc_datetime(&naive);
-            let offset = date_obj.offset();
-            if let Some(fixed) = FixedOffset::east_opt(offset.local_minus_utc()) {
-                return utc.with_timezone(&fixed);
-            }
+    {
+        let time = date_obj.time();
+        let naive = new_date.and_time(time);
+        let utc = Utc.from_utc_datetime(&naive);
+        let offset = date_obj.offset();
+        if let Some(fixed) = FixedOffset::east_opt(offset.local_minus_utc()) {
+            return utc.with_timezone(&fixed);
         }
+    }
     date_obj
 }
 
-pub fn find_other_date_entries(
-    email_dict: &HashMap<String, String>,
-) -> Vec<DateTime<FixedOffset>> {
+pub fn find_other_date_entries(email_dict: &HashMap<String, String>) -> Vec<DateTime<FixedOffset>> {
     let mut value_list = Vec::new();
     for header in &["received", "x-received"] {
         if let Some(values_str) = email_dict.get(*header) {
             let res = find_date_in_string(values_str);
             if let Some(date_str) = res
-                && let Some(parsed) = parse_date_tentative_raw(&date_str) {
-                    value_list.push(parsed);
-                }
+                && let Some(parsed) = parse_date_tentative_raw(&date_str)
+            {
+                value_list.push(parsed);
+            }
         }
     }
     value_list
 }
 
-pub fn process_date(
-    email_dict: &mut HashMap<String, String>,
-    now: DateTime<FixedOffset>,
-) {
+pub fn process_date(email_dict: &mut HashMap<String, String>, now: DateTime<FixedOffset>) {
     let raw_date = email_dict
         .get("date")
         .cloned()
         .map(|d| vec![d])
         .unwrap_or_default();
 
-    let client_date: Vec<String> = raw_date
-        .iter()
-        .filter(|d| !d.is_empty())
-        .cloned()
-        .collect();
+    let client_date: Vec<String> = raw_date.iter().filter(|d| !d.is_empty()).cloned().collect();
     email_dict.insert("client-date".to_string(), client_date.join("||"));
 
     let mut date_options: Vec<DateTime<FixedOffset>> = Vec::new();
@@ -161,9 +154,10 @@ pub fn process_date(
         if !date.is_empty() {
             let trimmed = date.trim();
             if let Some(date_str) = find_date_in_string(trimmed)
-                && let Some(dt) = parse_date_tentative_raw(&date_str) {
-                    date_options.push(dt);
-                }
+                && let Some(dt) = parse_date_tentative_raw(&date_str)
+            {
+                date_options.push(dt);
+            }
         }
     }
 

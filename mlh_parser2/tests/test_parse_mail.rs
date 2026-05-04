@@ -1,4 +1,7 @@
-use mlh_parser2::{BATCH_MAX_RAW_BYTES, BATCH_MAX_RECORDS, parser::parse_mail_at};
+use mlh_parser2::{
+    constants::{BATCH_MAX_RAW_BYTES, BATCH_MAX_RECORDS},
+    process_mailing_list,
+};
 use std::fs;
 use tempfile::TempDir;
 
@@ -10,7 +13,14 @@ fn test_parse_empty_directory() {
     fs::create_dir_all(&list_dir).unwrap();
     let output_base = temp_dir.path().join("output");
 
-    let result = parse_mail_at("empty_list", &input_base, &output_base, false, BATCH_MAX_RECORDS, BATCH_MAX_RAW_BYTES);
+    let result = process_mailing_list(
+        "empty_list",
+        &input_base,
+        &output_base,
+        false,
+        BATCH_MAX_RECORDS,
+        BATCH_MAX_RAW_BYTES,
+    );
     assert!(result.is_ok());
 }
 
@@ -34,11 +44,18 @@ fn test_parse_single_eml() {
     );
     fs::write(list_dir.join("test.eml"), eml_content).unwrap();
 
-    let result = parse_mail_at("test_list", &input_base, &output_base, false,BATCH_MAX_RECORDS, BATCH_MAX_RAW_BYTES);
+    let result = process_mailing_list(
+        "test_list",
+        &input_base,
+        &output_base,
+        false,
+        BATCH_MAX_RECORDS,
+        BATCH_MAX_RAW_BYTES,
+    );
     assert!(result.is_ok());
 
     let parquet_path = output_base
-        .join("parsed")
+        .join("dataset")
         .join("list=test_list")
         .join("list_data.parquet");
     assert!(parquet_path.exists());

@@ -58,13 +58,10 @@ fn test_header_parser() {
         let expected_headers = parse_headers_file(headers_file);
 
         let mail = decode_mail(&mail_bytes).unwrap();
-        let actual_headers = get_headers(&mail, &mail_bytes);
+        let actual_headers = get_headers(&mail);
 
         for (key, expected_value) in &expected_headers {
-            let actual_value = actual_headers
-                .get(key)
-                .cloned()
-                .unwrap_or_default();
+            let actual_value = actual_headers.get(key).cloned().unwrap_or_default();
             assert_eq!(
                 actual_value, *expected_value,
                 "Header mismatch for '{}' in {:?}",

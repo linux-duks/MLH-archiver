@@ -2,6 +2,12 @@ use std::sync::{Arc, LazyLock};
 
 use arrow::datatypes::{DataType, Field, Fields, Schema, TimeUnit};
 
+/// Batch limits to stay well under Arrow's i32 string-offset ceiling (~2.1 GB)
+/// These values are only specified here to me modified in tests, so we dont need
+/// to create multiples of 2GBs of data to validate the batching behaviour
+pub const BATCH_MAX_RECORDS: usize = 50_000;
+pub const BATCH_MAX_RAW_BYTES: usize = 400 * 1024 * 1024; // 400 MB
+
 pub const SIGNED_BLOCK: &str = "trailers";
 
 pub const SINGLE_VALUED_COLS: &[&str] = &[

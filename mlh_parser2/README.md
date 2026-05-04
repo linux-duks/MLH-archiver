@@ -72,8 +72,8 @@ INPUT_DIR="../output" OUTPUT_DIR="../parser_output" uv run src/main.py
 | Directory | Purpose |
 |-----------|---------|
 | `../output/` | Input: Raw email files from archiver |
-| `../parser_output/parsed/` | Output: Parquet dataset |
-| `../parser_output/<list>/errors/` | Failed parses |
+| `../parser_output/dataset/` | Output: Parquet dataset |
+| `../parser_output/errors/` | Failed parses |
 
 ### Input Formats
 
@@ -102,7 +102,7 @@ Both `.eml` and `.parquet` files can coexist in the same input directory — the
 The parser produces a Parquet dataset with Hive partitioning:
 
 ```
-parser_output/parsed/
+parser_output/dataset/
 ├── mailing_list=dev.rcpassos.me.lists.gfs2/
 │   ├── part-0.parquet
 │   └── part-1.parquet
@@ -122,7 +122,7 @@ The Parquet dataset includes the following columns:
 | `to` | list\<string\> | Recipients (To field) |
 | `cc` | list\<string\> | CC recipients |
 | `subject` | string | Email subject line |
-| `date` | datetime | Parsed email date (corrected) |
+| `date` | datetime | dataset email date (corrected) |
 | `client-date` | list\<string\> | Raw date from email client (may be incorrect) |
 | `in-reply-to` | string | In-Reply-To header |
 | `references` | list\<string\> | References headers |
@@ -283,8 +283,8 @@ This allows you to:
 ```python
 import polars as pl
 
-# Read the parsed dataset
-df = pl.scan_parquet("../parser_output/parsed/**/*.parquet")
+# Read the dataset dataset
+df = pl.scan_parquet("../parser_output/dataset/**/*.parquet")
 
 # Query emails by subject
 result = (
@@ -302,9 +302,9 @@ result = (
 use polars::prelude::*;
 
 fn main() -> PolarsResult<()> {
-    // Read the parsed dataset
+    // Read the dataset dataset
     let mut args = ScanArgsParquet::default();
-    let df = LazyFrame::scan_parquet("../parser_output/parsed/**/*.parquet", args)?
+    let df = LazyFrame::scan_parquet("../parser_output/dataset/**/*.parquet", args)?
         .filter(col("subject").str().contains(lit("example"), true))
         .select([col("date"), col("from"), col("subject")])
         .collect()?;
@@ -330,7 +330,7 @@ tests/
 │   └── 14.headers.pytest   # Expected headers (raw format)
 ├── date_cases/              # Date parsing test cases
 │   ├── org.kernel...6592.eml           # Raw email file
-│   └── org.kernel...6592.date.pytest   # Expected parsed date
+│   └── org.kernel...6592.date.pytest   # Expected dataset date
 ├── test_complete_parsers.py  # Test runner for complete cases
 ├── test_base_email_parsers.py  # Tests for body and header parsing
 ├── test_dates.py             # Test runner for date parsing
@@ -350,14 +350,14 @@ Test files are grouped by a common prefix:
 | `<prefix>.code.pytest` | Expected code patches (Python list literal) |
 | `<prefix>.body.pytest` | Expected email body |
 | `<prefix>.headers.pytest` | Expected headers (raw format) |
-| `<prefix>.date.pytest` | Expected parsed date (first line is the date) |
+| `<prefix>.date.pytest` | Expected dataset date (first line is the date) |
 | `<prefix>.client-date.pytest` | Expected raw client dates (one per line) |
 
 #### Adding New Test Cases
 
 1. **Save the raw email**: Place your `.eml` file in the appropriate directory (`complete_cases/` or `date_cases/`)
 
-2. **Create expected output files**: For each `.eml` file, create corresponding `.pytest` files with the expected parsed values as Python literals:
+2. **Create expected output files**: For each `.eml` file, create corresponding `.pytest` files with the expected dataset values as Python literals:
 
    ```python
    # Example: 14.trailers.pytest
