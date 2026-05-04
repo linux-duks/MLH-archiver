@@ -30,6 +30,7 @@ pub use entities::{Attribution, ParsedEmail};
 
 use chrono::FixedOffset;
 use std::fs;
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc, Mutex,
@@ -169,26 +170,17 @@ pub fn process_mailing_list(
     max_raw_bytes_per_batch: usize,
 ) -> Result<()> {
     let list_input_path = input_dir.join(mailing_list);
-    let list_output_path = output_dir.join(mailing_list);
 
-    let parquet_dir_path = output_dir.join("dataset");
-    let success_output_path = parquet_dir_path.join(format!("list={}", mailing_list));
+    let success_output_path = output_dir
+        .join("dataset")
+        .join(format!("list={}", mailing_list));
     let parquet_path = success_output_path.join(PARQUET_FILE_NAME);
 
-    // TODO: generate linearity from yaml
     let lineage_dir_path = output_dir.join("lineage");
-    // only create if needed
     let error_output_path = output_dir.join(format!("errors/list={}", mailing_list));
 
-    if !list_output_path.is_dir() {
-        log::info!("First parse of list '{}'", mailing_list);
-        fs::create_dir_all(&parquet_dir_path)?;
-        fs::create_dir_all(&list_output_path)?;
-        fs::create_dir_all(&success_output_path)?;
-        fs::create_dir_all(&lineage_dir_path)?;
-        // clean errors from previous parse
-        remove_previous_errors(&error_output_path)?;
-    }
+    fs::create_dir_all(&success_output_path)?;
+    fs::create_dir_all(&lineage_dir_path)?;
 
     let files = collect_email_files(&list_input_path);
 
@@ -207,24 +199,36 @@ pub fn process_mailing_list(
     let mut batch_raw_body_bytes: usize = 0;
     let mut total_parsed: usize = 0;
     let mut arrow_writer: Option<dataset_writer::DatasetWriter> = None;
+    let mut error_writer: Option<BufWriter<fs::File>> = None;
 
     // created the email iterator
     let emails = email_file_reader::file_iterator(files);
 
     for row in emails {
         let row = row?;
+        let content = row.content;
+        let email_id = row.email_id;
 
-        match email_parser::parse_email(row.content.as_bytes(), now) {
+        match email_parser::parse_email(content.as_bytes(), now) {
             Ok(email) => {
                 let raw_len = email.raw_body.len();
-                batch_emails.push((email, row.email_id));
+                batch_emails.push((email, email_id));
                 batch_raw_body_bytes += raw_len;
             }
             Err(e) => {
-                log::error!("Failed to parse email {}: {}", row.email_id, e);
+                log::error!("Failed to parse email {}: {}", email_id, e);
                 if fail_on_error {
                     return Err(Box::new(e));
                 }
+                if error_writer.is_none() {
+                    fs::create_dir_all(&error_output_path)?;
+                    let csv_path = error_output_path.join("errors.csv");
+                    let file = fs::File::create(&csv_path)?;
+                    error_writer = Some(BufWriter::new(file));
+                }
+                let msg_flat = e.to_string().replace('\n', "\\n");
+                let line = csv_escape(&email_id, &msg_flat);
+                writeln!(error_writer.as_mut().unwrap(), "{line}")?;
             }
         }
 
@@ -284,17 +288,15 @@ pub fn get_email_id(email_content: &str) -> std::result::Result<String, ParseErr
     Err(ParseError::NoMessageId)
 }
 
-/// Deletes all files inside a given errors directory (cleans previous run errors).
-pub fn remove_previous_errors(errors_dir: &Path) -> std::result::Result<(), std::io::Error> {
-    if errors_dir.is_dir() {
-        for entry in fs::read_dir(errors_dir)? {
-            let entry = entry?;
-            if entry.file_type()?.is_file() {
-                fs::remove_file(entry.path())?;
-            }
+fn csv_escape(email_id: &str, error_msg: &str) -> String {
+    let esc = |s: &str| -> String {
+        if s.contains(',') || s.contains('"') || s.contains('\n') {
+            format!("\"{}\"", s.replace('"', "\"\""))
+        } else {
+            s.to_string()
         }
-    }
-    Ok(())
+    };
+    format!("{},{}", esc(email_id), esc(error_msg))
 }
 
 fn collect_email_files(input_dir: &Path) -> Vec<PathBuf> {
