@@ -274,38 +274,33 @@ See [`containers.mk`](containers.mk) for the detection logic.
 
 ### peek-files
 
-Quick inspection tool for Parquet files and directories located in [`scripts/peek_files.py`](scripts/peek_files.py).
+Quick inspection tool for Parquet files and directories located in [`scripts/peek_parquet/peek_files.py`](scripts/peek_parquet/peek_files.py). Two modes are available:
 
-```bash
-# Using devbox
-devbox run peek <path>
-
-# Using make 
-make peek PEEK_PATH=<path>
-
-# Using uv directly
-uv run scripts/peek_parquet/peek_files.py <path>
-```
-
-**Features:**
-
-- DataFrame preview (shows first 10 rows)
-- Total row count
-- Row count per partition (if hive-partitioned)
-- Schema display
-
-**Examples:**
+**Inspection mode** — Open a file or directory to browse schema, row counts, and data preview:
 
 ```bash
 # Inspect a single parquet file
-devbox run peek-files parser_output/parsed/list=dev.rcpassos.me.lists.gfs2/list_data.parquet
+devbox run peek parser_output/parsed/list=dev.rcpassos.me.lists.gfs2/list_data.parquet
 
-# Inspect a directory (automatically finds all .parquet files)
-devbox run peek-files parser_output/parsed/
-
-# Inspect the raw archiver output
-devbox run peek-files ./output/
+# Inspect a directory (finds all .parquet files under it)
+devbox run peek output/
 ```
+
+**Row lookup mode** (`--select-by-column`) — Search across all parquet files in a directory for rows matching a column value. Each matching row is printed with all its fields:
+
+```bash
+# Look up by email_id (default column)
+devbox run peek output/ --select-by-column 0000000056-e0-5dadd9f0f9884ed3852f090bd05eed898db64966
+
+# Look up by a different column
+devbox run peek output/ --select-by-column "Alice" --column from_name
+```
+
+| Option | Description |
+|--------|-------------|
+| `<PATH>` | Path to a parquet file or directory (inspection mode) |
+| `--select-by-column <VALUE>` | Enable row lookup mode: search for rows matching this value |
+| `--column <NAME>` | Column to search in (default: `email_id`) |
 
 ### check-git
 

@@ -4,13 +4,14 @@ Peek into Parquet files or directories.
 
 Usage:
     peek-files <path>
-    peek-files --dir <path>
+    peek-files <path> --select-by-column <value> [--column <name>]
 
 Displays:
     - DataFrame preview (df.show())
     - Total row count
     - Row count per partition (if hive-partitioned)
     - Schema
+    - Row lookup by column value (--select-by-column)
 """
 
 import sys
@@ -19,23 +20,51 @@ from pathlib import Path
 import polars as pl
 
 
-def parse_args(args: list[str]) -> str:
-    """Parse command line arguments and return the target path."""
+def parse_args(args: list[str]) -> dict:
+    """Parse command line arguments and return a dict of options."""
     if not args:
         print("Usage: peek-files <path>")
-        print("       peek-files --dir <path>")
-        print("  path: Path to a parquet file or directory")
+        print("       peek-files <path> --select-by-column <value> [--column <name>]")
+        print("  path:              Path to a parquet file or directory")
+        print("  --select-by-column: Value to search for")
+        print("  --column:           Column name to search in (default: email_id)")
         sys.exit(1)
 
-    # Support --dir flag
-    if args[0] == "--dir":
-        if len(args) < 2:
-            print("Error: --dir requires a path argument")
-            sys.exit(1)
-        return args[1]
+    result = {"path": None, "select_value": None, "select_column": "email_id"}
 
-    # Positional argument
-    return args[0]
+    i = 0
+    positional = []
+    while i < len(args):
+        if args[i] == "--dir":
+            i += 1
+            if i >= len(args):
+                print("Error: --dir requires a path argument")
+                sys.exit(1)
+            result["path"] = args[i]
+        elif args[i] == "--select-by-column":
+            i += 1
+            if i >= len(args):
+                print("Error: --select-by-column requires a value argument")
+                sys.exit(1)
+            result["select_value"] = args[i]
+        elif args[i] == "--column":
+            i += 1
+            if i >= len(args):
+                print("Error: --column requires a name argument")
+                sys.exit(1)
+            result["select_column"] = args[i]
+        else:
+            positional.append(args[i])
+        i += 1
+
+    if result["path"] is None and positional:
+        result["path"] = positional[0]
+
+    if result["path"] is None:
+        print("Error: path argument is required")
+        sys.exit(1)
+
+    return result
 
 
 def expand_path(path_str: str) -> Path:
@@ -163,8 +192,45 @@ def show_directory_info(path: Path, parquet_files: list[Path]) -> None:
         df_preview.show()
 
 
+def select_by_column(parquet_files: list[Path], column: str, value: str) -> None:
+    """Search across all parquet files for rows matching column=value and print them."""
+    print(f"\nSearching for {column}='{value}' across {len(parquet_files)} file(s)...")
+    print()
+
+    found = 0
+    for pf in parquet_files:
+        try:
+            df = pl.read_parquet(pf)
+        except Exception as e:
+            print(f"  Warning: Could not read {pf}: {e}")
+            continue
+
+        if column not in df.columns:
+            continue
+
+        mask = df[column].cast(pl.Utf8) == value
+        matches = df.filter(mask)
+
+        if matches.is_empty():
+            continue
+
+        for row in matches.iter_rows(named=True):
+            if found > 0:
+                print("------")
+            for col_name, col_value in row.items():
+                print(f"{col_name}: {col_value!r}")
+            found += 1
+
+    if found == 0:
+        print(f"No rows found with {column}='{value}'")
+    else:
+        print()
+        print(f"Found {found} matching row(s)")
+
+
 def main():
-    path_str = parse_args(sys.argv[1:])
+    opts = parse_args(sys.argv[1:])
+    path_str = opts["path"]
     path = expand_path(path_str)
 
     print(f"Inspecting: {path}")
@@ -178,6 +244,10 @@ def main():
     if not parquet_files:
         print(f"No parquet files found at: {path}")
         sys.exit(1)
+
+    if opts["select_value"] is not None:
+        select_by_column(parquet_files, opts["select_column"], opts["select_value"])
+        return
 
     if len(parquet_files) == 1 and path.is_file():
         show_file_info(path)

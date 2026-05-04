@@ -1,6 +1,6 @@
 **/target
 output*
-data*
+data
 archiver_output**
 anonymizer_output**
 parser_output**
