@@ -179,7 +179,7 @@ impl Worker for NNTPWorker {
                         log::warn!(
                             "W{}: failed with a network error while reading {list_name}. Error {}",
                             self.id,
-                            &err
+                            err
                         );
                         // if connection error was returned, sleep a bit, checking shutdown
                         let sleep_duration = Duration::from_secs(10);
@@ -198,7 +198,7 @@ impl Worker for NNTPWorker {
                         log::error!(
                             "W{}: failed while processing {list_name} with error {}",
                             self.id,
-                            &err
+                            err
                         );
                     }
 

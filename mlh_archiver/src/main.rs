@@ -24,7 +24,10 @@ fn main() -> Result<()> {
         env_logger::init_from_env(env);
     }
 
-    log::info!("mlh_archiver starting — build: {}", env!("CARGO_PKG_VERSION"));
+    log::info!(
+        "mlh_archiver starting — build: {}",
+        env!("CARGO_PKG_VERSION")
+    );
 
     let mut app_config = match config::read_config() {
         Ok(cfg) => cfg,

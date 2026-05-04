@@ -82,17 +82,33 @@ struct EmailScore {
 fn score_email_address(value: &str) -> EmailScore {
     if let Some(caps) = EMAIL_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return EmailScore { has_name: !name.is_empty(), is_standard: true, obfuscation: None };
+        return EmailScore {
+            has_name: !name.is_empty(),
+            is_standard: true,
+            obfuscation: None,
+        };
     }
     if let Some(caps) = EMAIL_OBFUSCATED_A_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return EmailScore { has_name: !name.is_empty(), is_standard: false, obfuscation: Some("(a)") };
+        return EmailScore {
+            has_name: !name.is_empty(),
+            is_standard: false,
+            obfuscation: Some("(a)"),
+        };
     }
     if let Some(caps) = EMAIL_OBFUSCATED_AT_PATTERN.captures(value) {
         let name = caps.get(1).map_or("", |m| m.as_str()).trim();
-        return EmailScore { has_name: !name.is_empty(), is_standard: false, obfuscation: Some(" at ") };
+        return EmailScore {
+            has_name: !name.is_empty(),
+            is_standard: false,
+            obfuscation: Some(" at "),
+        };
     }
-    EmailScore { has_name: false, is_standard: false, obfuscation: None }
+    EmailScore {
+        has_name: false,
+        is_standard: false,
+        obfuscation: None,
+    }
 }
 
 fn select_best_from_header(values: &[String]) -> String {
@@ -194,7 +210,7 @@ pub fn get_headers(msg: &Message<'_>) -> HashMap<String, String> {
             headers
                 .entry(key)
                 .and_modify(|existing| {
-                    *existing = format!("{}, {}", existing, &val_str);
+                    *existing = format!("{}, {}", existing, val_str);
                 })
                 .or_insert(val_str);
         }

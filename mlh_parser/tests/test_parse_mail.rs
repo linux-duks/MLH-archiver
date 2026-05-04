@@ -91,8 +91,14 @@ fn test_parse_errors_written_to_csv() {
     assert!(csv_path.exists(), "errors.csv should exist");
 
     let csv_content = fs::read_to_string(&csv_path).unwrap();
-    assert!(csv_content.contains("broken_01"), "should contain first email_id");
-    assert!(csv_content.contains("broken_02"), "should contain second email_id");
+    assert!(
+        csv_content.contains("broken_01"),
+        "should contain first email_id"
+    );
+    assert!(
+        csv_content.contains("broken_02"),
+        "should contain second email_id"
+    );
     assert!(
         csv_content.contains("Failed to decode email"),
         "should contain error message"
@@ -131,5 +137,8 @@ fn test_parse_errors_csv_forwarding_newlines() {
     // The CSV should contain exactly one line (no trailing empty line from
     // writeln, though the last file read may leave one — we check that no
     // raw \n appears inside a field)
-    assert!(!csv_content.contains("\"\n\""), "fields should not contain raw newlines");
+    assert!(
+        !csv_content.contains("\"\n\""),
+        "fields should not contain raw newlines"
+    );
 }

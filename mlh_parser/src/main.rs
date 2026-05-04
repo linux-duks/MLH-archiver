@@ -1,6 +1,9 @@
 #[cfg(not(feature = "otel"))]
 use env_logger::Env;
 
+#[cfg(feature = "otel")]
+use mlh_archiver::otel;
+
 use mlh_parser::Result;
 use mlh_parser::config;
 use mlh_parser::start;
