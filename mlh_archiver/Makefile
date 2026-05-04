@@ -66,18 +66,45 @@ debug:
 
 .PHONY: test
 test:
-	@echo "==> Running archiver tests..."
-	@cargo test
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "==> Found Rust toolchain, running tests natively..."; \
+		cargo test; \
+	else \
+		echo "==> Rust toolchain not found, running tests with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-v $(REPO_ROOT):/usr/src/app:z \
+			-w /usr/src/app \
+			$(RUST_DOCKER_IMAGE) \
+			cargo test; \
+	fi
 
 .PHONY: doc
 doc:
-	@echo "==> Generating Rust API documentation..."
-	@cargo doc --document-private-items --open
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "==> Found Rust toolchain, generating docs natively..."; \
+		cargo doc --document-private-items --open; \
+	else \
+		echo "==> Rust toolchain not found, generating docs with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-v $(REPO_ROOT):/usr/src/app:z \
+			-w /usr/src/app \
+			$(RUST_DOCKER_IMAGE) \
+			cargo doc --document-private-items --open; \
+	fi
 
 .PHONY: clean
 clean:
 	@echo "==> Cleaning up archiver build artifacts..."
-	@cargo clean
+	@if command -v cargo >/dev/null 2>&1; then \
+		cargo clean; \
+	else \
+		echo "==> Rust toolchain not found, removing target directory directly..."; \
+		rm -rf $(REPO_ROOT)/target; \
+	fi
 	@rm -f ./$(BINARY_NAME).out
 
 

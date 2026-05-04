@@ -18,4 +18,18 @@ rebuild:
 
 .PHONY: debug
 debug:
-	INPUT_DIR="../parser_output/parsed" uv run src/make_analysis.py
+	@if command -v uv >/dev/null 2>&1; then \
+		echo "==> Found uv toolchain, running natively..."; \
+		INPUT_DIR="../parser_output/parsed" uv run src/make_analysis.py; \
+	else \
+		echo "==> uv toolchain not found, running with Docker..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-e INPUT_DIR=/data/parsed \
+			-v ../parser_output/parsed:/data/parsed:z \
+			-v .:/usr/src/app:z \
+			-w /usr/src/app \
+			ghcr.io/astral-sh/uv:python3.14-trixie-slim \
+			bash -c "uv sync --locked && uv run src/make_analysis.py"; \
+	fi

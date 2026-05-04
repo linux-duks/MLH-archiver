@@ -41,7 +41,23 @@ rebuild:
 
 .PHONY: debug
 debug:
-	INPUT_DIR="../parser_output/dataset" OUTPUT_DIR="../anonymizer_output" uv run src/main.py
+	@if command -v uv >/dev/null 2>&1; then \
+		echo "==> Found uv toolchain, running natively..."; \
+		INPUT_DIR="../parser_output/dataset" OUTPUT_DIR="../anonymizer_output" uv run src/main.py; \
+	else \
+		echo "==> uv toolchain not found, running with Docker (Image: $(PYTHON_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-e INPUT_DIR=/data/dataset \
+			-e OUTPUT_DIR=/data/output \
+			-v ../parser_output/dataset:/data/dataset:z \
+			-v ../anonymizer_output:/data/output:z \
+			-v .:/usr/src/app:z \
+			-w /usr/src/app \
+			$(PYTHON_DOCKER_IMAGE) \
+			bash -c "uv sync --locked && uv run src/main.py"; \
+	fi
 
 
 .PHONY: clean
