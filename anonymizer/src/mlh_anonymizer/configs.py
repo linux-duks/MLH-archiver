@@ -6,6 +6,16 @@ import math
 
 from mlh_anonymizer.constants import N_PROC_DEFAULT_MAX
 
+# ── Determine concurrency split ───────────────────────────────────
+# Strategy: keep worker-process count low, give Polars a healthy
+# share of threads per process for I/O and native parallelism.
+# Multiplier / N_PROC_DEFAULT_MAX control the balance.
+# Both values are overridable via environment variables.
+
+_cpu_count = multiprocessing.cpu_count()
+
+_proc_multiplier_denominator = 12
+
 
 def _parse_n_proc() -> int:
     """Parse N_PROC from environment variable.
@@ -16,7 +26,18 @@ def _parse_n_proc() -> int:
     n_proc_env = os.getenv("N_PROC", "")
     if n_proc_env.isdecimal():
         return int(n_proc_env)
-    return max(math.ceil(multiprocessing.cpu_count() / 3), N_PROC_DEFAULT_MAX)
+    return max(1, min(math.ceil(_cpu_count / _proc_multiplier_denominator), N_PROC_DEFAULT_MAX))
+
+
+# Set POLARS_MAX_THREADS in the environment *before* any polars import.
+# Polars reads this env var at init time; if unset it defaults to all CPUs,
+# which combined with multiprocessing workers exhausts OS thread limits.
+_polars_threads_env = os.getenv("POLARS_MAX_THREADS", "")
+if _polars_threads_env:
+    os.environ["POLARS_MAX_THREADS"] = _polars_threads_env
+else:
+    _n_proc = _parse_n_proc()
+    os.environ["POLARS_MAX_THREADS"] = str(max(4, _cpu_count // (_n_proc + 1)))
 
 
 def _is_debug() -> bool:
