@@ -12,8 +12,6 @@ services:
     volumes:
       - ./src/:/app/src/
       - ./results/:/app/results/:z
-      - ../parser_output/parsed/:/input:z
+      - ../parser_output/dataset/:/input:z
       - ../anonymizer_output:/anonymousinput:z
-    ports:
-      - 8888:8888 
     command: uv run python src/make_analysis.py

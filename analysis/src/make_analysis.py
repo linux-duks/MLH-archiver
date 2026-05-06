@@ -8,19 +8,28 @@ import re
 
 sns.set_style("whitegrid")
 
+# in NNTP
+# LISTS_OF_INTEREST = [
+#     "org.freedesktop.lists.amd-gfx",
+#     "org.freedesktop.lists.intel-gfx",
+#     "org.kernel.vger.linux-iio",
+#     "org.kernel.vger.rust-for-linux",
+# ]
+# in PublicInbox
 LISTS_OF_INTEREST = [
-    "org.freedesktop.lists.amd-gfx",
-    "org.freedesktop.lists.intel-gfx",
-    "org.kernel.vger.linux-iio",
-    "org.kernel.vger.rust-for-linux",
+    "amd-gfx",
+    "intel-gfx",
+    "linux-iio",
+    "rust-for-linux",
 ]
 
-df = pl.read_parquet("/input/list=" + LISTS_OF_INTEREST[0] + "/list_data.parquet")
+
+df = pl.read_parquet("/input/list=" + LISTS_OF_INTEREST[0] + "/")
 df = df.with_columns(pl.lit(LISTS_OF_INTEREST[0]).alias("list"))
 
 for i in range(1, len(LISTS_OF_INTEREST)):
     new_list_df = pl.read_parquet(
-        "/input/list=" + LISTS_OF_INTEREST[i] + "/list_data.parquet"
+        "/input/list=" + LISTS_OF_INTEREST[i] + "/"
     )
     new_list_df = new_list_df.with_columns(pl.lit(LISTS_OF_INTEREST[i]).alias("list"))
     df.extend(new_list_df)
@@ -161,7 +170,7 @@ smallest_list = (999999999999999, "none")
 for subdir_name in os.listdir("/input/"):
     list_name = subdir_name.split("=")[1]
 
-    sub_df = pl.scan_parquet("/input/" + subdir_name + "/list_data.parquet")
+    sub_df = pl.scan_parquet("/input/" + subdir_name + "/")
     list_size = int(sub_df.describe()["from"][0])
 
     list_sizes.append(list_size)
