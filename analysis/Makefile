@@ -15,6 +15,7 @@ test:
 		$(CONTAINER) run --rm \
 			-it -u $(id -u):$(id -g) \
 			--network=host \
+			-e UV_CACHE_DIR=/tmp/.cache/uv \
 			-v .:/usr/src/app:z \
 			-w /usr/src/app \
 			$(PYTHON_DOCKER_IMAGE) \
@@ -40,6 +41,7 @@ run:
 				-e OUTPUT_DIR=./results/ \
 				-e GIT_COMMIT=$${GIT_COMMIT:-unknown} \
 				-e GIT_DATE=$${GIT_DATE:-unknown} \
+				-e UV_CACHE_DIR=/tmp/.cache/uv \
 				-v ../parser_output/dataset:/data/dataset:z \
 				-v ../anonymizer_output/:/data/anonymized:z \
 				-v .:/usr/src/app:z \
@@ -61,6 +63,7 @@ debug:
 			--network=host \
 			-e INPUT_DIR=/data/dataset,/data/anonymized \
 			-e OUTPUT_DIR=./results/ \
+			-e UV_CACHE_DIR=/tmp/.cache/uv \
 			-v ../parser_output/dataset:/data/dataset:z \
 			-v ../anonymizer_output/:/data/anonymized:z \
 			-v .:/usr/src/app:z \
