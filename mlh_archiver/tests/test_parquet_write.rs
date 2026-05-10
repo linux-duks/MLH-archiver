@@ -14,7 +14,6 @@ use mlh_archiver::nntp_source::nntp_config::NntpConfig;
 // Test helpers
 // =============================================================================
 
-/// RAII guard that removes the test directory on creation (clean start) and drop (clean exit).
 struct TestDirGuard {
     path: PathBuf,
 }
@@ -43,7 +42,6 @@ fn create_dummy_email(id: &str, line_count: usize) -> EmailData {
     }
 }
 
-/// Reads a parquet file into a vec of (email_id, content) pairs.
 fn read_parquet_file(path: &std::path::Path) -> Vec<(String, String)> {
     let file = std::fs::File::open(path).expect("Parquet file should be readable");
     let builder = ParquetRecordBatchReaderBuilder::try_new(file).unwrap();
@@ -84,7 +82,7 @@ fn test_parquet_store_multi_file_creation() {
 
     let mut store = ParquetEmailStore::new(base_path, 3);
 
-    // Add 10 emails — triggers flush at 3, 6, 9, and close flushes 10th → 4 files
+    // 10 emails — flushes at 3, 6, 9, and close flushes 10th → 4 files
     for i in 0..10 {
         store
             .add_email(create_dummy_email(&format!("email_{}", i), 1))
@@ -98,8 +96,8 @@ fn test_parquet_store_multi_file_creation() {
         assert!(path.exists(), "Expected emails_{}.parquet to exist", idx);
     }
     assert!(
-        !dir.join("emails_4.parquet").exists(),
-        "Should not create emails_4.parquet"
+        !dir.join("emails_004.parquet").exists(),
+        "Should not create emails_004.parquet"
     );
 }
 
@@ -111,7 +109,7 @@ fn test_parquet_store_multi_file_row_counts() {
 
     let mut store = ParquetEmailStore::new(base_path, 4);
 
-    // Add 10 emails: flushes at 4, 8, then close flushes 2 remaining → 3 files
+    // 10 emails: flushes at 4, 8, then close flushes 2 remaining → 3 files
     for i in 0..10 {
         store
             .add_email(create_dummy_email(&format!("email_{}", i), 1))
@@ -147,11 +145,11 @@ fn test_parquet_store_content_integrity_across_files() {
 
     // 5 emails → flushes at 2, 4, close flushes 1 → 3 files
     store.add_email(create_dummy_email("alpha", 2)).unwrap();
-    store.add_email(create_dummy_email("beta", 3)).unwrap(); // flush → file 0 has alpha, beta
+    store.add_email(create_dummy_email("beta", 3)).unwrap(); // file 0: alpha, beta
     store.add_email(create_dummy_email("gamma", 1)).unwrap();
-    store.add_email(create_dummy_email("delta", 2)).unwrap(); // flush → file 1 has gamma, delta
+    store.add_email(create_dummy_email("delta", 2)).unwrap(); // file 1: gamma, delta
     store.add_email(create_dummy_email("epsilon", 4)).unwrap();
-    store.close().unwrap(); // flush → file 2 has epsilon
+    store.close().unwrap(); // file 2: epsilon
 
     // File 0
     let f0 = read_parquet_file(&dir.join("emails_000.parquet"));
@@ -206,14 +204,14 @@ fn test_archive_writer_parquet_multi_file() {
         writer
             .archive_email("2", ["email two content", "second line"])
             .unwrap();
-        writer.archive_email("3", ["email three"]).unwrap(); // flush at 3
+        writer.archive_email("3", ["email three"]).unwrap(); // file 0
         writer.archive_email("4", ["email four content"]).unwrap();
         writer
             .archive_email("5", ["email five", "line two"])
             .unwrap();
-        writer.archive_email("6", ["email six"]).unwrap(); // flush at 6
+        writer.archive_email("6", ["email six"]).unwrap(); // file 1
         writer.archive_email("7", ["email seven final"]).unwrap();
-        // drop → close → flush remaining "7" → data_002.parquet
+        // drop → close → flush remaining "7" → file 2
     }
 
     let list_dir = base.join("test_list");
@@ -283,10 +281,9 @@ fn test_archive_writer_small_batch_exact_boundary() {
             WriteMode::Parquet { buffer_size: 2 },
         );
 
-        // Exactly 2 emails → 1 flush on close → 1 file
+        // Exactly 2 emails → 1 file on close
         writer.archive_email("a", ["content a"]).unwrap();
         writer.archive_email("b", ["content b"]).unwrap();
-        // Drop → close → flush both → 1 file
     }
 
     let list_dir = base.join("boundary_list");
@@ -360,10 +357,7 @@ fn test_archive_writer_empty_no_files() {
     }
 
     let list_dir = base.join("empty_list");
-    // Directory should exist (created by ProgressTracker::update or fs::create_dir_all)
-    // But no parquet files should exist
     assert!(!list_dir.join("data_000.parquet").exists());
-    // Progress/lineage should NOT exist (no emails processed)
     assert!(!list_dir.join("__progress.yaml").exists());
 }
 
