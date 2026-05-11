@@ -223,8 +223,12 @@ impl AppConfig {
         let key = run_mode.to_string();
         self.read_lists.insert(key, list_options);
 
+        let lists = ReadLists {
+            read_lists: self.read_lists.clone(),
+        };
+
         // Persist the full config to the default config file
-        match file_utils::write_yaml_truncate("archiver_config.yml", self) {
+        match file_utils::write_yaml_truncate("archiver_config_selected_lists.yaml", &lists) {
             Ok(_) => {
                 log::info!("Saved list selection to archiver_config.yml");
                 Ok(())
@@ -232,6 +236,12 @@ impl AppConfig {
             Err(e) => Err(ConfigError::Io(e)),
         }
     }
+}
+
+/// ReadLists used jut to write back to a file if needed
+#[derive(serde::Serialize)]
+struct ReadLists {
+    read_lists: HashMap<String, Vec<String>>,
 }
 
 /// Returns true if the pattern contains glob characters (`*` or `?`).
