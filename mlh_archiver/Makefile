@@ -35,8 +35,12 @@ build:
 			cargo build --release; \
 	fi
 
+.PHONY: create-output-dir
+create-output-dir:
+	@mkdir -p $(REPO_ROOT)/output/archiver
+
 .PHONY: run
-run:
+run: create-output-dir
 	@if [ ! -f $(TARGET_PATH) ]; then \
 		echo "==> Binary not found. Building first..."; \
 		$(MAKE) build; \

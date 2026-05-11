@@ -1,6 +1,15 @@
 # By default, 'make' will run the 'all' target
 .PHONY: all
-all: rebuild run
+all: create-output-dirs rebuild run
+
+
+# create output directories for all pipeline steps
+.PHONY: create-output-dirs
+create-output-dirs:
+	$(MAKE) -C mlh_archiver create-output-dir
+	$(MAKE) -C mlh_parser create-output-dir
+	$(MAKE) -C anonymizer create-output-dir
+	$(MAKE) -C analysis create-output-dir
 
 
 # run all targets in order, with timing
