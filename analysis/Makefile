@@ -1,5 +1,6 @@
-PARSER_OUTPUT_DIR=$(shell dirname $(CURDIR))/output/parser/dataset
-ANONYMIZER_OUTPUT_DIR=$(shell dirname $(CURDIR))/output/anonymizer
+REPO_ROOT := $(abspath $(CURDIR)/..)
+PARSER_OUTPUT_DIR=$(REPO_ROOT)/output/parser/dataset
+ANONYMIZER_OUTPUT_DIR=$(REPO_ROOT)/output/anonymizer
 
 # Include shared container runtime detection
 include ../containers.mk
@@ -25,8 +26,12 @@ test:
 			bash -c "uv sync --locked && uvx nox"; \
 	fi
 
+.PHONY: create-output-dir
+create-output-dir:
+	@mkdir -p $(REPO_ROOT)/output/analysis
+
 .PHONY: run
-run:
+run: create-output-dir
 	@if [ ! -d "../output/parser/dataset" ] || [ -z "$$(ls ../output/parser/dataset 2>/dev/null)" ]; then \
 		echo "==> Error: '../output/parser/dataset' directory is missing or empty."; \
 		echo "==> Please run the parser first to generate the dataset."; \

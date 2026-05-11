@@ -38,8 +38,12 @@ build:
 .PHONY: rebuild
 rebuild: clean build
 
+.PHONY: create-output-dir
+create-output-dir:
+	@mkdir -p $(REPO_ROOT)/output/parser
+
 .PHONY: run
-run:
+run: create-output-dir
 	@if [ ! -f $(TARGET_PATH) ]; then \
 		echo "==> Binary not found. Building first..."; \
 		$(MAKE) build; \
