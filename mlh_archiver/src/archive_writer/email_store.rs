@@ -31,7 +31,7 @@ impl fmt::Display for WriteMode {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             WriteMode::RawEmails => write!(f, "raw_email"),
-            WriteMode::Parquet { buffer_size } => write!(f, "parquet:{}", buffer_size),
+            WriteMode::Parquet { buffer_size } => write!(f, "'parquet:{}'", buffer_size),
         }
     }
 }

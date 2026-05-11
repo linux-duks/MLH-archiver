@@ -885,14 +885,14 @@ fn test_write_mode_display() {
     assert_eq!(WriteMode::RawEmails.to_string(), "raw_email");
     assert_eq!(
         WriteMode::Parquet { buffer_size: 5000 }.to_string(),
-        "parquet:5000"
+        "'parquet:5000'"
     );
     assert_eq!(
         WriteMode::Parquet {
             buffer_size: 10_000
         }
         .to_string(),
-        "parquet:10000"
+        "'parquet:10000'"
     );
 }
 

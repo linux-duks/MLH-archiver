@@ -23,6 +23,7 @@ pub mod email_reader;
 pub mod entities;
 pub mod errors;
 pub mod extractors;
+pub mod lineage_parser;
 
 use crate::constants::{BATCH_MAX_RECORDS, PARQUET_FILE_NAME};
 use crate::errors::ParseError;
@@ -94,6 +95,7 @@ pub fn start(cfg: &mut crate::config::AppConfig, shutdown_flag: Arc<AtomicBool>)
             });
         }
     });
+    lineage_parser::parse_lineage(&input_path, &output_path)?;
 
     if shutdown_flag.load(Ordering::Relaxed) {
         log::info!("Process exited via shutdown signal.");

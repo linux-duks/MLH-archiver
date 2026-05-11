@@ -40,14 +40,9 @@ use crate::config::{RunModeConfig, built_info};
 /// Shared build info string — computed once, cloned cheaply via `Arc`.
 static BUILD_INFO: LazyLock<Arc<str>> = LazyLock::new(|| {
     format!(
-        "Archiver v='{}' commit='{}' dirty='{}' build_time_utc='{}' target='{}' rustc='{}'",
+        "\"Archiver v='{}' commit='{}' build_time_utc='{}' target='{}' rustc='{}'\"",
         built_info::PKG_VERSION,
         built_info::GIT_VERSION.unwrap_or("unknown"),
-        match built_info::GIT_DIRTY {
-            Some(true) => "true",
-            Some(false) => "false",
-            None => "unknown",
-        },
         built_info::BUILT_TIME_UTC,
         built_info::TARGET,
         built_info::RUSTC_VERSION,
