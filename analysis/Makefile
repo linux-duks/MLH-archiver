@@ -1,6 +1,7 @@
 REPO_ROOT := $(abspath $(CURDIR)/..)
 PARSER_OUTPUT_DIR=$(REPO_ROOT)/output/parser/dataset
 ANONYMIZER_OUTPUT_DIR=$(REPO_ROOT)/output/anonymizer
+ANALYSIS_OUTPUT_DIR=$(REPO_ROOT)/output/analysis
 
 # Include shared container runtime detection
 include ../containers.mk
@@ -28,7 +29,7 @@ test:
 
 .PHONY: create-output-dir
 create-output-dir:
-	@mkdir -p $(REPO_ROOT)/output/analysis
+	@mkdir -p $(ANALYSIS_OUTPUT_DIR)
 
 .PHONY: run
 run: create-output-dir
@@ -45,13 +46,14 @@ run: create-output-dir
 			$(CONTAINER) run --rm -it \
 				--network=host \
 				-e INPUT_DIR=/data/dataset,/data/anonymized \
-				-e OUTPUT_DIR=./results/ \
+				-e OUTPUT_DIR=/output \
 				-e GIT_COMMIT=$${GIT_COMMIT:-unknown} \
 				-e GIT_DATE=$${GIT_DATE:-unknown} \
 				-e UV_CACHE_DIR=/tmp/.cache/uv \
 				-e UV_PROJECT_ENVIRONMENT=/tmp/.venv \
 				-v $(PARSER_OUTPUT_DIR):/data/dataset \
 				-v $(ANONYMIZER_OUTPUT_DIR):/data/anonymized \
+				-v $(ANALYSIS_OUTPUT_DIR):/output \
 				-v $(CURDIR):/usr/src/app \
 				-w /usr/src/app \
 				$(PYTHON_DOCKER_IMAGE) \
