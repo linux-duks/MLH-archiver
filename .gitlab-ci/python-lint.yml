@@ -1,0 +1,9 @@
+python-lint:anonymizer:
+  stage: lint
+  image: ghcr.io/astral-sh/uv:python3.14-alpine
+  rules:
+    - changes:
+        - anonymizer/**/*
+  script:
+    - cd anonymizer && uv sync --locked --all-extras --dev
+    - cd anonymizer && uvx ruff check src/

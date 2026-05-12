@@ -1,0 +1,26 @@
+python-tests:anonymizer:
+  stage: test
+  image: ghcr.io/astral-sh/uv:python3.14-alpine
+  rules:
+    - changes:
+        - anonymizer/**/*
+  script:
+    - cd anonymizer && uv sync --locked --all-extras --dev
+    - cd anonymizer && uv tool install nox
+    - cd anonymizer && uv tool run nox -s tests
+  artifacts:
+    when: always
+    paths:
+      - anonymizer/htmlcov/
+      - anonymizer/coverage-summary.md
+    expire_in: 7 days
+  after_script:
+    - apk add --no-cache curl > /dev/null 2>&1 || true
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -f anonymizer/coverage-summary.md ]; then
+        curl --silent --show-error --fail \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --data-urlencode "body@anonymizer/coverage-summary.md" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" \
+          || true
+      fi

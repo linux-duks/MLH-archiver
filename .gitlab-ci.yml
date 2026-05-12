@@ -1,0 +1,13 @@
+stages:
+  - lint
+  - test
+
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+
+include:
+  - local: .gitlab-ci/python-lint.yml
+  - local: .gitlab-ci/python-tests.yml
+  - local: .gitlab-ci/rust-lint.yml
+  - local: .gitlab-ci/rust-tests.yml
+  - local: .gitlab-ci/spell-check.yml

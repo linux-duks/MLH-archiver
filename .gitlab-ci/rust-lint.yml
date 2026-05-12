@@ -1,0 +1,62 @@
+.rust-lint-base: &rust-lint-base
+  image: rust:latest
+  variables:
+    RUST_BACKTRACE: 1
+    CARGO_TERM_COLOR: always
+    RUSTFLAGS: -Dwarnings
+  before_script:
+    - rustup component add clippy rustfmt
+
+rust-fmt:archiver:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_archiver/**/*
+  script:
+    - cd mlh_archiver && cargo fmt --check
+
+rust-clippy:archiver:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_archiver/**/*
+  script:
+    - cargo clippy --all-features --all-targets -p mlh_archiver
+
+cargo-doc:archiver:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_archiver/**/*
+  script:
+    - cargo doc --all-features --no-deps -p mlh_archiver
+
+rust-fmt:parser:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_parser/**/*
+  script:
+    - cd mlh_parser && cargo fmt --check
+
+rust-clippy:parser:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_parser/**/*
+  script:
+    - cargo clippy --all-features --all-targets -p mlh_parser
+
+cargo-doc:parser:
+  <<: *rust-lint-base
+  stage: lint
+  rules:
+    - changes:
+        - mlh_parser/**/*
+  script:
+    - cargo doc --all-features --no-deps -p mlh_parser
