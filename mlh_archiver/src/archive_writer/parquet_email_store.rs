@@ -24,7 +24,7 @@ pub struct ParquetEmailStore {
     /// Capped at 2048 to keep bytes per RecordBatch safely under i32::MAX (~2.15 GB).
     row_group_size: usize,
     writer_index: usize,
-    commited_files: Vec<String>,
+    committed_files: Vec<String>,
     writer: Option<ArrowWriter<File>>,
     current_filename: Option<String>,
     emails_in_current_file: usize,
@@ -57,7 +57,7 @@ impl ParquetEmailStore {
             max_emails_per_file,
             row_group_size,
             writer_index: 0,
-            commited_files: vec![],
+            committed_files: vec![],
             writer: None,
             current_filename: None,
             emails_in_current_file: 0,
@@ -92,7 +92,7 @@ impl ParquetEmailStore {
         if let Some(writer) = self.writer.take() {
             writer.close()?;
             if let Some(filename) = self.current_filename.take() {
-                self.commited_files.push(filename);
+                self.committed_files.push(filename);
             }
         }
         self.writer_index += 1;
@@ -228,7 +228,7 @@ impl EmailStore for ParquetEmailStore {
         if let Some(writer) = self.writer.take() {
             writer.close()?;
             if let Some(filename) = self.current_filename.take() {
-                self.commited_files.push(filename);
+                self.committed_files.push(filename);
             }
         }
 

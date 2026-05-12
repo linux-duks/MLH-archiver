@@ -13,7 +13,7 @@ loop_groups: true
 #   "parquet:10000"
 #   or "raw_email"
 
-# read_lists delcaration is optional.
+# read_lists declaration is optional.
 # if empty, the user will be prompted with the options found
 # in the source to select
 read_lists:
