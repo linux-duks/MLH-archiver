@@ -5,8 +5,18 @@
     CARGO_TERM_COLOR: always
     RUSTFLAGS: -Dwarnings
 
-cargo-test:archiver:
+.rust-docker-base: &rust-docker-base
   <<: *rust-base
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
+  services:
+    - name: docker:dind
+      alias: docker
+
+cargo-test:archiver:
+  <<: *rust-docker-base
   stage: test
   rules:
     - changes:
@@ -44,7 +54,7 @@ cargo-coverage:archiver:
       fi
 
 cargo-test:parser:
-  <<: *rust-base
+  <<: *rust-docker-base
   stage: test
   rules:
     - changes:
