@@ -1,6 +1,5 @@
 use std::io;
 use std::path::Path;
-use std::process::Command;
 use std::sync::{Arc, atomic::AtomicBool};
 use std::{fs, thread, vec};
 
@@ -10,8 +9,8 @@ use mlh_archiver::public_inbox_source::pi_config::PIConfig;
 use mlh_archiver::public_inbox_source::pi_utils::{self, PublicInbox, parse_email_id};
 use mlh_archiver::start;
 use testcontainers::{
-    Container, GenericBuildableImage, GenericImage, core::WaitFor, runners::SyncBuilder,
-    runners::SyncRunner,
+    GenericBuildableImage, GenericImage, ImageExt, core::Mount, core::WaitFor,
+    runners::SyncBuilder, runners::SyncRunner,
 };
 use walkdir::WalkDir;
 
@@ -286,20 +285,18 @@ fn build_test_pi_image() -> GenericImage {
         .unwrap()
 }
 
-/// Extracts test data from a running container to a local directory.
-/// Returns the path to the extracted test data.
-fn extract_test_data_from_container(container: &Container<GenericImage>, dest_dir: &str) {
-    let container_id = container.id();
-    let output = Command::new("docker")
-        .args(["cp", &format!("{}:/test-data", container_id), dest_dir])
-        .output()
-        .expect("Failed to copy test data from container");
-    if !output.status.success() {
-        panic!(
-            "Failed to extract test data: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-    }
+/// Returns the host user's (uid, gid) so the copier container can run as
+/// the same user, ensuring bind-mounted files have correct ownership.
+fn get_host_uid_gid() -> (u32, u32) {
+    use std::process::Command;
+    let run = |arg: &str| -> u32 {
+        String::from_utf8(Command::new("id").arg(arg).output().unwrap().stdout)
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap()
+    };
+    (run("-u"), run("-g"))
 }
 
 /// Runs a public inbox archiver test with a custom configuration builder.
@@ -312,12 +309,34 @@ fn run_pi_test_with_config<F>(
 where
     F: FnOnce(&str) -> AppConfig,
 {
-    let image = build_test_pi_image();
-    let container = image.with_wait_for(WaitFor::seconds(1)).start().unwrap();
+    let _image = build_test_pi_image();
 
     let test_data_dir = format!("./test_pi_data_{}", test_name);
     check_and_delete_folder(test_data_dir.clone()).unwrap();
-    extract_test_data_from_container(&container, &test_data_dir);
+    std::fs::create_dir_all(&test_data_dir).expect("Failed to create test data directory");
+
+    // Resolve absolute path for Docker bind mount
+    let abs_test_data_dir = std::fs::canonicalize(&test_data_dir)
+        .expect("Failed to resolve absolute path for test data dir");
+
+    // Use a helper container to copy /test-data out via a bind-mounted volume.
+    // This avoids depending on the `docker` CLI tool (docker cp / docker exec),
+    // using only the Docker API that testcontainers already uses.
+    // Run as the host user so bind-mounted files have correct ownership.
+    let (host_uid, host_gid) = get_host_uid_gid();
+    let copier = GenericImage::new("test_public_inbox", "latest")
+        .with_wait_for(WaitFor::message_on_stdout("COPY_DONE"))
+        .with_user(format!("{}:{}", host_uid, host_gid))
+        .with_cmd(["sh", "-c", "cp -a /test-data/. /output/ && echo COPY_DONE"])
+        .with_mount(Mount::bind_mount(
+            abs_test_data_dir.to_str().unwrap(),
+            "/output",
+        ))
+        .start()
+        .expect("Failed to start data extraction container");
+
+    copier.stop().unwrap();
+    copier.rm().unwrap();
 
     let output_dir = format!("./test_public_inbox_output_pi_{}", test_name);
     check_and_delete_folder(output_dir.clone()).unwrap();
@@ -347,8 +366,6 @@ where
 
     println!("waiting server thread to finish for {}", test_name);
     child_handle.join().expect("Child thread panicked");
-    container.stop().unwrap();
-    container.rm().unwrap();
 
     // Cleanup test data
     check_and_delete_folder(test_data_dir.clone()).unwrap();

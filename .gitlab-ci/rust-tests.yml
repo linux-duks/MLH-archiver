@@ -1,0 +1,95 @@
+.rust-base: &rust-base
+  image: rust:latest
+  variables:
+    RUST_BACKTRACE: 1
+    CARGO_TERM_COLOR: always
+    RUSTFLAGS: -Dwarnings
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  services:
+    - name: docker:dind
+      entrypoint: [""]
+      command:
+        - dockerd
+        - --host=tcp://0.0.0.0:2375
+        - --storage-driver=vfs
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends docker.io
+
+cargo-test:archiver:
+  <<: *rust-base
+  stage: test
+  rules:
+    - changes:
+        - mlh_archiver/**/*
+  script:
+    - cargo test -p mlh_archiver
+
+cargo-coverage:archiver:
+  <<: *rust-base
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - mlh_archiver/**/*
+  script:
+    - cargo install cargo-llvm-cov
+    - |
+      echo "## Rust Coverage Summary: mlh_archiver" > mlh_archiver/coverage-summary.md
+      echo "" >> mlh_archiver/coverage-summary.md
+      echo '```' >> mlh_archiver/coverage-summary.md
+      cargo llvm-cov --all-features --summary-only -p mlh_archiver 2>&1 >> mlh_archiver/coverage-summary.md
+      echo '```' >> mlh_archiver/coverage-summary.md
+  artifacts:
+    when: always
+    paths:
+      - mlh_archiver/coverage-summary.md
+    expire_in: 7 days
+  after_script:
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -f mlh_archiver/coverage-summary.md ]; then
+        curl --silent --show-error --fail \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --data-urlencode "body@mlh_archiver/coverage-summary.md" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" \
+          || true
+      fi
+
+cargo-test:parser:
+  <<: *rust-base
+  stage: test
+  rules:
+    - changes:
+        - mlh_parser/**/*
+  script:
+    - cargo test -p mlh_parser
+
+cargo-coverage:parser:
+  <<: *rust-base
+  stage: test
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        - mlh_parser/**/*
+  script:
+    - cargo install cargo-llvm-cov
+    - |
+      echo "## Rust Coverage Summary: mlh_parser" > mlh_parser/coverage-summary.md
+      echo "" >> mlh_parser/coverage-summary.md
+      echo '```' >> mlh_parser/coverage-summary.md
+      cargo llvm-cov --all-features --summary-only -p mlh_parser 2>&1 >> mlh_parser/coverage-summary.md
+      echo '```' >> mlh_parser/coverage-summary.md
+  artifacts:
+    when: always
+    paths:
+      - mlh_parser/coverage-summary.md
+    expire_in: 7 days
+  after_script:
+    - |
+      if [ -n "$CI_MERGE_REQUEST_IID" ] && [ -f mlh_parser/coverage-summary.md ]; then
+        curl --silent --show-error --fail \
+          --header "JOB-TOKEN: $CI_JOB_TOKEN" \
+          --data-urlencode "body@mlh_parser/coverage-summary.md" \
+          "$CI_API_V4_URL/projects/$CI_PROJECT_ID/merge_requests/$CI_MERGE_REQUEST_IID/notes" \
+          || true
+      fi

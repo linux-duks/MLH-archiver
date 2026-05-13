@@ -1,0 +1,6 @@
+spell-check:
+  stage: test
+  image: rust:latest
+  script:
+    - cargo install typos-cli
+    - typos

@@ -3,7 +3,6 @@ FROM docker.io/library/debian:trixie-slim as base
 ARG USER_ID=1000
 ARG GROUP_ID=1000
 
-USER root
 RUN export DEBIAN_FRONTEND=noninteractive &&\
 	apt-get update && \
 	apt-get install -y \
@@ -38,7 +37,10 @@ ENV PERL5LIB=/public-inbox/lib
 RUN mkdir -p /test-data && \
     perl /test-gen/generate_test_inboxes.pl /test-data
 
-# Ensure proper permissions
+# Ensure proper permissions for non-root access
 RUN chmod -R a+rx /test-data
+
+# Switch to non-root user matching the host (overridable at runtime via --user)
+USER $USER_ID:$GROUP_ID
 
 VOLUME /test-data

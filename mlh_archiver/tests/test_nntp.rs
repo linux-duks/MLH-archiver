@@ -80,11 +80,15 @@ where
 {
     let image = build_test_nntp_image();
     let (container, host_port) = start_test_nntp_container(image);
+    let container_host = container.get_host().unwrap();
 
     let output_dir = format!("./test_nntp_output_{}", test_name);
     check_and_delete_folder(output_dir.clone()).unwrap();
 
     let mut app_config = config_builder(host_port);
+    if let Some(ref mut nntp) = app_config.nntp {
+        nntp.hostname = container_host.to_string();
+    }
     app_config.output_dir = output_dir.clone();
 
     println!("Starting worker for {}", test_name);
