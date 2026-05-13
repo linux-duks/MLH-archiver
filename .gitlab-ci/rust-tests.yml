@@ -4,19 +4,18 @@
     RUST_BACKTRACE: 1
     CARGO_TERM_COLOR: always
     RUSTFLAGS: -Dwarnings
-
-.rust-docker-base: &rust-docker-base
-  <<: *rust-base
-  variables:
     DOCKER_HOST: tcp://docker:2375
     DOCKER_TLS_CERTDIR: ""
-    DOCKER_DRIVER: overlay2
   services:
     - name: docker:dind
-      alias: docker
+      entrypoint: [""]
+      command:
+        - dockerd
+        - --host=tcp://0.0.0.0:2375
+        - --storage-driver=vfs
 
 cargo-test:archiver:
-  <<: *rust-docker-base
+  <<: *rust-base
   stage: test
   rules:
     - changes:
@@ -25,7 +24,7 @@ cargo-test:archiver:
     - cargo test -p mlh_archiver
 
 cargo-coverage:archiver:
-  <<: *rust-docker-base
+  <<: *rust-base
   stage: test
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -55,7 +54,7 @@ cargo-coverage:archiver:
       fi
 
 cargo-test:parser:
-  <<: *rust-docker-base
+  <<: *rust-base
   stage: test
   rules:
     - changes:
