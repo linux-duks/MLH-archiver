@@ -11,12 +11,13 @@ use std::sync::LazyLock;
 
 static DATE_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     let rfc2822 = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+(19[0-9]{2}|[2-9][0-9]{3})\s+(2[0-3]|[0-1][0-9]):([0-5][0-9])(?::(60|[0-5][0-9]))?\s+([-\+][0-9]{2}[0-5][0-9]|(?:UT|GMT|(?:E|C|M|P)(?:ST|DT)|[A-IK-Z]))";
+    let rfc2822_loose = r"(?:(Sun|Mon|Tue|Wed|Thu|Fri|Sat),\s+)?(0[1-9]|[1-2]?[0-9]|3[01])\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+([0-9]{2,4})\s+([0-9]{2}:[0-9]{2}(?::[0-9]{2})?)";
     let rfc1123 = r"\w{3}, \d{2} \w{3} \d{4} \d{2}:\d{2}:\d{2} \w{3}";
     let rfc1036 = r"\w+?, \d{2}-\w{3}-\d{2} \d{2}:\d{2}:\d{2} \w{3}";
     let ctime = r"\w{3} \w{3} \d+? \d{2}:\d{2}:\d{2} \d{4}";
     Regex::new(&format!(
-        "(?:{})|(?:{})|(?:{})|(?:{})",
-        rfc2822, rfc1123, rfc1036, ctime
+        "(?:{})|(?:{})|(?:{})|(?:{})|(?:{})",
+        rfc2822, rfc2822_loose, rfc1123, rfc1036, ctime
     ))
     .unwrap()
 });
@@ -86,12 +87,28 @@ fn last_effort_date_finder(date_text: &str) -> Option<DateTime<FixedOffset>> {
             .collect(),
     ];
 
-    for attempt in attempts {
-        if let Ok(naive) = NaiveDateTime::parse_from_str(&attempt, "%a, %d %b %Y %H:%M:%S") {
-            let dt = Utc
-                .from_utc_datetime(&naive)
-                .with_timezone(&FixedOffset::east_opt(0)?);
-            return Some(dt);
+    for attempt in &attempts {
+        // Try with weekday prefix (works for 2-digit years)
+        for fmt in &["%a, %d %b %Y %H:%M:%S", "%a, %d %b %y %H:%M:%S"] {
+            if let Ok(naive) = NaiveDateTime::parse_from_str(attempt, fmt) {
+                let dt = Utc
+                    .from_utc_datetime(&naive)
+                    .with_timezone(&FixedOffset::east_opt(0)?);
+                return Some(dt);
+            }
+        }
+        // Try without weekday prefix (avoids chrono %a+%Y interaction bug)
+        let without_weekday = attempt
+            .find(", ")
+            .map(|pos| &attempt[pos + 2..])
+            .unwrap_or(attempt);
+        for fmt in &["%d %b %Y %H:%M:%S", "%d %b %y %H:%M:%S"] {
+            if let Ok(naive) = NaiveDateTime::parse_from_str(without_weekday, fmt) {
+                let dt = Utc
+                    .from_utc_datetime(&naive)
+                    .with_timezone(&FixedOffset::east_opt(0)?);
+                return Some(dt);
+            }
         }
     }
 

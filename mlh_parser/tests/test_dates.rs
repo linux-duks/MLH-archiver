@@ -7,7 +7,41 @@ use mlh_parser::email_reader::{decode_mail, get_headers};
 use std::fs;
 
 #[test]
-#[ignore = "date parsing parity with Python needs iteration"]
+fn test_millennium_dates() {
+    let millennium_cases = vec![
+        // 2 digit year
+        ("Mon, 3 Jan 78 18:27:37", "Mon, 3 Jan 1978 18:27:37"),
+        ("Mon, 3 Jan 99 18:27:37", "Mon, 3 Jan 1999 18:27:37"),
+        // 2 digit year became a 3 digit when the year 2000 started
+        ("Mon, 3 Jan 100 18:27:37", "Mon, 3 Jan 2000 18:27:37"),
+        ("Mon, 3 Jan 101 18:27:37", "Mon, 3 Jan 2001 18:27:37"),
+        // same issue but padded with a zero
+        ("Mon, 3 Jan 0100 18:27:37", "Mon, 3 Jan 2000 18:27:37"),
+        ("Mon, 3 Jan 0120 18:27:37", "Mon, 3 Jan 2020 18:27:37"),
+        (
+            "Mon, 3 Jan 0120 18:27:37 -0400",
+            "Mon, 3 Jan 2020 18:27:37 -0400",
+        ),
+        (
+            "Tue,  4 Nov 101 22:14:47 +0000 (UTC)",
+            "Tue,  4 Nov 2001 22:14:47 +0000 (UTC)",
+        ),
+    ];
+
+    let now = DateTime::from_timestamp(1734748800, 0)
+        .expect("Should be able to read time")
+        .into();
+
+    for (found_str, expected_str) in millennium_cases {
+        let found_date = parse_date_tentative_raw(found_str).expect("Parse should not be None");
+        let expected_date =
+            parse_date_tentative_raw(expected_str).expect("Parse should not be None");
+        let fixed = mlh_parser::date_parser::fix_millennium_date(found_date, now);
+        assert_eq!(fixed, expected_date, "Failed for {}", found_str);
+    }
+}
+
+#[test]
 fn test_correct_email() {
     let directory = "./date_cases/";
     let email_files = list_files_with_extension(directory, ".eml");
@@ -41,27 +75,5 @@ fn test_correct_email() {
         {
             assert_eq!(actual, expected, "Date mismatch for {:?}", email_file);
         }
-    }
-}
-
-#[test]
-#[ignore = "date parsing parity with Python needs iteration"]
-fn test_millennium_dates() {
-    let millennium_cases = vec![
-        ("Mon, 3 Jan 78 18:27:37", "Mon, 3 Jan 1978 18:27:37"),
-        ("Mon, 3 Jan 99 18:27:37", "Mon, 3 Jan 99 18:27:37"),
-        ("Mon, 3 Jan 100 18:27:37", "Mon, 3 Jan 2000 18:27:37"),
-        ("Mon, 3 Jan 0100 18:27:37", "Mon, 3 Jan 2000 18:27:37"),
-        ("Mon, 3 Jan 101 18:27:37", "Mon, 3 Jan 2001 18:27:37"),
-        ("Mon, 3 Jan 0120 18:27:37", "Mon, 3 Jan 2020 18:27:37"),
-    ];
-
-    let now = DateTime::from_timestamp(1734748800, 0).unwrap().into();
-
-    for (found_str, expected_str) in millennium_cases {
-        let found_date = parse_date_tentative_raw(found_str).unwrap();
-        let expected_date = parse_date_tentative_raw(expected_str).unwrap();
-        let fixed = mlh_parser::date_parser::fix_millennium_date(found_date, now);
-        assert_eq!(fixed, expected_date, "Failed for {}", found_str);
     }
 }

@@ -7,7 +7,6 @@ use mlh_parser::email_reader::{decode_mail, get_body, get_headers};
 use std::fs;
 
 #[test]
-#[ignore = "fixture exact-match parity with Python needs iteration"]
 fn test_body_parser() {
     let directory = "./complete_cases/";
     let email_files = list_files_with_extension(directory, ".eml");
@@ -38,7 +37,6 @@ fn test_body_parser() {
 }
 
 #[test]
-#[ignore = "fixture exact-match parity with Python needs iteration"]
 fn test_header_parser() {
     let directory = "./complete_cases/";
     let email_files = list_files_with_extension(directory, ".eml");
