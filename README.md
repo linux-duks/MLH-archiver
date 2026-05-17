@@ -221,6 +221,8 @@ The root [`Makefile`](Makefile) orchestrates all components. Run commands from t
 |---------|-------------|
 | `make` or `make all` | Build and run the archiver |
 | `make build` | Build the archiver (Rust) |
+| `make build-check-git` | Build the check-git utility (Rust) |
+| `make build-check-nntp` | Build the check-nntp utility (Rust) |
 | `make run` | Run the archiver |
 | `make parse` | Run the mailing list parser (configure via `parser_config.yaml`) |
 | `make anonymize` | Run the anonymizer |
@@ -321,6 +323,10 @@ Example: `0000000056-e0-5dadd9f0f9884ed3852f090bd05eed898db64966`
 **Build:**
 
 ```bash
+# Using make from the project root:
+make build-check-git
+
+# Or manually with cargo:
 cargo build --release --package check_git
 ```
 

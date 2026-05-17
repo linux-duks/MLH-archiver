@@ -83,6 +83,15 @@ run-anonymizer:
 run-analysis:
 	$(MAKE) -C analysis run
 
+# scripts
+.PHONY: build-check-git
+build-check-git:
+	$(MAKE) -C scripts build-check-git
+
+.PHONY: build-check-nntp
+build-check-nntp:
+	$(MAKE) -C scripts build-check-nntp
+
 # ------------------------------------------------------------------------------
 # REBUILD TARGETS
 # ------------------------------------------------------------------------------

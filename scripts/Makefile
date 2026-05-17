@@ -2,12 +2,43 @@
 include ../containers.mk
 
 DEV_IMAGE = "../.devcontainer/Containerfile"
+REPO_ROOT := $(abspath $(CURDIR)/..)
+RUST_DOCKER_IMAGE = docker.io/rust:1.95-slim
+
+.PHONY: build-check-git build-check-nntp
+
+build-check-git: BIN = check_git
+build-check-git: _build-rs
+
+build-check-nntp: BIN = check_nntp
+build-check-nntp: _build-rs
+
+_build-rs:
+	@if command -v cargo >/dev/null 2>&1; then \
+		echo "==> Found Rust toolchain, building natively..."; \
+		cargo build --bin $(BIN) --release; \
+	else \
+		echo "==> Rust toolchain not found, building with Docker (Image: $(RUST_DOCKER_IMAGE))..."; \
+		$(CONTAINER) run --rm \
+			-it -u $(id -u):$(id -g) \
+			--network=host \
+			-v $(REPO_ROOT):/usr/src/app:z \
+			-w /usr/src/app \
+			$(RUST_DOCKER_IMAGE) \
+			cargo build --bin $(BIN) --release; \
+	fi
 
 .PHONY: clean
 clean:
 	@echo "==> Cleaning up scripts artifacts..."
 	@rm -rf .venv
 	@rm -rf __pycache__
+	@if command -v cargo >/dev/null 2>&1; then \
+		cargo clean; \
+	else \
+		echo "==> Rust toolchain not found, removing target directory directly..."; \
+		rm -rf $(REPO_ROOT)/target; \
+	fi
 
 
 .PHONY: peek
