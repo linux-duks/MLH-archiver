@@ -36,7 +36,7 @@ def main():
         ),
     }
 
-    non_default_scipts = ["author_distribution", "sql_querier"]
+    non_default_scripts = ["author_distribution", "sql_querier"]
 
     if analysis_script:
         if analysis_script in scripts.keys():
@@ -50,7 +50,7 @@ def main():
         return
 
     for name in scripts.keys():
-        if name in non_default_scipts:
+        if name in non_default_scripts:
             continue
         print(f"Starting {name}...\n")
         scripts[name]()
