@@ -413,16 +413,16 @@ fn run(args: Args) -> anyhow::Result<()> {
 
     let inboxes = find_public_inboxes(inbox_dir)?;
     if inboxes.is_empty() {
-        println!(
+        eprintln!(
             "No public-inbox directories found in {}",
             inbox_dir.display()
         );
         return Ok(());
     }
 
-    println!("Found {} public-inbox(es)\n", inboxes.len());
+    eprintln!("Found {} public-inbox(es)\n", inboxes.len());
     for inbox in &inboxes {
-        println!(
+        eprintln!(
             "  - {} ({}): {}",
             inbox.name,
             inbox.version,
@@ -436,7 +436,7 @@ fn run(args: Args) -> anyhow::Result<()> {
         .collect();
 
     if valid_inboxes.is_empty() {
-        println!("No valid public-inboxes found.");
+        eprintln!("No valid public-inboxes found.");
         return Ok(());
     }
 
