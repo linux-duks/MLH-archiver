@@ -43,11 +43,13 @@ pub fn retrieve_lists(pi_config: PIConfig) -> crate::Result<Vec<String>> {
     // Attempt to find public inboxes in the given path.
     match find_public_inboxes(&path) {
         Ok(list) => {
-            // Filter out incomplete repositories (those with "incomplete" in the version string).
+            // Filter out incomplete and empty repositories.
             let valid_list: Vec<_> = list
                 .clone()
                 .into_iter()
-                .filter(|inbox| !inbox.version.contains("incomplete"))
+                .filter(|inbox| {
+                    !inbox.version.contains("incomplete") && !inbox.version.contains("empty")
+                })
                 .collect();
 
             log::debug!(

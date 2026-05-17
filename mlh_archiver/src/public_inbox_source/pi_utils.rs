@@ -337,7 +337,36 @@ pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
                 }
             }
         }
-        // git_dir exists but no valid repo found
+        // git/ directory exists but no valid epoch repos found with master ref.
+        // Check structural markers to detect empty/incomplete public-inboxes.
+        let has_epoch_dirs = std::fs::read_dir(&git_dir)
+            .map(|entries| {
+                entries.filter_map(|e| e.ok()).any(|e| {
+                    e.path().is_dir()
+                        && e.file_name().to_str().map_or(false, |n| n.ends_with(".git"))
+                        && e.path().join("objects").is_dir()
+                })
+            })
+            .unwrap_or(false);
+
+        if has_epoch_dirs {
+            return Ok(Some(PublicInbox {
+                name,
+                version: "V2 (empty)".to_string(),
+                git_dir,
+            }));
+        }
+
+        // Also check all.git alongside git/ for single-repo public-inbox layouts
+        let all_git = dir.join("all.git");
+        if all_git.is_dir() && all_git.join("objects").is_dir() {
+            return Ok(Some(PublicInbox {
+                name,
+                version: "V1 (empty)".to_string(),
+                git_dir: all_git,
+            }));
+        }
+
         return Ok(None);
     }
 
@@ -364,7 +393,7 @@ pub fn detect_inbox(dir: &Path) -> crate::Result<Option<PublicInbox>> {
     }
 
     // Finally, check for all.git without master ref (might be empty repo)
-    if all_git.is_dir() && is_git_repo(&all_git) {
+    if all_git.is_dir() && all_git.join("objects").is_dir() {
         // Even without master ref, could be a public-inbox (empty)
         return Ok(Some(PublicInbox {
             name,
@@ -619,10 +648,11 @@ pub fn find_email_by_id(inbox: &PublicInbox, email_id: &ParsedEmailId) -> crate:
     let epochs = find_epochs(&inbox.git_dir)?;
 
     let epoch_repo = if epochs.is_empty() {
-        EpochRepo {
-            epoch_name: "all".to_string(),
-            git_dir: inbox.git_dir.clone(),
-        }
+        return Err(anyhow::anyhow!(
+            "No epoch repositories found in inbox '{}' (may be empty or incomplete)",
+            inbox.name
+        )
+        .into());
     } else {
         epochs
             .iter()
@@ -694,7 +724,7 @@ pub fn find_epochs(git_dir: &Path) -> crate::Result<Vec<EpochRepo>> {
             continue;
         }
 
-        if !is_git_repo(&path) || !has_master_ref(&path) {
+        if !path.join("objects").is_dir() || !has_master_ref(&path) {
             continue;
         }
 

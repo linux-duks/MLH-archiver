@@ -1,10 +1,10 @@
-use std::path::{Path, PathBuf};
+use std::path::{PathBuf};
 
 /// A public-inbox email reader using libgit2.
 /// Scans a directory for public-inbox subdirectories and reads emails from them.
 use chrono::DateTime;
 use clap::Parser;
-use inquire::{Confirm, MultiSelect, Select, Text};
+use inquire::{MultiSelect, Select, Text};
 
 use mlh_archiver::public_inbox_source::pi_utils::*;
 
@@ -63,6 +63,9 @@ struct Args {
 fn get_epoch_repos(inbox: &PublicInbox) -> anyhow::Result<Vec<EpochRepo>> {
     let epochs = find_epochs(&inbox.git_dir)?;
     if epochs.is_empty() {
+        if inbox.version.contains("empty") {
+            return Ok(Vec::new());
+        }
         Ok(vec![EpochRepo {
             epoch_name: "all".to_string(),
             git_dir: inbox.git_dir.clone(),
@@ -78,6 +81,9 @@ fn collect_inbox_commits(
     inbox: &PublicInbox,
 ) -> anyhow::Result<Vec<(usize, EpochRepo, git2::Oid)>> {
     let epochs = get_epoch_repos(inbox)?;
+    if epochs.is_empty() {
+        return Ok(Vec::new());
+    }
     let mut all: Vec<(usize, EpochRepo, git2::Oid)> = Vec::new();
     let mut global_pos = 0usize;
 
@@ -98,8 +104,8 @@ fn collect_inbox_commits(
 
 /// Reads the last `count` emails from an inbox and prints each one.
 fn process_inbox_preview(inbox: &PublicInbox, count: usize) -> anyhow::Result<usize> {
-    if inbox.version.contains("incomplete") {
-        println!("  Skipping incomplete repository: {}", inbox.version);
+    if inbox.version.contains("incomplete") || inbox.version.contains("empty") {
+        println!("  Skipping repository: {}", inbox.version);
         return Ok(0);
     }
 
