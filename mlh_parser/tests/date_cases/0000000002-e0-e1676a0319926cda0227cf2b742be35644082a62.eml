@@ -1,0 +1,103 @@
+Received: from smtp4.osuosl.org (smtp4.osuosl.org [140.211.166.137])
+	(using TLSv1.2 with cipher ECDHE-RSA-AES256-GCM-SHA384 (256/256 bits))
+	(No client certificate requested)
+	by smtp.subspace.kernel.org (Postfix) with ESMTPS id 1D2AC1103
+	for <accel-config@lists.linuxfoundation.org>; Fri, 28 Jun 2024 02:19:37 +0000 (UTC)
+Authentication-Results: smtp.subspace.kernel.org; arc=none smtp.client-ip=140.211.166.137
+ARC-Seal:i=1; a=rsa-sha256; d=subspace.kernel.org; s=arc-20240116;
+	t=1719541179; cv=none; b=O2VHWzz350XkF358j/MFBkpAEL2se96TtE6ffifEk+Gfq9UMT5zmo1Q3JRaaqHI2r+MZdkwZVdoFaW4OZT72V1/j4kAo/tpEzeqHUNmoJQr+rnc9RA46sAXROfE7SqRh3LAnJ/vqSF1BexkWpydWD444VI/oWAedtahdis2C/rI=
+ARC-Message-Signature:i=1; a=rsa-sha256; d=subspace.kernel.org;
+	s=arc-20240116; t=1719541179; c=relaxed/simple;
+	bh=+EQKYXZ0rW7kFl75/uz3L4pUs82UFEzJslDABcDBeiY=;
+	h=From:To:Subject:Date:Message-ID:In-Reply-To:References:
+	 MIME-Version; b=gFP85r6pVCMOGttLgJZKbF6QUhQE1AZo++QkbFFVtyeezSlADqSGY2DdlfDufUyMEvJCrCargVPyw3BgiK1quj9Lz8KRAdP5hrzRx5lydgpnMc2yt9gHYv+rhcQ60WViYem1PP/08MIrZjjjEdbazbhiPW/+cMHNTUeL+F5VqBI=
+ARC-Authentication-Results:i=1; smtp.subspace.kernel.org; dkim=pass (2048-bit key) header.d=intel.com header.i=@intel.com header.b=Yg0dQ5on; arc=none smtp.client-ip=140.211.166.137
+Authentication-Results: smtp.subspace.kernel.org;
+	dkim=pass (2048-bit key) header.d=intel.com header.i=@intel.com header.b="Yg0dQ5on"
+Received: from localhost (localhost [127.0.0.1])
+	by smtp4.osuosl.org (Postfix) with ESMTP id A6E1440788
+	for <accel-config@lists.linuxfoundation.org>; Fri, 28 Jun 2024 02:19:37 +0000 (UTC)
+X-Virus-Scanned: amavis at osuosl.org
+X-Spam-Flag: NO
+X-Spam-Score: -4.401
+X-Spam-Level:
+Received: from smtp4.osuosl.org ([127.0.0.1])
+ by localhost (smtp4.osuosl.org [127.0.0.1]) (amavis, port 10024) with ESMTP
+ id qt-inq8yeCtf for <accel-config@lists.linuxfoundation.org>;
+ Fri, 28 Jun 2024 02:19:37 +0000 (UTC)
+Received-SPF: Pass (mailfrom) identity=mailfrom; client-ip=198.175.65.10; helo=mgamail.intel.com; envelope-from=pengfei.xu@intel.com; receiver=<UNKNOWN> 
+DMARC-Filter: OpenDMARC Filter v1.4.2 smtp4.osuosl.org C3FE14075F
+Authentication-Results: smtp4.osuosl.org; dmarc=pass (p=none dis=none) header.from=intel.com
+DKIM-Filter: OpenDKIM Filter v2.11.0 smtp4.osuosl.org C3FE14075F
+Authentication-Results: smtp4.osuosl.org;
+	dkim=pass (2048-bit key, unprotected) header.d=intel.com header.i=@intel.com header.a=rsa-sha256 header.s=Intel header.b=Yg0dQ5on
+Received: from mgamail.intel.com (mgamail.intel.com [198.175.65.10])
+	by smtp4.osuosl.org (Postfix) with ESMTPS id C3FE14075F
+	for <accel-config@lists.linuxfoundation.org>; Fri, 28 Jun 2024 02:19:36 +0000 (UTC)
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/simple;
+  d=intel.com; i=@intel.com; q=dns/txt; s=Intel;
+  t=1719541177; x=1751077177;
+  h=from:to:subject:date:message-id:in-reply-to:references:
+   mime-version:content-transfer-encoding;
+  bh=+EQKYXZ0rW7kFl75/uz3L4pUs82UFEzJslDABcDBeiY=;
+  b=Yg0dQ5on/4DaPeoGwkUgdJZetb/UwvYzL5k2o++HP9U7USIRj6mcw8Kj
+   dTmlXvLmvf370n99pONnBo88W42rTQnxeaqkDJ2Mvbt0pWVQL4ZedAHjE
+   gvTC1SrUjCA4DBS/y5UjVLp3E7n46Cmdp3Vx50MPqdxs7ajv4UWOqU9HP
+   Uo83cD2TXvP/NH7TRbEefEv5lZ1XOdOJu+isENqJUTF/v200tjNxok9Ye
+   DDV63VBKzlWS7d19QNXyU0192qoQ9I0kcI+PGU3qTDVn9kfHDlD3Dzj/F
+   a0EgbWkqoBOWx40yXg1VEiTPMns4aDFM/x6jhBn+g8R0+/09e4gUEeFWi
+   w==;
+X-CSE-ConnectionGUID: C4exYKnyR+OF+/GsraRI1w==
+X-CSE-MsgGUID: DjTnXoK5Q8ySmDJYDnLJjA==
+X-IronPort-AV: E=McAfee;i="6700,10204,11116"; a="34157444"
+X-IronPort-AV: E=Sophos;i="6.09,167,1716274800"; 
+   d="scan'208";a="34157444"
+Received: from fmviesa006.fm.intel.com ([10.60.135.146])
+  by orvoesa102.jf.intel.com with ESMTP/TLS/ECDHE-RSA-AES256-GCM-SHA384; 27 Jun 2024 19:19:36 -0700
+X-CSE-ConnectionGUID: VdTxz+8yTpaCyBS6l/FgCA==
+X-CSE-MsgGUID: Q/F/MXImSzSuumyUqn0r5g==
+X-ExtLoop1: 1
+X-IronPort-AV: E=Sophos;i="6.09,167,1716274800"; 
+   d="scan'208";a="44427656"
+Received: from xpf.sh.intel.com ([10.239.182.130])
+  by fmviesa006.fm.intel.com with ESMTP; 27 Jun 2024 19:19:34 -0700
+From: Pengfei Xu <pengfei.xu@intel.com>
+To: accel-config@lists.linuxfoundation.org,
+	ramesh.thomas@intel.com,
+	Pengfei Xu <pengfei.xu@intel.com>,
+	fenghua.yu@intel.com
+Subject: [Accel-config] [PATCH v1 1/1] accel_test.c: make umwait check description clear
+Date: Fri, 28 Jun 2024 10:20:14 +0800
+Message-ID: <cf0959baaaa56e2962abfdfb2e2098531c06dd4d.1719541131.git.pengfei.xu@intel.com>
+X-Mailer: git-send-email 2.43.0
+In-Reply-To: <cover.1719541131.git.pengfei.xu@intel.com>
+References: <cover.1719541131.git.pengfei.xu@intel.com>
+Precedence: bulk
+X-Mailing-List: accel-config@lists.linux.dev
+List-Id: <accel-config.lists.linux.dev>
+List-Subscribe: <mailto:accel-config+subscribe@lists.linux.dev>
+List-Unsubscribe: <mailto:accel-config+unsubscribe@lists.linux.dev>
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+
+Signed-off-by: Pengfei Xu <pengfei.xu@intel.com>
+---
+ test/accel_test.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/test/accel_test.c b/test/accel_test.c
+index e7f0e8e..3e82e42 100644
+--- a/test/accel_test.c
++++ b/test/accel_test.c
+@@ -54,7 +54,7 @@ struct acctest_context *acctest_init(int tflags)
+ 	waitpkg = 0;
+ 	cpuid(&leaf, unused, &waitpkg, unused + 1);
+ 	if (waitpkg & 0x20) {
+-		dbg("umwait supported\n");
++		dbg("umwait supported:WAITPKG CPUID.(EAX=07H,ECX=0H):ECX[bit 5]\n");
+ 		umwait_support = 1;
+ 	}
+ 
+-- 
+2.43.0
+

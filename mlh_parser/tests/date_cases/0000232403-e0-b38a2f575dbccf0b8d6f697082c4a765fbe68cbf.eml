@@ -1,0 +1,72 @@
+Received: from eggs.gnu.org ([2001:4830:134:3::10]:44964)
+	by lists.gnu.org with esmtp (Exim 4.71)
+	(envelope-from <anthony@codemonkey.ws>) id 1UuNNA-0002bn-CO
+	for qemu-devel@nongnu.org; Wed, 03 Jul 2013 09:45:30 -0400
+Received: from Debian-exim by eggs.gnu.org with spam-scanned (Exim 4.71)
+	(envelope-from <anthony@codemonkey.ws>) id 1UuNN8-0001Si-MK
+	for qemu-devel@nongnu.org; Wed, 03 Jul 2013 09:45:28 -0400
+Received: from mail-oa0-f52.google.com ([209.85.219.52]:62172)
+	by eggs.gnu.org with esmtp (Exim 4.71)
+	(envelope-from <anthony@codemonkey.ws>) id 1UuNN8-0001ST-Hs
+	for qemu-devel@nongnu.org; Wed, 03 Jul 2013 09:45:26 -0400
+Received: by mail-oa0-f52.google.com with SMTP id g12so175069oah.11
+	for <qemu-devel@nongnu.org>; Wed, 03 Jul 2013 06:45:25 -0700 (PDT)
+From: Anthony Liguori <anthony@codemonkey.ws>
+In-Reply-To: <1372840803.27768.159.camel@zakaz.uk.xensource.com>
+References: <1372779366-25446-1-git-send-email-paul.durrant@citrix.com>
+	<alpine.DEB.2.02.1307021716020.5067@kaball.uk.xensource.com>
+	<alpine.DEB.2.02.1307021903030.5067@kaball.uk.xensource.com>
+	<1372840122.27768.150.camel@zakaz.uk.xensource.com>
+	<9AAE0902D5BC7E449B7C8E4E778ABCD0058785@LONPEX01CL01.citrite.net>
+	<1372840803.27768.159.camel@zakaz.uk.xensource.com>
+Date: Wed, 03 Jul 2013 08:45:22 -0500
+Message-ID: <871u7fahal.fsf@codemonkey.ws>
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+Subject: Re: [Qemu-devel] [Xen-devel]   [PATCH] Citrix PV Bus device [V3]
+List-Id: <qemu-devel.nongnu.org>
+List-Unsubscribe: <https://lists.nongnu.org/mailman/options/qemu-devel>,
+	<mailto:qemu-devel-request@nongnu.org?subject=unsubscribe>
+List-Archive: <http://lists.nongnu.org/archive/html/qemu-devel>
+List-Post: <mailto:qemu-devel@nongnu.org>
+List-Help: <mailto:qemu-devel-request@nongnu.org?subject=help>
+List-Subscribe: <https://lists.nongnu.org/mailman/listinfo/qemu-devel>,
+	<mailto:qemu-devel-request@nongnu.org?subject=subscribe>
+To: Ian Campbell <Ian.Campbell@citrix.com>, Paul Durrant <Paul.Durrant@citrix.com>
+Cc: Paolo Bonzini <pbonzini@redhat.com>, "xen-devel@lists.xen.org" <xen-devel@lists.xen.org>, "qemu-devel@nongnu.org" <qemu-devel@nongnu.org>, Stefano Stabellini <Stefano.Stabellini@eu.citrix.com>
+
+Ian Campbell <Ian.Campbell@citrix.com> writes:
+
+> On Wed, 2013-07-03 at 09:34 +0100, Paul Durrant wrote:
+>> Already did that  :-)
+>> 
+>> > There are also sub-vendor and sub-device IDs but I don't think they are
+>> > so useful for us (AFAIK they are intended to allow the board
+>> > manufacturer to "subclass" the IDs baked into the ASIC).
+>> > 
+>> 
+>> I'm always hazy about what those mean. I thought the idea was that a
+>> vendor may collect together many devices, potentially from different
+>> vendors, into a single chip/board and they should use common subsystem
+>> vendor/device info for all those devices to indicate that they were
+>> all part of that larger unit - but maybe I'm completely wrong.
+>
+> I figured it was so the board vendor could add "value" in their drivers
+> by taking advantage of the higher precedence given to the binding to the
+> sub-ids by OSs.
+
+It's essentially an OEM id.  Often times it's an EEPROM setting on real
+hardware.  A different subsystem vendor/device does not indicate a
+different programming interface.
+
+We set it to a vendor/device ID reserved for QEMU by default.  It's best
+to keep it the QEMU ID to identify it as a device implemented by QEMU.
+
+It's mighty handy as it lets software figure out that it's a Cirrus VGA
+card emulated by QEMU (not real hardware).  In fact, I believe the
+kernel KMS driver for Cirrus only binds to the QEMU vendor/device ID
+since that's the only thing reasonably testable these days.
+
+Regards,
+
+Anthony Liguori

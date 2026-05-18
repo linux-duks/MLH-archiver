@@ -4,9 +4,25 @@ repos:
     hooks:
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude:
+          glob:
+            - "mlh_parser/tests/date_cases/**"
+            - "mlh_parser/tests/complete_cases/**"
+            - "mlh_parser/tests/synthetic/**"
+            - "**/fixtures/**"
+            - "**/test_public_inbox/**"
+            - "main/**"
       - id: check-added-large-files
         args: [--maxkb=512]
       - id: end-of-file-fixer
+        exclude:
+          glob:
+            - "mlh_parser/tests/date_cases/**"
+            - "mlh_parser/tests/complete_cases/**"
+            - "mlh_parser/tests/synthetic/**"
+            - "**/fixtures/**"
+            - "**/test_public_inbox/**"
+            - "main/**"
       - id: mixed-line-ending
       - id: check-json
       - id: check-toml
